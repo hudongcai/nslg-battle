@@ -231,6 +231,29 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 
   <!-- Tab 2: 克制分析 -->
   <div id="tab-winrate" class="tab-content">
+    <!-- 敌方高频队伍分析 -->
+    <div class="card" id="enemyFreqSection">
+      <h3>🔭 敌方高频队伍分析</h3>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">统计右侧（敌方）队伍出现频率，按出现次数从高到低排列。</div>
+      <div class="form-row" style="margin-bottom:10px;">
+        <input type="text" id="efSearch" placeholder="🔍 搜索武将..." oninput="renderEnemyFreq()" style="max-width:200px;">
+        <span id="efTotal" style="font-size:11px;color:var(--text3);margin-left:8px;"></span>
+      </div>
+      <div id="efTableWrap" style="overflow:auto;max-height:340px;width:100%;border-radius:8px;border:1px solid var(--border);">
+        <table id="efTable" style="min-width:600px;">
+          <thead><tr>
+            <th style="min-width:40px;text-align:center;">排名</th>
+            <th style="min-width:140px;">敌方队伍</th>
+            <th style="min-width:200px;">战法配置</th>
+            <th style="min-width:80px;text-align:center;">出现次数</th>
+            <th style="min-width:100px;">出现占比</th>
+            <th style="min-width:80px;text-align:center;">我方胜/败/平</th>
+            <th style="min-width:70px;text-align:center;">对阵胜率</th>
+          </tr></thead>
+          <tbody id="efTableBody"></tbody>
+        </table>
+      </div>
+    </div>
     <div class="card">
       <h3>⚔️ 队伍克制关系分析</h3>
       <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">匹配规则：3武将相同(无序) 或 9战法相同(无序) → 同类型队伍。战损比 = 左战损兵力 / 右战损兵力 × 100%，低于 50% 表示优势明显。</div>
@@ -254,6 +277,11 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
       </tr></thead><tbody id="winRateTableBody"></tbody></table></div>
     </div>
     <div class="card" id="restrictSection" style="display:none;padding:16px 12px;"><h3>🏆 克制关系总结</h3><div id="restrictCards" class="restrict-cards"></div></div>
+    <div class="card" id="counterSection" style="display:none;padding:16px 12px;">
+      <h3>🎯 针对性队伍推荐</h3>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">基于敌方高频队伍，推荐我方最佳克制队伍</div>
+      <div id="counterCards" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
   </div>
 
   <!-- Tab 3: 武将战法库 (合并) -->
@@ -370,7 +398,7 @@ function updateOcrStatus(status,text){const dot=document.getElementById('ocrDot'
 updateOcrStatus('ok','OCR 就绪');
 
 // ========== TAB SWITCHING ==========
-function switchTab(tabId,btn){document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+tabId).classList.add('active');if(btn)btn.classList.add('active');if(tabId==='data'){renderDataTable();renderGallery();}if(tabId==='winrate'){updateWinRateFilters();renderWinRateTable();}if(tabId==='library'){renderHeroes();renderTactics();}if(tabId==='ranking')renderRanking();if(tabId==='peijiang')onPeijiangChange();if(tabId==='yanwu')onYanwuChange();}
+function switchTab(tabId,btn){document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));document.getElementById('tab-'+tabId).classList.add('active');if(btn)btn.classList.add('active');if(tabId==='data'){renderDataTable();renderGallery();}if(tabId==='winrate'){updateWinRateFilters();renderWinRateTable();renderEnemyFreq();}if(tabId==='library'){renderHeroes();renderTactics();}if(tabId==='ranking')renderRanking();if(tabId==='peijiang')onPeijiangChange();if(tabId==='yanwu')onYanwuChange();}
 function switchLibSub(sub){document.getElementById('libSubHeroes').style.display=sub==='heroes'?'block':'none';document.getElementById('libSubTactics').style.display=sub==='tactics'?'block':'none';document.getElementById('libTabHeroes').classList.toggle('active',sub==='heroes');document.getElementById('libTabTactics').classList.toggle('active',sub==='tactics');if(sub==='heroes')renderHeroes();else renderTactics();}
 
 // ========== GLOBAL STATS ==========
@@ -419,6 +447,65 @@ function viewFullImageByRecord(id){const r=allRecords.find(r=>r.id===id);if(!r||
 
 // ========== TAB 2: WIN RATE ==========
 function computeWinRateData(){const recs=allRecords.map(r=>({...r,lGenKey:getTeamKey(r.leftGenerals),lTacKey:getTacticsKey(r.leftTactics),rGenKey:getTeamKey(r.rightGenerals),rTacKey:getTacticsKey(r.rightTactics)}));const leftGroups=[],rightGroups=[];const leftGroupOf=new Array(recs.length).fill(-1),rightGroupOf=new Array(recs.length).fill(-1);for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<leftGroups.length;g++){if(isSameTeamType(r.leftGenerals,r.leftTactics,recs[leftGroups[g][0]].leftGenerals,recs[leftGroups[g][0]].leftTactics)){matched=g;break;}}if(matched>=0){leftGroups[matched].push(i);leftGroupOf[i]=matched;}else{leftGroups.push([i]);leftGroupOf[i]=leftGroups.length-1;}}for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<rightGroups.length;g++){if(isSameTeamType(r.rightGenerals,r.rightTactics,recs[rightGroups[g][0]].rightGenerals,recs[rightGroups[g][0]].rightTactics)){matched=g;break;}}if(matched>=0){rightGroups[matched].push(i);rightGroupOf[i]=matched;}else{rightGroups.push([i]);rightGroupOf[i]=rightGroups.length-1;}}const pairMap={};for(let i=0;i<recs.length;i++){const lg=leftGroupOf[i],rg=rightGroupOf[i],pk=lg+'-'+rg;if(!pairMap[pk]){const repL=recs[leftGroups[lg][0]],repR=recs[rightGroups[rg][0]];pairMap[pk]={leftTeam:getTeamKey(repL.leftGenerals),leftTactics:repL.leftTactics||[],leftFormation:repL.leftFormation||'',leftGenerals:repL.leftGenerals||[],rightTeam:getTeamKey(repR.rightGenerals),rightTactics:repR.rightTactics||[],rightFormation:repR.rightFormation||'',rightGenerals:repR.rightGenerals||[],matches:[],leftLosses:[],rightLosses:[],recordIds:[]};}const entry=pairMap[pk];entry.matches.push(recs[i]);entry.recordIds.push(recs[i].id);if(recs[i].leftLoss!=null&&recs[i].leftTotal!=null&&recs[i].leftTotal>0)entry.leftLosses.push(recs[i].leftLoss);if(recs[i].rightLoss!=null&&recs[i].rightTotal!=null&&recs[i].rightTotal>0)entry.rightLosses.push(recs[i].rightLoss);}const rawData=Object.values(pairMap).map(entry=>{const wins=entry.matches.filter(r=>r.result==='胜').length,losses=entry.matches.filter(r=>r.result==='败').length;const total=entry.matches.length,winRate=total>0?wins/total*100:0;const avgLLoss=entry.leftLosses.length>0?entry.leftLosses.reduce((a,b)=>a+b,0)/entry.leftLosses.length:0;const avgRLoss=entry.rightLosses.length>0?entry.rightLosses.reduce((a,b)=>a+b,0)/entry.rightLosses.length:0;let lossRateVal=0;if(avgRLoss>0)lossRateVal=(avgLLoss/avgRLoss)*100;else if(avgLLoss>0)lossRateVal=999;const llr=entry.matches.filter(r=>r.leftLossRate!=null).map(r=>r.leftLossRate);const rlr=entry.matches.filter(r=>r.rightLossRate!=null).map(r=>r.rightLossRate);return{...entry,wins,losses,total,winRate,avgLeftLossPct:llr.length>0?(llr.reduce((a,b)=>a+b,0)/llr.length).toFixed(1):'0',avgRightLossPct:rlr.length>0?(rlr.reduce((a,b)=>a+b,0)/rlr.length).toFixed(1):'0',lossRateVal:lossRateVal.toFixed(0),avgLLoss,avgRLoss};});const result=new Map();rawData.forEach(d=>{const k=d.leftTeam+'||'+d.rightTeam;if(!result.has(k))result.set(k,d);});return Array.from(result.values()).map(d=>{if(d.winRate>=50)return d;return{leftTeam:d.rightTeam,rightTeam:d.leftTeam,leftGenerals:d.rightGenerals,rightGenerals:d.leftGenerals,leftTactics:d.rightTactics,rightTactics:d.leftTactics,leftFormation:d.rightFormation,rightFormation:d.leftFormation,winRate:100-d.winRate,wins:d.losses,losses:d.wins,total:d.total,avgLeftLossPct:d.avgRightLossPct,avgRightLossPct:d.avgLeftLossPct,avgLLoss:d.avgRLoss,avgRLoss:d.avgLLoss,lossRateVal:d.avgRLoss>0&&d.avgLLoss>0?((d.avgRLoss/d.avgLLoss)*100).toFixed(0):d.lossRateVal,matches:d.matches.map(r=>({...r,result:r.result==='胜'?'败':r.result==='败'?'胜':r.result})),recordIds:d.recordIds};});}
+// ========== TAB 2: ENEMY FREQ ==========
+function renderEnemyFreq(){
+  const search=(document.getElementById('efSearch').value||'').toLowerCase();
+  // 统计右侧（敌方）队伍
+  const map=new Map(); // teamKey -> {generals, tactics, count, wins, losses, draws, recordIds}
+  allRecords.forEach(r=>{
+    const key=getTeamKey(r.rightGenerals);
+    if(!key||key==='未知')return;
+    if(search&&!key.toLowerCase().includes(search))return;
+    if(!map.has(key))map.set(key,{generals:r.rightGenerals,tactics:r.rightTactics,count:0,wins:0,losses:0,draws:0,recordIds:[]});
+    const d=map.get(key);
+    d.count++;
+    d.recordIds.push(r.id);
+    // 从我方视角：我方=左侧，result是左侧视角
+    if(r.result==='胜')d.wins++;
+    else if(r.result==='败')d.losses++;
+    else d.draws++;
+    // 如果该record的generals比已存的更完整，更新一下
+    if((r.rightGenerals||[]).filter(g=>g).length>(d.generals||[]).filter(g=>g).length){
+      d.generals=r.rightGenerals;d.tactics=r.rightTactics;
+    }
+  });
+  const totalRecords=allRecords.length||1;
+  let list=[...map.values()].sort((a,b)=>b.count-a.count);
+  const filteredCount=list.reduce((s,d)=>s+d.count,0);
+  const totalLabel=search?`共 ${filteredCount} 场（筛选）/ ${allRecords.length} 场（全部）· ${list.length} 种队伍`:`共 ${allRecords.length} 场战报 · ${list.length} 种队伍`;
+  document.getElementById('efTotal').textContent=totalLabel;
+  if(list.length===0){
+    document.getElementById('efTableBody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
+    return;
+  }
+  const maxCount=list[0].count;
+  document.getElementById('efTableBody').innerHTML=list.map((d,i)=>{
+    const pct=(d.count/totalRecords*100).toFixed(1);
+    const barW=Math.round(d.count/maxCount*100);
+    const wr=d.count>0?(d.wins/d.count*100).toFixed(0):0;
+    const wrColor=wr>=60?'var(--green)':wr>=40?'var(--accent)':'var(--red)';
+    return `<tr>
+      <td style="text-align:center;font-weight:bold;color:${i<3?'var(--accent)':'var(--text2)'};">${i+1}</td>
+      <td style="white-space:nowrap;font-weight:bold;font-size:12px;">${getTeamDisplay(d.generals)}</td>
+      <td style="font-size:11px;line-height:1.6;">${getTacticsDisplay(d.generals,d.tactics)}</td>
+      <td style="text-align:center;font-weight:bold;font-size:14px;color:var(--blue);">${d.count}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;background:var(--border);border-radius:3px;height:6px;min-width:60px;">
+            <div style="width:${barW}%;background:var(--blue);height:6px;border-radius:3px;"></div>
+          </div>
+          <span style="font-size:11px;color:var(--text2);white-space:nowrap;">${pct}%</span>
+        </div>
+      </td>
+      <td style="text-align:center;font-size:11px;white-space:nowrap;">
+        <span style="color:var(--green);">${d.wins}胜</span> /
+        <span style="color:var(--red);">${d.losses}败</span> /
+        <span style="color:var(--text2);">${d.draws}平</span>
+      </td>
+      <td style="text-align:center;font-weight:bold;color:${wrColor};">${d.count>0?wr+'%':'-'}</td>
+    </tr>`;
+  }).join('');
+}
 function updateWinRateFilters(){const wrData=computeWinRateData();const leftTeams=[...new Set(wrData.map(d=>d.leftTeam))].sort();const rightTeams=[...new Set(wrData.map(d=>d.rightTeam))].sort();const sl=document.getElementById('wrFilterLeft'),sr=document.getElementById('wrFilterRight');const vL=sl.value,vR=sr.value;sl.innerHTML='<option value="">全部左侧</option>'+leftTeams.map(t=>`<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');sr.innerHTML='<option value="">全部右侧</option>'+rightTeams.map(t=>`<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');sl.value=vL;sr.value=vR;}
 function renderWinRateTable(){let data=computeWinRateData();cachedWinRateData=data;const search=(document.getElementById('wrSearch').value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);if(winRateSortField){data.sort((a,b)=>{let va,vb;switch(winRateSortField){case'leftTeam':va=a.leftTeam;vb=b.leftTeam;break;case'rightTeam':va=a.rightTeam;vb=b.rightTeam;break;case'count':va=a.total;vb=b.total;break;case'winRate':va=a.winRate;vb=b.winRate;break;case'lossRate':va=parseFloat(a.lossRateVal);vb=parseFloat(b.lossRateVal);break;case'leftLossPct':va=a.avgLLoss||0;vb=b.avgLLoss||0;break;case'rightLossPct':va=a.avgRLoss||0;vb=b.avgRLoss||0;break;default:return 0;}if(typeof va==='string')return winRateSortDir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return winRateSortDir==='asc'?va-vb:vb-va;});}else{data.sort((a,b)=>b.winRate-a.winRate);}const tbody=document.getElementById('winRateTableBody');if(data.length===0){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text3);">暂无对战数据</td></tr>';}else{tbody.innerHTML=data.map((d,di)=>{const wrCls=d.winRate>=60?'wr-high':d.winRate>=40?'wr-mid':'wr-low';const barCls=d.winRate>=60?'bar-green':d.winRate>=40?'bar-yellow':'bar-red';const barW=Math.min(d.winRate,100);function tacConfig(generals,tactics){if(!generals||generals.length===0)return'-';return generals.map((g,i)=>{const base=i*3;const tacs=[tactics?.[base+1]||'',tactics?.[base+2]||''].filter(t=>t&&t!=='未知');return `<span style="color:var(--blue);font-weight:bold;">${escHtml(g)}</span>${tacs.length?'<span style="color:var(--text2);font-size:10px;">('+tacs.map(t=>escHtml(t)).join(',')+')</span>':''}`;}).join(' ');};const lossRatio=d.lossRateVal;const lossColor=parseFloat(lossRatio)<=50?'var(--green)':parseFloat(lossRatio)>=100?'var(--red)':'var(--accent)';return `<tr>
       <td style="font-weight:bold;font-size:12px;white-space:nowrap;">${escHtml(d.leftTeam)}</td>
@@ -439,7 +526,109 @@ document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('#wi
 // ========== TRACE MODAL ==========
 function showTraceByRecords(recordIds,leftTeam,rightTeam){const matches=recordIds.map(id=>allRecords.find(r=>r.id===id)).filter(Boolean);if(matches.length===0){alert('未找到对应战报记录');return;}const wins=matches.filter(r=>r.result==='胜').length;const losses=matches.filter(r=>r.result==='败').length;const total=matches.length;const winRate=total>0?wins/total*100:0;const leftLosses=matches.filter(r=>r.leftLoss!=null&&r.leftTotal!=null&&r.leftTotal>0).map(r=>r.leftLoss);const rightLosses=matches.filter(r=>r.rightLoss!=null&&r.rightTotal!=null&&r.rightTotal>0).map(r=>r.rightLoss);const avgLLoss=leftLosses.length>0?leftLosses.reduce((a,b)=>a+b,0)/leftLosses.length:0;const avgRLoss=rightLosses.length>0?rightLosses.reduce((a,b)=>a+b,0)/rightLosses.length:0;let lossRateVal=0;if(avgRLoss>0)lossRateVal=(avgLLoss/avgRLoss)*100;else if(avgLLoss>0)lossRateVal=999;let recordsHtml=matches.map((r,i)=>{const lGens=(r.leftGenerals||[]).filter(g=>g).join(', ');const rGens=(r.rightGenerals||[]).filter(g=>g).join(', ');const lTacs=(r.leftTactics||[]).filter(t=>t).join(', ');const rTacs=(r.rightTactics||[]).filter(t=>t).join(', ');return `<div class="trace-record"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:var(--text2);">#${i+1} ${r.time||''}</span><span class="result-badge result-${r.result==='胜'?'win':r.result==='败'?'lose':'draw'}">${r.result||'-'}</span></div><div class="trace-teams"><div class="trace-team"><div class="tt-player">${escHtml(r.leftPlayer||'未知')}</div><div class="tt-generals">${escHtml(lGens)}</div><div class="tt-tactics">${escHtml(lTacs)}</div></div><span style="font-size:14px;color:var(--text3);font-weight:bold;">VS</span><div class="trace-team"><div class="tt-player">${escHtml(r.rightPlayer||'未知')}</div><div class="tt-generals">${escHtml(rGens)}</div><div class="tt-tactics">${escHtml(rTacs)}</div></div></div><div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--text2);"><span>左战损: <b style="color:var(--text);">${fmtNum(r.leftLoss)}</b></span><span>右战损: <b style="color:var(--text);">${fmtNum(r.rightLoss)}</b></span>${r.imageBase64?`<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);">📷 原图</a>`:''}</div>${r.imageBase64?`<div style="margin-top:8px;"><img src="${r.imageBase64}" style="max-width:100%;max-height:200px;border-radius:6px;cursor:pointer;border:1px solid var(--border);" onclick="showRecordImage(${r.id})"></div>`:''}</div>`;}).join('');const overlay=document.createElement('div');overlay.className='trace-overlay';overlay.onclick=(e)=>{if(e.target===overlay)overlay.remove();};overlay.innerHTML=`<div class="trace-panel"><div class="trace-header"><h3>📋 溯源：${escHtml(leftTeam)} vs ${escHtml(rightTeam)}</h3><button class="trace-close" onclick="this.closest('.trace-overlay').remove()">✕ 关闭</button></div><div class="trace-stats"><div class="trace-stat"><div class="ts-val" style="color:var(--accent);">${total}</div><div class="ts-label">总场次</div></div><div class="trace-stat"><div class="ts-val" style="color:${winRate>=60?'var(--green)':winRate>=40?'var(--accent)':'var(--red)'};">${winRate.toFixed(0)}%</div><div class="ts-label">胜率</div></div><div class="trace-stat"><div class="ts-val">${lossRateVal.toFixed(0)}%</div><div class="ts-label">兵损率</div></div><div class="trace-stat"><div class="ts-val" style="color:var(--green);">${wins}</div><div class="ts-label">胜</div></div><div class="trace-stat"><div class="ts-val" style="color:var(--red);">${losses}</div><div class="ts-label">败</div></div></div><div class="trace-body">${recordsHtml}</div></div>`;document.body.appendChild(overlay);}
 function showTraceModal(dataIdx){const d=cachedWinRateData[dataIdx];if(!d||!d.matches||d.matches.length===0)return;const overlay=document.createElement('div');overlay.className='trace-overlay';overlay.onclick=(e)=>{if(e.target===overlay)overlay.remove();};let recordsHtml=d.matches.map((r,i)=>{const lGens=(r.leftGenerals||[]).filter(g=>g).join(', ');const rGens=(r.rightGenerals||[]).filter(g=>g).join(', ');const lTacs=(r.leftTactics||[]).filter(t=>t).join(', ');const rTacs=(r.rightTactics||[]).filter(t=>t).join(', ');return `<div class="trace-record"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:var(--text2);">#${i+1} ${r.time||''}</span><span class="result-badge result-${r.result==='胜'?'win':r.result==='败'?'lose':'draw'}">${r.result||'-'}</span></div><div class="trace-teams"><div class="trace-team"><div class="tt-player">${escHtml(r.leftPlayer||'未知')}</div><div class="tt-generals">${escHtml(lGens)}</div><div class="tt-tactics">${escHtml(lTacs)}</div></div><span style="font-size:14px;color:var(--text3);font-weight:bold;">VS</span><div class="trace-team"><div class="tt-player">${escHtml(r.rightPlayer||'未知')}</div><div class="tt-generals">${escHtml(rGens)}</div><div class="tt-tactics">${escHtml(rTacs)}</div></div></div><div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--text2);"><span>左战损: <b style="color:var(--text);">${fmtNum(r.leftLoss)}</b></span><span>右战损: <b style="color:var(--text);">${fmtNum(r.rightLoss)}</b></span>${r.imageBase64?`<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);">📷 原图</a>`:''}</div></div>`;}).join('');overlay.innerHTML=`<div class="trace-panel"><div class="trace-header"><h3>📋 溯源：${escHtml(d.leftTeam)} vs ${escHtml(d.rightTeam)}</h3><button class="trace-close" onclick="this.closest('.trace-overlay').remove()">✕ 关闭</button></div><div class="trace-stats"><div class="trace-stat"><div class="ts-val" style="color:var(--accent);">${d.total}</div><div class="ts-label">总场次</div></div><div class="trace-stat"><div class="ts-val" style="color:${d.winRate>=60?'var(--green)':d.winRate>=40?'var(--accent)':'var(--red)'};">${d.winRate.toFixed(0)}%</div><div class="ts-label">胜率</div></div><div class="trace-stat"><div class="ts-val">${d.lossRateVal}%</div><div class="ts-label">兵损率</div></div><div class="trace-stat"><div class="ts-val" style="color:var(--green);">${d.wins}</div><div class="ts-label">胜</div></div><div class="trace-stat"><div class="ts-val" style="color:var(--red);">${d.losses}</div><div class="ts-label">败</div></div></div><div class="trace-body">${recordsHtml}</div></div>`;document.body.appendChild(overlay);}
-function renderRestrictCards(data){const section=document.getElementById('restrictSection');const container=document.getElementById('restrictCards');const dominantPairs=[];const dominatedPairs=[];data.forEach(d=>{if(d.winRate>55){dominantPairs.push({...d,dominant:d.leftTeam,dominated:d.rightTeam,dominantGens:d.leftGenerals,dominatedGens:d.rightGenerals,dominantTacs:d.leftTactics,dominatedTacs:d.rightTactics,dominantFm:d.leftFormation,dominatedFm:d.rightFormation,dominantLoss:d.avgLLoss,dominatedLoss:d.avgRLoss});}else if(d.winRate<45){dominatedPairs.push({...d,dominant:d.rightTeam,dominated:d.leftTeam,dominantGens:d.rightGenerals,dominatedGens:d.leftGenerals,dominantTacs:d.rightTactics,dominatedTacs:d.leftTactics,dominantFm:d.rightFormation,dominatedFm:d.leftFormation,dominantLoss:d.avgRLoss,dominatedLoss:d.avgLLoss});}});dominantPairs.sort((a,b)=>b.winRate-a.winRate);dominatedPairs.sort((a,b)=>a.winRate-b.winRate);if(dominantPairs.length===0&&dominatedPairs.length===0){section.style.display='none';return;}section.style.display='block';const totalCount=dominantPairs.length+dominatedPairs.length;let html=`<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">共发现 ${totalCount} 组克制关系（${dominantPairs.length} 组克制 + ${dominatedPairs.length} 组被克制），胜率差>10%为显著克制</div>`;function genLines(generals,tactics){if(!generals||generals.length===0)return'<div style="color:var(--text3);font-size:11px;padding:2px 0;">-</div>';return generals.map((g,i)=>{const base=i*3;const fm=tactics?.[base]||'';const t1=tactics?.[base+1]||'';const t2=tactics?.[base+2]||'';const ts=[fm,t1,t2].filter(t=>t&&t!=='未知');return `<div style="display:flex;align-items:baseline;gap:4px;padding:2px 0;font-size:11px;line-height:1.6;"><span style="color:var(--cyan);font-weight:bold;white-space:nowrap;">${escHtml(g)}</span><span style="color:var(--text2);">${ts.length?ts.map(t=>escHtml(t)).join(' / '):'-'}</span></div>`;}).join('');}function renderCard(d,type){const isDominant=type==='dominant';const wrColor=isDominant?(d.winRate>=80?'var(--green)':d.winRate>=60?'var(--green)':'var(--accent)'):(d.winRate<=20?'var(--red)':d.winRate<=40?'var(--red)':'var(--accent)');const lrColor=parseFloat(d.lossRateVal)<=50?'var(--green)':parseFloat(d.lossRateVal)>=100?'var(--red)':'var(--accent)';const lrBg=parseFloat(d.lossRateVal)<=50?'rgba(81,207,102,.1)':parseFloat(d.lossRateVal)>=100?'rgba(255,107,107,.1)':'rgba(240,180,41,.1)';const dlpColor=(d.dominantLoss||0)>3000?'var(--red)':'var(--green)';const dtdlpColor=(d.dominatedLoss||0)>3000?'var(--red)':'var(--green)';const tagText=isDominant?'克制':'被克制';const tagBg=isDominant?'rgba(81,207,102,.15)':'rgba(255,107,107,.15)';const tagColor=isDominant?'var(--green)':'var(--red)';const cardCls=isDominant?'rc-strong':'rc-weak';const leftLabel='⚔ 克制方';const rightLabel='🛡 被克方';const leftBg='rgba(81,207,102,.05)';const leftBorder='rgba(81,207,102,.3)';const leftLabelColor='var(--green)';const rightBg='rgba(255,107,107,.05)';const rightBorder='rgba(255,107,107,.3)';const rightLabelColor='var(--red)';return `<div class="restrict-card ${cardCls}" style="padding:14px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="color:var(--text);font-weight:bold;font-size:13px;">${escHtml(d.dominant)}</span><span style="background:${tagBg};color:${tagColor};font-size:10px;padding:1px 6px;border-radius:3px;font-weight:bold;">${tagText}</span><span style="color:var(--text);font-weight:bold;font-size:13px;">${escHtml(d.dominated)}</span></div><div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;"><span style="font-weight:900;font-size:15px;color:${wrColor};">${d.winRate.toFixed(0)}%</span><span style="font-weight:700;font-size:11px;color:${lrColor};background:${lrBg};padding:1px 6px;border-radius:4px;">战损比 ${d.lossRateVal}%</span><span style="color:var(--text3);font-size:10px;">${d.total}场</span></div><div style="display:flex;gap:6px;"><div style="flex:1;padding:4px 6px;background:${leftBg};border-radius:4px;border-left:2px solid ${leftBorder};"><div style="font-size:10px;color:${leftLabelColor};font-weight:bold;margin-bottom:2px;">${leftLabel}</div>${genLines(d.dominantGens,d.dominantTacs)}<div style="font-size:10px;color:${dlpColor};margin-top:2px;">均战损 ${fmtNum(Math.round(d.dominantLoss||0))}兵</div></div><div style="flex:1;padding:4px 6px;background:${rightBg};border-radius:4px;border-left:2px solid ${rightBorder};"><div style="font-size:10px;color:${rightLabelColor};font-weight:bold;margin-bottom:2px;">${rightLabel}</div>${genLines(d.dominatedGens,d.dominatedTacs)}<div style="font-size:10px;color:${dtdlpColor};margin-top:2px;">均战损 ${fmtNum(Math.round(d.dominatedLoss||0))}兵</div></div></div><div style="margin-top:8px;text-align:right;"><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${escHtml(d.dominant)}','${escHtml(d.dominated)}')" style="color:var(--accent);text-decoration:none;font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">📋 溯源战报(${d.total})</a></div></div>`;}html+=`<div class="restrict-group-title" style="color:var(--green);">🔺 克制关系（我方优势对局）</div>`;if(dominantPairs.length===0){html+=`<div style="grid-column:1/-1;padding:12px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg);border-radius:8px;border:1px dashed var(--border);">暂无显著克制关系（无胜率>55%的对局）</div>`;}else{dominantPairs.forEach(d=>{html+=renderCard(d,'dominant');});}html+=`<div class="restrict-group-title" style="color:var(--red);">🔻 被克制关系（我方劣势对局）</div>`;if(dominatedPairs.length===0){html+=`<div style="grid-column:1/-1;padding:12px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg);border-radius:8px;border:1px dashed var(--border);">暂无显著被克制关系（无胜率<45%的对局）</div>`;}else{dominatedPairs.forEach(d=>{html+=renderCard(d,'dominated');});}container.innerHTML=html;}
+function renderRestrictCards(data){const section=document.getElementById('restrictSection');const container=document.getElementById('restrictCards');const dominantPairs=[];const dominatedPairs=[];data.forEach(d=>{if(d.winRate>55){dominantPairs.push({...d,dominant:d.leftTeam,dominated:d.rightTeam,dominantGens:d.leftGenerals,dominatedGens:d.rightGenerals,dominantTacs:d.leftTactics,dominatedTacs:d.rightTactics,dominantFm:d.leftFormation,dominatedFm:d.rightFormation,dominantLoss:d.avgLLoss,dominatedLoss:d.avgRLoss});}else if(d.winRate<45){dominatedPairs.push({...d,dominant:d.rightTeam,dominated:d.leftTeam,dominantGens:d.rightGenerals,dominatedGens:d.leftGenerals,dominantTacs:d.rightTactics,dominatedTacs:d.leftTactics,dominantFm:d.rightFormation,dominatedFm:d.leftFormation,dominantLoss:d.avgRLoss,dominatedLoss:d.avgLLoss});}});dominantPairs.sort((a,b)=>b.winRate-a.winRate);dominatedPairs.sort((a,b)=>a.winRate-b.winRate);if(dominantPairs.length===0&&dominatedPairs.length===0){section.style.display='none';return;}section.style.display='block';const totalCount=dominantPairs.length+dominatedPairs.length;let html=`<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">共发现 ${totalCount} 组克制关系（${dominantPairs.length} 组克制 + ${dominatedPairs.length} 组被克制），胜率差>10%为显著克制</div>`;function genLines(generals,tactics){if(!generals||generals.length===0)return'<div style="color:var(--text3);font-size:11px;padding:2px 0;">-</div>';return generals.map((g,i)=>{const base=i*3;const fm=tactics?.[base]||'';const t1=tactics?.[base+1]||'';const t2=tactics?.[base+2]||'';const ts=[fm,t1,t2].filter(t=>t&&t!=='未知');return `<div style="display:flex;align-items:baseline;gap:4px;padding:2px 0;font-size:11px;line-height:1.6;"><span style="color:var(--cyan);font-weight:bold;white-space:nowrap;">${escHtml(g)}</span><span style="color:var(--text2);">${ts.length?ts.map(t=>escHtml(t)).join(' / '):'-'}</span></div>`;}).join('');}function renderCard(d,type){const isDominant=type==='dominant';const wrColor=isDominant?(d.winRate>=80?'var(--green)':d.winRate>=60?'var(--green)':'var(--accent)'):(d.winRate<=20?'var(--red)':d.winRate<=40?'var(--red)':'var(--accent)');const lrColor=parseFloat(d.lossRateVal)<=50?'var(--green)':parseFloat(d.lossRateVal)>=100?'var(--red)':'var(--accent)';const lrBg=parseFloat(d.lossRateVal)<=50?'rgba(81,207,102,.1)':parseFloat(d.lossRateVal)>=100?'rgba(255,107,107,.1)':'rgba(240,180,41,.1)';const dlpColor=(d.dominantLoss||0)>3000?'var(--red)':'var(--green)';const dtdlpColor=(d.dominatedLoss||0)>3000?'var(--red)':'var(--green)';const tagText=isDominant?'克制':'被克制';const tagBg=isDominant?'rgba(81,207,102,.15)':'rgba(255,107,107,.15)';const tagColor=isDominant?'var(--green)':'var(--red)';const cardCls=isDominant?'rc-strong':'rc-weak';const leftLabel='⚔ 克制方';const rightLabel='🛡 被克方';const leftBg='rgba(81,207,102,.05)';const leftBorder='rgba(81,207,102,.3)';const leftLabelColor='var(--green)';const rightBg='rgba(255,107,107,.05)';const rightBorder='rgba(255,107,107,.3)';const rightLabelColor='var(--red)';return `<div class="restrict-card ${cardCls}" style="padding:14px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="color:var(--text);font-weight:bold;font-size:13px;">${escHtml(d.dominant)}</span><span style="background:${tagBg};color:${tagColor};font-size:10px;padding:1px 6px;border-radius:3px;font-weight:bold;">${tagText}</span><span style="color:var(--text);font-weight:bold;font-size:13px;">${escHtml(d.dominated)}</span></div><div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;"><span style="font-weight:900;font-size:15px;color:${wrColor};">${d.winRate.toFixed(0)}%</span><span style="font-weight:700;font-size:11px;color:${lrColor};background:${lrBg};padding:1px 6px;border-radius:4px;">战损比 ${d.lossRateVal}%</span><span style="color:var(--text3);font-size:10px;">${d.total}场</span></div><div style="display:flex;gap:6px;"><div style="flex:1;padding:4px 6px;background:${leftBg};border-radius:4px;border-left:2px solid ${leftBorder};"><div style="font-size:10px;color:${leftLabelColor};font-weight:bold;margin-bottom:2px;">${leftLabel}</div>${genLines(d.dominantGens,d.dominantTacs)}<div style="font-size:10px;color:${dlpColor};margin-top:2px;">均战损 ${fmtNum(Math.round(d.dominantLoss||0))}兵</div></div><div style="flex:1;padding:4px 6px;background:${rightBg};border-radius:4px;border-left:2px solid ${rightBorder};"><div style="font-size:10px;color:${rightLabelColor};font-weight:bold;margin-bottom:2px;">${rightLabel}</div>${genLines(d.dominatedGens,d.dominatedTacs)}<div style="font-size:10px;color:${dtdlpColor};margin-top:2px;">均战损 ${fmtNum(Math.round(d.dominatedLoss||0))}兵</div></div></div><div style="margin-top:8px;text-align:right;"><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${escHtml(d.dominant)}','${escHtml(d.dominated)}')" style="color:var(--accent);text-decoration:none;font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;">📋 溯源战报(${d.total})</a></div></div>`;}html+=`<div class="restrict-group-title" style="color:var(--green);">🔺 克制关系（我方优势对局）</div>`;if(dominantPairs.length===0){html+=`<div style="grid-column:1/-1;padding:12px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg);border-radius:8px;border:1px dashed var(--border);">暂无显著克制关系（无胜率>55%的对局）</div>`;}else{dominantPairs.forEach(d=>{html+=renderCard(d,'dominant');});}html+=`<div class="restrict-group-title" style="color:var(--red);">🔻 被克制关系（我方劣势对局）</div>`;if(dominatedPairs.length===0){html+=`<div style="grid-column:1/-1;padding:12px;text-align:center;color:var(--text3);font-size:12px;background:var(--bg);border-radius:8px;border:1px dashed var(--border);">暂无显著被克制关系（无胜率<45%的对局）</div>`;}else{dominatedPairs.forEach(d=>{html+=renderCard(d,'dominated');});}container.innerHTML=html;renderCounterPick(dominantPairs,dominatedPairs);}
+// ========== COUNTER PICK ==========
+function renderCounterPick(dominantPairs,dominatedPairs){
+  const section=document.getElementById('counterSection');
+  const container=document.getElementById('counterCards');
+  if(allRecords.length===0){section.style.display='none';return;}
+  // 统计敌方高频队伍
+  const enemyMap=new Map();
+  allRecords.forEach(r=>{
+    const key=getTeamKey(r.rightGenerals);
+    if(!key||key==='未知')return;
+    if(!enemyMap.has(key))enemyMap.set(key,{generals:r.rightGenerals,tactics:r.rightTactics,count:0,recordIds:[]});
+    const d=enemyMap.get(key);
+    d.count++;
+    d.recordIds.push(r.id);
+    if((r.rightGenerals||[]).filter(g=>g).length>(d.generals||[]).filter(g=>g).length){
+      d.generals=r.rightGenerals;d.tactics=r.rightTactics;
+    }
+  });
+  const enemyList=[...enemyMap.values()].sort((a,b)=>b.count-a.count);
+  if(enemyList.length===0){section.style.display='none';return;}
+  // 构建克制映射：敌方队伍 -> 我方克制队伍列表
+  // dominantPairs: 我方克制敌方 (dominant=我方, dominated=敌方)
+  // dominatedPairs: 敌方克制我方 (dominant=敌方, dominated=我方) → 反过来就是敌方被谁克制
+  const counterMap=new Map(); // enemyTeamKey -> [{team, generals, tactics, winRate, total, lossRate, recordIds, type}]
+  dominantPairs.forEach(d=>{
+    const ek=getTeamKey(d.dominatedGens);
+    if(!counterMap.has(ek))counterMap.set(ek,[]);
+    counterMap.get(ek).push({team:d.dominant,generals:d.dominantGens,tactics:d.dominantTacs,winRate:d.winRate,total:d.total,lossRate:d.lossRateVal,recordIds:d.recordIds,type:'counter'});
+  });
+  // 被克制关系中，dominant=敌方, dominated=我方 → 我方被谁克制，这些我方队伍不适合打该敌人
+  // 但我们可以从中提取：哪些我方队伍打不过该敌人
+  const weakMap=new Map(); // enemyTeamKey -> [{team, generals, tactics, winRate, total, lossRate, recordIds}]
+  dominatedPairs.forEach(d=>{
+    const ek=getTeamKey(d.dominantGens);
+    if(!weakMap.has(ek))weakMap.set(ek,[]);
+    weakMap.get(ek).push({team:d.dominated,generals:d.dominatedGens,tactics:d.dominatedTacs,winRate:d.winRate,total:d.total,lossRate:d.lossRateVal,recordIds:d.recordIds,type:'weak'});
+  });
+  section.style.display='block';
+  function genLines(generals,tactics){
+    if(!generals||generals.length===0)return'<div style="color:var(--text3);font-size:11px;">-</div>';
+    return generals.map((g,i)=>{
+      const base=i*3;
+      const fm=tactics?.[base]||'';
+      const t1=tactics?.[base+1]||'';
+      const t2=tactics?.[base+2]||'';
+      const ts=[fm,t1,t2].filter(t=>t&&t!=='未知');
+      return `<div style="display:flex;align-items:baseline;gap:4px;padding:1px 0;font-size:11px;line-height:1.5;"><span style="color:var(--cyan);font-weight:bold;white-space:nowrap;">${escHtml(g)}</span><span style="color:var(--text2);">${ts.length?ts.map(t=>escHtml(t)).join(' / '):'-'}</span></div>`;
+    }).join('');
+  }
+  let html='';
+  enemyList.forEach((enemy,idx)=>{
+    const ek=getTeamKey(enemy.generals);
+    const counters=(counterMap.get(ek)||[]).sort((a,b)=>b.winRate-a.winRate);
+    const weaks=(weakMap.get(ek)||[]).sort((a,b)=>a.winRate-b.winRate);
+    const hasCounter=counters.length>0;
+    const hasWeak=weaks.length>0;
+    html+=`<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">`;
+    // 左侧：敌方队伍信息
+    html+=`<div style="display:flex;gap:0;">`;
+    html+=`<div style="min-width:200px;max-width:220px;padding:12px;background:rgba(255,107,107,.04);border-right:1px solid var(--border);">`;
+    html+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-weight:bold;font-size:13px;color:var(--red);">👹 ${escHtml(ek)}</span></div>`;
+    html+=`<div style="margin-bottom:4px;">${genLines(enemy.generals,enemy.tactics)}</div>`;
+    html+=`<div style="font-size:11px;color:var(--text2);">出现 <b style="color:var(--blue);">${enemy.count}</b> 场</div>`;
+    html+=`</div>`;
+    // 右侧：克制推荐
+    html+=`<div style="flex:1;padding:12px;min-width:0;">`;
+    if(!hasCounter&&!hasWeak){
+      html+=`<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px;">📭 暂无针对性队伍推荐（数据不足）</div>`;
+    }else{
+      if(hasCounter){
+        html+=`<div style="font-size:11px;font-weight:bold;color:var(--green);margin-bottom:6px;">✅ 推荐使用（克制敌方）</div>`;
+        counters.forEach(c=>{
+          const wrColor=c.winRate>=80?'var(--green)':c.winRate>=60?'var(--green)':'var(--accent)';
+          html+=`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 8px;margin-bottom:4px;background:rgba(81,207,102,.05);border-radius:6px;border-left:2px solid var(--green);">`;
+          html+=`<div style="flex:1;min-width:0;">`;
+          html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span style="font-weight:bold;font-size:12px;color:var(--blue);">${escHtml(c.team)}</span><span style="font-size:11px;font-weight:bold;color:${wrColor};">胜率 ${c.winRate.toFixed(0)}%</span><span style="font-size:10px;color:var(--text3);">${c.total}场</span><span style="font-size:10px;color:var(--text2);background:rgba(81,207,102,.1);padding:0 4px;border-radius:3px;">战损比 ${c.lossRate}%</span></div>`;
+          html+=`<div style="margin-top:2px;">${genLines(c.generals,c.tactics)}</div>`;
+          html+=`</div>`;
+          html+=`<div style="flex-shrink:0;"><a href="javascript:void(0)" onclick="showTraceByRecords([${c.recordIds.join(',')}],'${escHtml(c.team)}','${escHtml(ek)}')" style="color:var(--accent);text-decoration:none;font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:3px;white-space:nowrap;">📋溯源</a></div>`;
+          html+=`</div>`;
+        });
+      }
+      if(hasWeak){
+        html+=`<div style="font-size:11px;font-weight:bold;color:var(--red);margin-top:8px;margin-bottom:6px;">⚠️ 不建议使用（被敌方克制）</div>`;
+        weaks.forEach(c=>{
+          const wrColor=c.winRate<=20?'var(--red)':c.winRate<=35?'var(--red)':'var(--accent)';
+          html+=`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 8px;margin-bottom:4px;background:rgba(255,107,107,.04);border-radius:6px;border-left:2px solid var(--red);">`;
+          html+=`<div style="flex:1;min-width:0;">`;
+          html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span style="font-weight:bold;font-size:12px;color:var(--text);">${escHtml(c.team)}</span><span style="font-size:11px;font-weight:bold;color:${wrColor};">胜率 ${c.winRate.toFixed(0)}%</span><span style="font-size:10px;color:var(--text3);">${c.total}场</span><span style="font-size:10px;color:var(--text2);background:rgba(255,107,107,.1);padding:0 4px;border-radius:3px;">战损比 ${c.lossRate}%</span></div>`;
+          html+=`<div style="margin-top:2px;">${genLines(c.generals,c.tactics)}</div>`;
+          html+=`</div>`;
+          html+=`<div style="flex-shrink:0;"><a href="javascript:void(0)" onclick="showTraceByRecords([${c.recordIds.join(',')}],'${escHtml(ek)}','${escHtml(c.team)}')" style="color:var(--accent);text-decoration:none;font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:3px;white-space:nowrap;">📋溯源</a></div>`;
+          html+=`</div>`;
+        });
+      }
+    }
+    html+=`</div>`; // 右侧结束
+    html+=`</div>`; // flex结束
+    html+=`</div>`; // card结束
+  });
+  container.innerHTML=html;
+}
 function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch').value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
 
 // ========== DOUBAO API ==========
