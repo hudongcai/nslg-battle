@@ -412,6 +412,9 @@ async function showProjectHome(){
 async function showSystemConfig(){
   // 先确保子导航按钮按权限刷新
   if(typeof updateNavByRole==='function') await updateNavByRole();
+  // 云端服务按钮：仅超管可见
+  const cloudBtn = document.getElementById('subCloudService');
+  if(cloudBtn) cloudBtn.style.display = (currentUser?.role==='super_admin') ? 'inline-block' : 'none';
   // 确保顶级导航高亮「系统配置」
   document.querySelectorAll('#topNav button').forEach(b=>b.classList.remove('active'));
   const sysBtn = document.getElementById('navSystemBtn');

@@ -367,6 +367,7 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
   <button id="subUserManage" onclick="switchTab('user',this)">👥 用户管理</button>
   <button id="subDataPerm" onclick="switchTab('dataperm',this)">🔐 数据权限</button>
   <button id="subDataManage" onclick="switchTab('datamgmt',this)">📦 数据管理</button>
+  <button id="subCloudService" onclick="switchTab('cloudservice',this)" style="display:none;">☁️ 云端服务</button>
   <button id="subSysLog" onclick="switchTab('syslog',this)">📋 系统日志</button>
 </div>
 
@@ -929,6 +930,46 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 </div><!-- 关闭 card -->
 </div><!-- 关闭 padding -->
 </div><!-- 关闭 tab-datamgmt -->
+
+<!-- Tab: 云端服务（仅超管可见） -->
+<div id="tab-cloudservice" class="tab-content" style="display:none;">
+  <div style="padding:0 40px;">
+    <div style="background:linear-gradient(135deg,var(--card),rgba(26,32,56,.8));border-radius:var(--radius);border:1px solid var(--border);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
+      <h3 style="margin:0 0 16px 0;color:var(--accent);font-size:15px;display:flex;align-items:center;gap:12px;">☁️ 云端服务</h3>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:16px;">查看当前浏览器 IndexedDB 数据库占用空间，以及云端服务状态。</p>
+
+      <!-- IndexedDB 存储占用 -->
+      <div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:bold;">📊 本地数据库占用空间</div>
+        <div id="dbUsageBar" style="height:20px;background:var(--bg3);border-radius:10px;overflow:hidden;margin-bottom:8px;">
+          <div id="dbUsageFill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--cyan));border-radius:10px;transition:width .6s ease;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);">
+          <span>已用：<span id="dbUsageUsed" style="color:var(--accent);font-weight:bold;">计算中...</span></span>
+          <span>可用：<span id="dbUsageQuota" style="color:var(--cyan);font-weight:bold;">计算中...</span></span>
+          <span>使用率：<span id="dbUsagePct" style="color:var(--text);font-weight:bold;">-</span></span>
+        </div>
+        <button class="btn btn-sm" style="margin-top:12px;" onclick="refreshDBUsage()">🔄 刷新统计</button>
+      </div>
+
+      <!-- 各数据库详情 -->
+      <div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:bold;">🗃️ 数据库详情</div>
+        <div id="dbDetails" style="font-size:12px;color:var(--text2);line-height:2;">加载中...</div>
+      </div>
+
+      <!-- 云端服务状态 -->
+      <div style="background:var(--bg);border-radius:8px;padding:16px;">
+        <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:bold;">☁️ 云端服务状态</div>
+        <div style="font-size:12px;color:var(--text2);line-height:2;">
+          <div>🔹 <span style="color:var(--text);">OCR 识别服务</span>：<span style="color:var(--green);">正常</span>（火山方舟 API · Cloudflare Worker 代理）</div>
+          <div>🔹 <span style="color:var(--text);">静态托管</span>：<span style="color:var(--green);">正常</span>（GitHub Pages · zhenwu.fun）</div>
+          <div>🔹 <span style="color:var(--text);">数据备份</span>：<span style="color:var(--cyan);">本地存储</span>（IndexedDB，请定期导出备份）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- 关闭 tab-cloudservice -->
 
 <!-- Tab: 角色管理 -->
 <div id="tab-rolemanage" class="tab-content">

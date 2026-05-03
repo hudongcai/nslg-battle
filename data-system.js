@@ -282,7 +282,7 @@ async function switchTab(tabId, btn) {
   const bar = document.getElementById('projectBar');
   const tp = document.getElementById('tab-project');
   const ssn = document.getElementById('systemSubNav');
-  const SYS_TABS = ['user','syslog','datamgmt','rolemanage','dataperm'];
+  const SYS_TABS = ['user','syslog','datamgmt','rolemanage','dataperm','cloudservice'];
   if (PROJECT_TABS.includes(tabId)) {
     // 进入项目内 tab：显示项目子导航，隐藏系统子导航
     if (sn) sn.style.display = 'flex';
@@ -332,12 +332,85 @@ async function switchTab(tabId, btn) {
       document.head.appendChild(s);
     }
   }
+  if (tabId === 'cloudservice') { if(typeof refreshDBUsage==='function') refreshDBUsage(); }
   if (tabId === 'system') {
     // 系统配置：调用 showSystemConfig 切换第一个可见子菜单
     if(typeof showSystemConfig==='function') showSystemConfig();
   }
 
   console.log('[switchTab] 切换完成:', tabId);
+}
+
+// ========== 云端服务：刷新数据库占用统计 ==========
+async function refreshDBUsage() {
+  // 1. 总 IndexedDB 占用（estimate）
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      const used = estimate.usage || 0;
+      const quota = estimate.quota || 0;
+      const pct = quota > 0 ? (used / quota * 100) : 0;
+      document.getElementById('dbUsageUsed').textContent = (used / 1024 / 1024).toFixed(2) + ' MB';
+      document.getElementById('dbUsageQuota').textContent = (quota / 1024 / 1024).toFixed(2) + ' MB';
+      document.getElementById('dbUsagePct').textContent = pct.toFixed(1) + '%';
+      document.getElementById('dbUsageFill').style.width = Math.min(pct, 100) + '%';
+      // 颜色：>80% 红，>50% 黄，否则蓝
+      if (pct > 80) {
+        document.getElementById('dbUsageFill').style.background = 'linear-gradient(90deg, #ff5252, #ff8a80)';
+      } else if (pct > 50) {
+        document.getElementById('dbUsageFill').style.background = 'linear-gradient(90deg, #ffab40, #ffd740)';
+      } else {
+        document.getElementById('dbUsageFill').style.background = 'linear-gradient(90deg, var(--accent), var(--cyan))';
+      }
+    } catch(e) {
+      console.error('[refreshDBUsage] estimate 失败:', e);
+    }
+  } else {
+    document.getElementById('dbUsageUsed').textContent = '浏览器不支持';
+  }
+
+  // 2. 各数据库记录数（数据库名需与实际一致）
+  const dbInfo = [
+    { name: 'SanmoBattleDB', store: 'records' },
+    { name: 'SanMoUserDB', store: 'users' },
+    { name: 'nslg_syslog', store: 'logs' },
+    { name: 'nslg_roles', store: 'roles' }
+  ];
+  let detailsHTML = '';
+  for (const db of dbInfo) {
+    try {
+      const count = await new Promise((resolve) => {
+        const req = indexedDB.open(db.name);
+        req.onsuccess = function() {
+          const database = req.result;
+          if (!database.objectStoreNames || !database.objectStoreNames.contains(db.store)) {
+            database.close();
+            resolve(0);
+            return;
+          }
+          try {
+            const tx = database.transaction(db.store, 'readonly');
+            const store = tx.objectStore(db.store);
+            const countReq = store.count();
+            countReq.onsuccess = function() {
+              database.close();
+              resolve(countReq.result);
+            };
+            countReq.onerror = function() { try{database.close();}catch(e){} resolve(0); };
+          } catch(ex) {
+            try{database.close();}catch(e){}
+            resolve(0);
+          }
+        };
+        req.onerror = function() { resolve(0); };
+      });
+      detailsHTML += `<div>🗃️ <b>${db.name}</b>.<span style="color:var(--text3);">${db.store}</span>：<span style="color:var(--accent);">${count}</span> 条记录</div>`;
+    } catch(e) {
+      detailsHTML += `<div>🗃️ <b>${db.name}</b>：读取失败</div>`;
+    }
+  }
+  const el = document.getElementById('dbDetails');
+  if (el) el.innerHTML = detailsHTML || '暂无数据';
 }
 
 function switchLibSub(sub) {
