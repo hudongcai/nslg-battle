@@ -428,6 +428,9 @@ async function updateNavByRole(){
     const btn = document.getElementById(btnId);
     if(btn) btn.style.display = perms[permKey] ? 'inline-block' : 'none';
   }
+  // 云端服务按钮：仅超管可见（不受权限系统控制）
+  const cloudBtn = document.getElementById('subCloudService');
+  if(cloudBtn) cloudBtn.style.display = (currentUser?.role==='super_admin') ? 'inline-block' : 'none';
   // 如果系统配置不可见，隐藏 subNav
   if(!perms['systemConfig']){
     document.getElementById('systemSubNav').style.display='none';
