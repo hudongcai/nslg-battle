@@ -23,10 +23,10 @@ const SUPER_ADMIN_PWD   = 'hu6956521';
 // ========== 全局状态 ==========
 let currentUser = null;   // 当前登录用户 {phone, name, role}
 
-// ========== DB：users / projects / roles / projAccess 存储 ==========
+// ========== DB：users / projects / roles / projAccess / proj_members 存储 ==========
 function openUserDB(){
   return new Promise((resolve,reject)=>{
-    const req = indexedDB.open('SanMoUserDB',4); // v4: 新增 points 积分字段
+    const req = indexedDB.open('SanMoUserDB',5); // v5 (V1.0): 新增 proj_members Store
     req.onupgradeneeded = e=>{
       const db = e.target.result;
       const oldV = e.oldVersion;
@@ -52,7 +52,7 @@ function openUserDB(){
         }
       }
       if(oldV < 4){
-        // v4: 为所有已有用户补充 points 字段（默认 0）
+        // v4: 为所有已有用户补充 points 字段（默认 18）
         if(db.objectStoreNames.contains('users')){
           const tx = e.target.transaction;
           const store = tx.objectStore('users');
@@ -61,7 +61,7 @@ function openUserDB(){
             const users = getReq.result||[];
             users.forEach(u=>{
               if(typeof u.points !== 'number' || u.points < 18){
-                  u.points = 18; // 新用户注册送18积分
+                u.points = 18;
                 store.put(u);
               }
             });
@@ -69,9 +69,60 @@ function openUserDB(){
           };
         }
       }
+      if(oldV < 5){
+        // v5 (V1.0): 新增 proj_members Store
+        if(!db.objectStoreNames.contains('proj_members')){
+          const pms = db.createObjectStore('proj_members',{keyPath:'id',autoIncrement:true});
+          pms.createIndex('phone','phone',{unique:false});
+          pms.createIndex('projectId','projectId',{unique:false});
+        }
+      }
     };
     req.onsuccess = ()=>resolve(req.result);
     req.onerror   = ()=>reject(req.error);
+  });
+}
+
+// ========== V1.0 新增：proj_members 表操作 ==========
+function projMemberDBAdd(rec){
+  return new Promise((resolve,reject)=>{
+    openUserDB().then(db=>{
+      const tx = db.transaction(['proj_members'],'readwrite');
+      const req = tx.objectStore('proj_members').add(rec);
+      req.onsuccess = ()=>resolve(req.result);
+      req.onerror   = ()=>reject(req.error);
+    }).catch(reject);
+  });
+}
+function projMemberDBPut(rec){
+  return new Promise((resolve,reject)=>{
+    openUserDB().then(db=>{
+      const tx = db.transaction(['proj_members'],'readwrite');
+      const req = tx.objectStore('proj_members').put(rec);
+      req.onsuccess = ()=>resolve();
+      req.onerror   = ()=>reject(req.error);
+    }).catch(reject);
+  });
+}
+function projMemberDBGetAll(){
+  return new Promise((resolve,reject)=>{
+    openUserDB().then(db=>{
+      if(!db.objectStoreNames.contains('proj_members')){resolve([]);return;}
+      const tx = db.transaction(['proj_members'],'readonly');
+      const req = tx.objectStore('proj_members').getAll();
+      req.onsuccess = ()=>resolve(req.result||[]);
+      req.onerror   = ()=>resolve([]);
+    }).catch(()=>resolve([]));
+  });
+}
+function projMemberDBDelete(id){
+  return new Promise((resolve,reject)=>{
+    openUserDB().then(db=>{
+      const tx = db.transaction(['proj_members'],'readwrite');
+      const req = tx.objectStore('proj_members').delete(id);
+      req.onsuccess = ()=>resolve();
+      req.onerror   = ()=>reject(req.error);
+    }).catch(reject);
   });
 }
 
@@ -513,12 +564,23 @@ async function doLoginPwd(){
   try{
     const user = await userDBGet(phone);
     if(!user){msgEl.textContent='该手机号未注册';return;}
-    if(user.password!==pwd){msgEl.textContent='密码错误';return;}
-    // 登录成功
+    if(user.password!pwd){msgEl.textContent='密码错误';return;}
+    // 登录成功（本地）
     currentUser = user;
     saveSession(user);
     saveRememberedUser(phone, pwd, user.name, user.role);
     addSysLog('login','密码登录成功');
+    // 同时尝试云端登录，获取 JWT token
+    try {
+      if (typeof cloudLogin === 'function') {
+        const cloudUser = await cloudLogin(phone, pwd);
+        if (cloudUser) {
+          console.log('[Login] 云端登录成功，JWT token 已保存');
+        }
+      }
+    } catch (cloudErr) {
+      console.warn('[Login] 云端登录失败，继续使用本地模式:', cloudErr.message);
+    }
     onLoginSuccess();
   }catch(e){msgEl.textContent='登录失败：'+e.message;}
 }
