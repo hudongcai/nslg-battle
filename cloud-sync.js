@@ -4,7 +4,7 @@
  */
 
 // 环境切换：true=本地测试(localhost:8787)，false=线上生产(zhenwu.fun)
-const CLOUD_LOCAL_DEV = true;
+const CLOUD_LOCAL_DEV = false;
 
 const CLOUD_API_BASE = CLOUD_LOCAL_DEV ? 'http://127.0.0.1:8787/api' : '/api';
 
