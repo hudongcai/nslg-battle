@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v2026050419
+ * 版本: v2026050505
  */
 
 // 环境切换：true=本地测试(localhost:8787)，false=线上生产(api.zhenwu.fun)
@@ -51,7 +51,12 @@ async function cloudRequest(path, options = {}) {
     const resp = await fetch(url, finalOptions);
     const data = await resp.json();
     if (!resp.ok) {
-      throw new Error(data.message || data.error || '请求失败');
+      // 401: Token 无效或过期，清除本地 token
+      if (resp.status === 401) {
+        console.warn('[Cloud Sync] Token 无效或过期，已清除本地 token');
+        setToken(null);  // 清除无效 token
+      }
+      throw new Error(data.message || data.error || `请求失败(${resp.status})`);
     }
     // 标准化：后端返回 { code:200, data }，前端期望 { success:true, data }
     if (data.code === 200 && !data.success) {
@@ -59,7 +64,7 @@ async function cloudRequest(path, options = {}) {
     }
     return data;
   } catch (e) {
-    console.error('[Cloud Sync] 请求失败:', path, e);
+    console.error('[Cloud Sync] 请求失败:', path, e.message || e);
     throw e;
   }
 }
@@ -221,6 +226,13 @@ async function cloudCreateUser(phone, name, password, role = 'member') {
 // 登录时同步云端数据到本地
 async function syncCloudToLocal() {
   if (!currentUser) return;
+
+  // 修复：无 token 时跳过云端同步，避免 401 错误
+  const token = getToken();
+  if (!token) {
+    console.log('[Sync] 无有效 token，跳过云端同步，仅使用本地数据');
+    return false;
+  }
 
   try {
     // 1. 同步项目列表

@@ -95,7 +95,8 @@ window.getVisibleProjects = async function () {
   
   // 优先从云端获取项目列表
   let all = [];
-  if (window.cloudSync) {
+  // 修复：先检查 token 是否存在，无 token 时不调用云端 API
+  if (window.cloudSync && window.cloudSync.getToken && window.cloudSync.getToken()) {
     try {
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] data-perm 获取云端项目:', cloudProjects.length, '个');
@@ -105,8 +106,10 @@ window.getVisibleProjects = async function () {
       }
       all = cloudProjects;
     } catch (e) {
-      console.error('[Cloud] 获取云端项目失败，使用本地数据:', e);
+      console.error('[Cloud] 获取云端项目失败，使用本地数据:', e.message || e);
     }
+  } else {
+    console.log('[Cloud] 无有效 token，跳过云端获取，使用本地数据');
   }
   
   // 如果云端没有数据，fallback 到本地 IndexedDB
