@@ -5,15 +5,28 @@
 // =============================================================
 
 const OCR_CONFIG = {
-  // 本地自动启用，线上关闭；也可手动改成 true/false 强制控制
-  enabled: location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:',
-  apiEndpoint: 'https://www.zhenwu.fun/api/ocr',   // 直接调用线上 Cloudflare Worker
+  // 本地自动启用，线上也启用（依赖云端 Worker 处理 OCR）
+  enabled: true,
   model: 'ep-m-20260426183050-krmx7',
   maxTokens: 2000,
   timeout: 60000,
   batchConcurrency: 2,
   batchInterval: 1500,
 };
+
+// 动态获取 OCR 请求地址
+function getOcrEndpoint() {
+  // 如果配置了 CLOUD_API_BASE 且不是本地环境，优先用云端地址
+  if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    // OCR Worker 部署在 www.zhenwu.fun，和页面同域时直接用相对路径
+    if (location.hostname === 'www.zhenwu.fun' || location.hostname === 'zhenwu.fun') {
+      return '/api/ocr';
+    }
+    return 'https://www.zhenwu.fun/api/ocr';
+  }
+  // 本地开发环境
+  return '/api/ocr';
+}
 
 // ========== 状态 ==========
 let ocrQueue = [];
@@ -91,11 +104,14 @@ async function callOCRAPI(base64Data) {
       max_tokens: OCR_CONFIG.maxTokens,
     };
 
-    const resp = await fetch(OCR_CONFIG.apiEndpoint, {
+    const apiEndpoint = getOcrEndpoint();
+    console.log('[OCR] 请求地址:', apiEndpoint);
+    const resp = await fetch(apiEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reqBody),
       signal: controller.signal,
+      credentials: 'omit',  // OCR 请求不需要 cookie，避免 CORS 问题
     });
 
     clearTimeout(timeout);
