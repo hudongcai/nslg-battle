@@ -1,8 +1,105 @@
 /**
  * Cloudflare Worker - 微信支付 + OCR代理
  * 部署后路由：zhenwu.fun/api/*
- * 版本: v2026050417
+ * 版本: v2026050418
  */
+
+// ========== D1 数据库初始化 ==========
+async function initD1Database(DB) {
+  try {
+    // 创建项目表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        desc TEXT,
+        visibility TEXT DEFAULT 'private',
+        creator TEXT NOT NULL,
+        members TEXT DEFAULT '[]',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `).run();
+
+    // 创建战报表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS records (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        user_phone TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `).run();
+
+    // 创建用户表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS users (
+        phone TEXT PRIMARY KEY,
+        password TEXT NOT NULL,
+        nickname TEXT,
+        role TEXT DEFAULT 'member',
+        status TEXT DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `).run();
+
+    // 创建项目权限表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS project_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id TEXT NOT NULL,
+        user_phone TEXT NOT NULL,
+        permission TEXT DEFAULT 'view',
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(project_id, user_phone)
+      )
+    `).run();
+
+    // 创建系统日志表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS syslogs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        level TEXT NOT NULL,
+        module TEXT NOT NULL,
+        action TEXT NOT NULL,
+        message TEXT NOT NULL,
+        user_phone TEXT,
+        ip TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `).run();
+
+    // 创建数据权限表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS data_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_phone TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        access_type TEXT DEFAULT 'all',
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_phone, project_id)
+      )
+    `).run();
+
+    // 创建角色表
+    await DB.prepare(`
+      CREATE TABLE IF NOT EXISTS roles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        permissions TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `).run();
+
+    console.log('[initD1Database] 数据库初始化完成');
+  } catch (e) {
+    console.error('[initD1Database] 初始化失败:', e);
+  }
+}
 
 // ========== 微信支付配置（从环境变量读取）==========
 // WX_APPID: 微信公众号/小程序 AppID
@@ -960,6 +1057,11 @@ export default {
     
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+    
+    // ========== D1 数据库初始化（确保表存在）==========
+    if (env.DB) {
+      await initD1Database(env.DB);
     }
     
     // 路由处理
