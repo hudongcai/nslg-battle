@@ -18,14 +18,29 @@ function getCurrentUserRole() {
   return currentUser ? currentUser.role : null;
 }
 
+// ========== 辅助函数：获取 JWT Token ==========
+function getToken() {
+  return localStorage.getItem('nslg_token') || '';
+}
+
+function setToken(token) {
+  if (token) {
+    localStorage.setItem('nslg_token', token);
+  } else {
+    localStorage.removeItem('nslg_token');
+  }
+}
+
 // ========== 辅助函数：通用 API 请求 ==========
 async function cloudRequest(path, options = {}) {
   const url = `${CLOUD_API_BASE}${path}`;
+  const token = getToken();
   const defaultOptions = {
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': 'Bearer ' + token } : {})
     },
-    credentials: 'include'  // 跨域携带 cookie（session 认证）
+    // 不使用 cookie 认证，后端使用 JWT
   };
   const finalOptions = { ...defaultOptions, ...options };
   if (finalOptions.body && typeof finalOptions.body !== 'string') {
@@ -36,7 +51,11 @@ async function cloudRequest(path, options = {}) {
     const resp = await fetch(url, finalOptions);
     const data = await resp.json();
     if (!resp.ok) {
-      throw new Error(data.error || '请求失败');
+      throw new Error(data.message || data.error || '请求失败');
+    }
+    // 标准化：后端返回 { code:200, data }，前端期望 { success:true, data }
+    if (data.code === 200 && !data.success) {
+      data.success = true;
     }
     return data;
   } catch (e) {
@@ -168,11 +187,16 @@ async function cloudDeleteRecord(recordId) {
 
 // 用户登录（云端验证）
 async function cloudLogin(phone, password) {
-  const data = await cloudRequest('/users/login', {
+  const data = await cloudRequest('/auth/login', {
     method: 'POST',
     body: { phone, password }
   });
-  return data.success ? data.data : null;
+  // 后端返回格式: { code: 200, data: { token, user } }
+  if (data && data.code === 200 && data.data && data.data.token) {
+    setToken(data.data.token);
+    return data.data.user;
+  }
+  return null;
 }
 
 // 创建用户（注册）
@@ -271,5 +295,8 @@ window.cloudSync = {
   createUser: cloudCreateUser,
   syncToLocal: syncCloudToLocal,
   // 通用 API 请求函数
-  request: cloudRequestAPI
+  request: cloudRequestAPI,
+  // Token 管理
+  setToken: setToken,
+  getToken: getToken
 };
