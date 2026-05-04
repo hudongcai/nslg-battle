@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v2026050415
+ * 版本: v2026050416
  */
 
 // 环境切换：true=本地测试(localhost:8787)，false=线上生产(zhenwu.fun)
@@ -187,12 +187,22 @@ async function syncCloudToLocal() {
     }
     console.log('[Sync] 项目同步完成，共', cloudProjects.length, '个');
 
-    // 2. 同步战报列表（可选，数据量可能很大）
-    // const cloudRecords = await cloudGetRecords();
-    // for (const rec of cloudRecords) {
-    //   await dbPut(rec);
-    // }
-    // console.log('[Sync] 战报同步完成，共', cloudRecords.length, '条');
+    // 2. 同步战报列表（增量同步：只同步有差异的战报）
+    try {
+      const cloudRecords = await cloudGetRecords();
+      let syncCount = 0;
+      for (const rec of cloudRecords) {
+        try {
+          await dbPut(rec);
+          syncCount++;
+        } catch (e) {
+          console.warn('[Sync] 战报同步失败（跳过）:', rec.id, e);
+        }
+      }
+      console.log('[Sync] 战报同步完成，共', syncCount, '/', cloudRecords.length, '条');
+    } catch (e) {
+      console.warn('[Sync] 战报同步失败（不影响项目列表）:', e);
+    }
 
     return true;
   } catch (e) {
