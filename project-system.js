@@ -1,6 +1,7 @@
 /* ==========================================================
    PROJECT SYSTEM - 项目管理、权限控制
    ========================================================== */
+console.log('[project-system.js] v2026050413 加载');
 
 // ========== 项目数据结构 ==========
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
@@ -9,6 +10,28 @@
 // ========== 获取当前用户可见项目 ==========
 async function getVisibleProjects(){
   if(!currentUser)return[];
+  
+  // 优先从云端获取
+  let cloudProjects = [];
+  if(window.cloudSync){
+    try{
+      cloudProjects = await window.cloudSync.getProjects();
+      console.log('[Cloud] 从云端获取项目:', cloudProjects.length, '个');
+      // 同步到本地 IndexedDB（作为缓存）
+      for(const proj of cloudProjects){
+        await projDBPut(proj);
+      }
+    }catch(e){
+      console.error('[Cloud] 获取云端项目失败，使用本地数据:', e);
+    }
+  }
+  
+  // 如果云端获取成功，返回云端数据；否则返回本地数据
+  if(cloudProjects.length > 0){
+    return cloudProjects;
+  }
+  
+  //  fallback：从本地获取
   const all = await projDBGetAll();
   if(currentUser.role==='super_admin') return all;
   return all.filter(p=>
@@ -140,22 +163,54 @@ async function saveProject(projectId){
   const visibility = document.getElementById('projVisibility').value;
   if(!name){alert('请输入项目名称');return;}
   try{
+    let proj;
     if(projectId){
-      const proj = await projDBGet(projectId);
+      // 编辑现有项目
+      proj = await projDBGet(projectId);
       if(!proj){alert('项目不存在');return;}
-      proj.name = name; proj.desc = desc; proj.visibility = visibility;
+      proj.name = name; proj.desc = desc; proj.visibility = visibility; proj.updatedAt = Date.now();
       await projDBPut(proj);
+
+      // 同步到云端
+      if(window.cloudSync){
+        try{
+          await window.cloudSync.updateProject(projectId, { name, desc, visibility });
+          console.log('[Cloud] 项目更新已同步到云端');
+        }catch(e){console.error('[Cloud] 同步失败:', e);}
+      }
     }else{
+      // 创建新项目
       const newProj = {
         id: 'proj_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
         name, desc, visibility,
         creator: currentUser.phone,
+        creator_phone: currentUser.phone,
         memberPhones: [],
         battleRecordIds: [],
+        members: [],
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
       await projDBPut(newProj);
+
+      // 同步到云端
+      if(window.cloudSync){
+        try{
+          console.log('[Cloud] 准备同步项目到云端:', newProj);
+          const result = await window.cloudSync.createProject(newProj);
+          console.log('[Cloud] 云端创建项目返回:', result);
+          if(result && result.id){
+            // 如果云端返回了不同的 ID，更新本地
+            if(result.id !== newProj.id){
+              await projDBDelete(newProj.id);
+              newProj.id = result.id;
+              await projDBPut(newProj);
+            }
+          }
+          console.log('[Cloud] 项目已同步到云端:', newProj.name);
+        }catch(e){console.error('[Cloud] 同步失败:', e);}
+      }
+
       // 自动给创建者授予编辑和删除权限
       if(typeof permDBPut === 'function'){
         await permDBPut({
@@ -278,6 +333,15 @@ async function deleteProject(projectId){
   }
   if(!confirm('确定删除该项目？项目内的战报不会删除，但关联将解除。'))return;
   try{
+    // 先从云端删除
+    if(window.cloudSync){
+      try{
+        await window.cloudSync.deleteProject(projectId);
+        console.log('[Cloud] 项目已从云端删除:', proj.name);
+      }catch(e){console.error('[Cloud] 云端删除失败:', e);}
+    }
+    
+    // 再从本地删除
     await projDBDelete(projectId);
     renderProjectManage();
     if(typeof addSysLog==='function') addSysLog('delete', '删除项目: '+proj.name);
