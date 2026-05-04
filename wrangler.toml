@@ -1,0 +1,18 @@
+name = "nslg-ocr-proxy"
+main = "worker-pay.js"
+compatibility_date = "2024-01-01"
+
+# KV namespace 绑定（存储订单和待加积分记录）
+[[kv_namespaces]]
+binding = "ORDERS"
+id = "660601a8fe264b90a1040e73d314693e"
+
+# D1 数据库绑定（云端存储项目/战报数据）
+[[d1_databases]]
+binding = "DB"
+database_name = "nslg-database"
+database_id = "61cc9a9f-aa7d-4d81-814a-1cc56ff2a2d6"
+
+# 路由：zhenwu.fun/api/* 路由到这个 Worker
+# 部署后在 Cloudflare Dashboard → Workers → Routes 添加：
+# Route: zhenwu.fun/api/* (并勾选 "Include subdomains")
