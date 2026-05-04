@@ -105,23 +105,7 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .queue-list{max-height:180px;overflow-y:auto;margin-top:8px;}
 .queue-item{display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(255,255,255,.02);border-radius:5px;margin-bottom:3px;font-size:11px;}
 .queue-item .qi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.qi-icon{width:20px;text-align:center;flex-shrink:0;}
 .qi-pending{color:var(--text2);}.qi-processing{color:var(--accent);}.qi-done{color:var(--green);}.qi-error{color:var(--red);}
-.qi-del{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:rgba(255,82,82,.12);color:var(--red);font-size:13px;cursor:pointer;transition:all .2s;flex-shrink:0;}
-.qi-del:hover{background:rgba(255,82,82,.25);transform:scale(1.15);}
-.points-insufficient-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);z-index:10002;display:flex;align-items:center;justify-content:center;animation:fadeIn .25s;}
-.points-insufficient-panel{background:linear-gradient(135deg,#151a2e,#1a2040);border:1px solid rgba(240,180,41,.3);border-radius:14px;padding:32px;max-width:420px;width:90vw;text-align:center;box-shadow:0 8px 48px rgba(0,0,0,.5),0 0 60px rgba(240,180,41,.06);animation:slideUp .3s ease-out;}
-.points-insufficient-panel .pi-icon{font-size:48px;margin-bottom:16px;}
-.points-insufficient-panel .pi-title{font-size:18px;font-weight:bold;color:var(--accent);margin-bottom:12px;}
-.points-insufficient-panel .pi-info{font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:24px;background:rgba(255,255,255,.03);border-radius:8px;padding:14px;}
-.points-insufficient-panel .pi-info .pi-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;}
-.points-insufficient-panel .pi-info .pi-label{color:var(--text2);}
-.points-insufficient-panel .pi-info .pi-value{color:var(--accent);font-weight:bold;font-size:14px;}
-.points-insufficient-panel .pi-info .pi-warn{color:var(--red);font-size:12px;margin-top:8px;}
-.points-insufficient-panel .pi-btns{display:flex;gap:12px;justify-content:center;}
-.points-insufficient-panel .pi-btns .btn{flex:1;max-width:140px;justify-content:center;padding:10px 16px;font-size:13px;}
-@keyframes slideUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
-.qi-del:hover{background:rgba(255,82,82,.25);transform:scale(1.15);}
 .image-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:10000;cursor:pointer;animation:fadeIn .2s;}
 .image-modal img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 48px rgba(0,0,0,.6);}
 @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
@@ -177,123 +161,23 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .lib-sub-tab.active{background:linear-gradient(135deg,var(--accent),#e09422);color:#0c0f1a;}
 .lib-sub-content{animation:fadeUp .25s ease;}
 #ocrStatus{display:none;}
-
-/* ========== 积分商城样式 ========== */
-.mall-header {
-  background: linear-gradient(135deg, rgba(240,180,41,.12), rgba(240,180,41,.04));
-  border: 1px solid rgba(240,180,41,.2);
-  border-radius: 10px;
-  padding: 16px 20px;
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.mall-balance {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.balance-label { font-size: 12px; color: var(--text2); }
-.balance-value { font-size: 28px; font-weight: bold; color: var(--accent); }
-.balance-unit { font-size: 14px; font-weight: normal; color: var(--text2); }
-.mall-desc { font-size: 12px; color: var(--text3); text-align: right; }
-
-.mall-section-title {
-  font-size: 14px;
-  font-weight: bold;
-  color: var(--text);
-  margin-bottom: 12px;
-  padding-left: 4px;
-}
-
-.mall-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.pkg-card {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 12px;
-  text-align: center;
-  cursor: pointer;
-  transition: all .2s;
-  position: relative;
-  overflow: hidden;
-}
-.pkg-card:hover {
-  border-color: var(--accent);
-  background: rgba(240,180,41,.06);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(240,180,41,.12);
-}
-.pkg-tag {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(240,180,41,.15);
-  color: var(--accent);
-  font-weight: bold;
-}
-.pkg-points {
-  font-size: 22px;
-  font-weight: bold;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-.pkg-points span { font-size: 12px; font-weight: normal; color: var(--text2); }
-.pkg-price {
-  font-size: 18px;
-  font-weight: bold;
-  color: #ff5252;
-  margin-bottom: 4px;
-}
-.pkg-label { font-size: 12px; color: var(--text2); margin-bottom: 2px; }
-.pkg-ratio { font-size: 10px; color: var(--text3); }
-.pkg-note { font-size: 10px; color: var(--accent); margin-top: 4px; }
-
-.pkg-tool { border-color: rgba(81,207,102,.3); }
-.pkg-tool .pkg-label { color: var(--green); font-size: 11px; }
-.pkg-tool .pkg-note { color: var(--accent); font-size: 10px; }
 </style>
 
 <style>
 /* === 用户系统样式 === */
 #loginOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;}
 #loginOverlay.hidden{display:none;}
-/* ========== 登录页面（全屏）========== */
-.login-page{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#0c0f1a 0%,#151a2e 40%,#1a2040 100%);background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");padding:20px;}
-.login-card{background:linear-gradient(135deg,var(--card),rgba(26,32,56,.95));border-radius:16px;padding:36px 40px;border:1px solid rgba(240,180,41,.15);box-shadow:0 8px 48px rgba(0,0,0,.5),0 0 80px rgba(240,180,41,.06);width:440px;max-width:92vw;animation:loginFadeIn .4s ease-out;color:var(--text);box-sizing:border-box;}
-@keyframes loginFadeIn{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
-.login-brand{text-align:center;margin-bottom:24px;}
-.login-brand h1{margin:0;font-size:22px;color:var(--accent);letter-spacing:2px;}
-.login-brand p{margin:6px 0 0 0;font-size:12px;color:var(--text3);}
-.login-card .error-msg{color:var(--red);font-size:12px;min-height:18px;margin-bottom:4px;}
-.login-card input{width:100%;padding:9px 12px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box;background:var(--bg);color:var(--text);outline:none;transition:border-color .2s,box-shadow .2s;}
-.login-card input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(240,180,41,.1);}
-.login-card button{width:100%;padding:10px 0;background:linear-gradient(135deg,var(--accent),#e09422);color:#0c0f1a;border:none;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:4px;transition:filter .2s,transform .1s;}
-.login-card button:hover{filter:brightness(1.1);}
-.login-card button:active{transform:scale(.98);}
-.login-card .sms-row{display:flex;gap:8px;margin-bottom:12px;}
-.login-card .sms-row input{flex:1;margin-bottom:0;}
-.login-card .sms-row button{width:auto;padding:9px 14px;white-space:nowrap;font-size:13px;margin-top:0;}
-.login-tabs{display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid var(--border);}
-.login-tabs .tab-btn{background:none;border:none;color:var(--text2);padding:8px 18px;cursor:pointer;font-size:13px;transition:all .2s;border-bottom:2px solid transparent;}
-.login-tabs .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:bold;}
-.auth-switch{text-align:center;margin-top:14px;font-size:12px;color:var(--text3);}
-.auth-switch a{color:var(--accent);cursor:pointer;font-weight:bold;margin-left:4px;}
-.auth-switch a:hover{text-decoration:underline;}
-.auth-panel{display:none;}
-.auth-panel.active{display:block;}
-/* 登录页底部链接文字改为白色 */
-.login-link a{color:#fff !important;font-size:13px;}
-.login-link a:hover{color:#e0e0e0 !important;text-decoration:underline;}
+.login-box{background:linear-gradient(135deg,var(--card),rgba(26,32,56,.95));padding:30px 36px;border-radius:14px;width:440px;max-width:92vw;border:1px solid var(--border);box-shadow:0 8px 48px rgba(0,0,0,.5),0 0 60px rgba(240,180,41,.04);color:var(--text);box-sizing:border-box;}
+.login-box h2{margin:0 0 18px 0;text-align:center;color:var(--accent);font-size:18px;letter-spacing:1px;}
+.login-box input{width:100%;padding:8px 10px;margin-bottom:10px;border:1px solid var(--border);border-radius:7px;font-size:14px;box-sizing:border-box;background:var(--bg);color:var(--text);outline:none;transition:border-color .2s;}
+.login-box input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(240,180,41,.08);}
+.login-box button{width:100%;padding:9px 0;background:linear-gradient(135deg,var(--accent),#e09422);color:#0c0f1a;border:none;border-radius:7px;font-size:15px;font-weight:bold;cursor:pointer;margin-top:6px;transition:filter .2s;}
+.login-box button:hover{filter:brightness(1.1);}
+.login-box .switch-link{text-align:center;margin-top:12px;font-size:13px;color:var(--accent);cursor:pointer;transition:color .2s;}
+.login-box .switch-link:hover{color:var(--accent2);text-decoration:underline;}
+.login-box .close-btn{float:right;cursor:pointer;font-size:22px;color:var(--text2);line-height:1;}
+.login-box .close-btn:hover{color:var(--accent);}
+.login-box .error-msg{color:var(--red);font-size:12px;min-height:18px;margin-bottom:4px;}
 .login-tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border);}
 .login-tabs .tab-btn{background:none;border:none;color:var(--text2);padding:8px 16px;cursor:pointer;font-size:13px;transition:all .2s;border-bottom:2px solid transparent;}
 .login-tabs .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:bold;}
@@ -336,16 +220,12 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 </head>
 <body>
 <div class="header">
-  <div><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 2026.05.04</span></h1></div>
+  <div><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">v1.0 · 2026.04.30</span></h1></div>
   <div style="display:flex;gap:16px;align-items:center;margin-left:auto;">
     <div class="ocr-status" id="ocrStatus"><span class="ocr-dot" id="ocrDot"></span><span id="ocrText">OCR 待检测</span></div>
     <div style="display:flex;gap:14px;">
       <div style="text-align:center;"><div style="font-size:18px;font-weight:bold;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="statTotal">0</div><div style="font-size:9px;color:var(--text2);">总战报</div></div>
       <div style="text-align:center;"><div style="font-size:18px;font-weight:bold;background:linear-gradient(135deg,var(--green),#7bed9f);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="statTeams">0</div><div style="font-size:9px;color:var(--text2);">队伍数</div></div>
-    </div>
-    <div id="navPoints" style="display:none;font-size:14px;color:var(--accent);font-weight:bold;margin-right:8px;"></div>
-    <div id="pointsMallBtn" onclick="showPointsMall()" style="display:none;background:rgba(240,180,41,.1);color:var(--accent);border:1px solid rgba(240,180,41,.3);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold;margin-right:20px;">
-      💎 积分商城
     </div>
     <div id="userBar"></div>
   </div>
@@ -358,27 +238,22 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
   <button id="navRankingBtn" style="display:none;" onclick="switchTab('ranking',this)">🏆 数值排行</button>
   <button id="navPeijiangBtn" style="display:none;" onclick="switchTab('peijiang',this)">🤝 配将助手</button>
   <button id="navYanwuBtn" style="display:none;" onclick="switchTab('yanwu',this)">⚔️ 演武助手</button>
-  <button id="navSystemBtn" style="display:none;" onclick="switchTab('system',this)">⚙️ 系统配置</button>
+  <button id="navSystemBtn" style="display:none;" onclick="showSystemConfig()">⚙️ 系统配置</button>
 </div>
 
 <!-- 系统配置子导航（默认隐藏） -->
 <div class="nav" id="systemSubNav" style="display:none;background:var(--bg3);padding-left:28px;">
+  <button onclick="switchTab('user',this)">👥 用户管理</button>
+  <button onclick="switchTab('syslog',this)">📋 系统日志</button>
   <button id="subRoleManage" onclick="switchTab('rolemanage',this)">🛡️ 角色管理</button>
-  <button id="subUserManage" onclick="switchTab('user',this)">👥 用户管理</button>
-  <button id="subDataPerm" onclick="switchTab('dataperm',this)">🔐 数据权限</button>
-  <button id="subDataManage" onclick="switchTab('datamgmt',this)">📦 数据管理</button>
-  <button id="subCloudService" onclick="switchTab('cloudservice',this)" style="display:none;">☁️ 云端服务</button>
-  <button id="subSysLog" onclick="switchTab('syslog',this)">📋 系统日志</button>
+  <button onclick="switchTab('datamgmt',this)">📦 数据管理</button>
 </div>
 
 <!-- 项目内子导航（默认隐藏） -->
-<div class="nav" id="projectSubNav" style="display:none;background:linear-gradient(135deg,var(--card),rgba(26,32,56,.95));padding:14px 28px;justify-content:center;gap:20px;box-shadow:0 4px 20px rgba(0,0,0,.15);border-bottom:1px solid rgba(240,180,41,.1);">
-  <button onclick="exitProject()" style="background:transparent;color:var(--text2);border:none;font-size:13px;padding:4px 10px;border-radius:6px;cursor:pointer;transition:all .2s;flex-shrink:0;" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(240,180,41,.06)'" onmouseout="this.style.color='var(--text2)';this.style.background='transparent'" title="返回项目列表">返回</button>
-  <div style="display:flex;gap:16px;justify-content:center;flex:1;">
-    <button onclick="switchTab('data',this)" style="min-width:200px;padding:10px 32px;border-radius:8px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:14px;font-weight:bold;transition:all .25s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">📥 战报导入</button>
-    <button onclick="switchTab('winrate',this)" style="min-width:200px;padding:10px 32px;border-radius:8px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:14px;font-weight:bold;transition:all .25s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">📊 克制分析</button>
-  </div>
-  <div style="flex-shrink:0;width:80px;"></div>
+<div class="nav" id="projectSubNav" style="display:none;background:var(--bg3);padding-left:28px;justify-content:center;gap:24px;position:relative;">
+  <button onclick="switchTab('data',this)" style="min-width:120px;">📊 战报导入</button>
+  <button onclick="switchTab('winrate',this)" style="min-width:120px;">⚔️ 克制分析</button>
+  <button onclick="exitProject()" style="position:absolute;right:28px;background:rgba(255,82,82,.08);color:#ff5252;border:1px solid rgba(255,82,82,.18);">↩ 返回项目列表</button>
 </div>
 
 <div class="main" id="mainApp">
@@ -394,7 +269,7 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
       <div id="queueArea" style="display:none;margin-top:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:12px;font-weight:bold;color:var(--accent);">处理队列 (<span id="queueCount">0</span>)</span>
-          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch" onclick="toggleBatchPause()" disabled>⏸ 暂停</button><button class="btn btn-sm btn-danger" id="btnBatchDelQueue" style="display:none;" onclick="batchRemoveQueue()">🗑 删除已取消</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
+          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch" onclick="toggleBatchPause()" disabled>⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="batchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
         <div class="queue-list" id="queueList"></div>
@@ -805,7 +680,7 @@ function renderCounterPick(dominantPairs,dominatedPairs){
   });
   container.innerHTML=html;
 }
-function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch').value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});if(typeof addSysLog==='function')addSysLog('operation','导出克制关系CSV: '+data.length+' 条');downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
+function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch').value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
 
 // ========== DOUBAO API ==========
 async function callDoubaoAPI(base64Data){updateOcrStatus('work','OCR 识别中...');const model='ep-m-20260426183050-krmx7';const workerUrl='/api/ocr';const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),60000);const promptText='请识别这张三国谋定天下游戏的战报截图。格式要求：\n【左侧】\n玩家：xxx\n同盟：xxx\n阵型：xxx\n战损兵力：数字\n总兵力：数字\n武将1：武将名\n战法1：战法A,战法B,战法C\n武将2：武将名\n战法2：战法D,战法E,战法F\n武将3：武将名\n战法3：战法G,战法H,战法I\n【右侧】\n（同上格式）\n【结果】\n胜负：胜/败/平\n注意：每个武将对应3个战法（自带+2个配置），用英文逗号分隔。无法识别用\"未知\"。';try{console.log('[OCR] 发送请求(Worker代理), base64长度:',base64Data.length,'超时:60s');const reqBody={model,messages:[{role:'user',content:[{type:'image_url',image_url:{url:base64Data}},{type:'text',text:promptText}]}],max_tokens:2000};const resp=await fetch(workerUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqBody),signal:controller.signal});clearTimeout(timeout);console.log('[OCR] 响应状态:',resp.status,resp.statusText);if(!resp.ok){const errBody=await resp.text();console.error('[OCR] 错误响应:',errBody.substring(0,500));throw new Error('HTTP '+resp.status+': '+errBody.substring(0,200));}const json=await resp.json();console.log('[OCR] API返回, usage:',JSON.stringify(json.usage));const content=json.choices?.[0]?.message?.content||'';if(!content)throw new Error('API返回空内容');updateOcrStatus('ok','OCR 就绪');return content;}catch(e){clearTimeout(timeout);console.error('[OCR] 异常:',e.name,e.message);if(e.name==='AbortError')e.message='OCR 请求超时(60秒)，图片可能太大';else if(e.name==='TypeError'&&e.message.includes('Failed to fetch'))e.message='网络请求失败，请检查网络连接';updateOcrStatus('err','OCR 错误: '+e.message);throw e;}}
@@ -817,8 +692,7 @@ uploadZone.addEventListener('dragover',e=>{e.preventDefault();uploadZone.classLi
 uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('dragover'));
 uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('dragover');handleBatchUpload(e.dataTransfer.files);});
 function handleBatchUpload(files){if(!files||files.length===0)return;for(const file of files)batchQueue.push({file,name:file.name,status:'pending',error:null});renderQueue();document.getElementById('queueArea').style.display='block';}
-function renderQueue(){document.getElementById('queueCount').textContent=batchQueue.length;document.getElementById('queueList').innerHTML=batchQueue.map((item,idx)=>{const icon=item.status==='pending'?'💤':item.status==='processing'?'⚙️':item.status==='done'?'✅':'❌';const txt=item.status==='pending'?'等待中':item.status==='processing'?'处理中...':item.status==='done'?'完成':(item.error||'失败');const canDel=item.status==='pending'||item.status==='error';const delBtn=canDel?`<span class="qi-del" title="删除" onclick="removeQueueItem(${idx})">✕</span>`:'';return `<div class="queue-item"><span class="qi-icon">${icon}</span><span class="qi-name">${escHtml(item.name)}</span><span class="${item.status==='pending'?'qi-pending':item.status==='processing'?'qi-processing':item.status==='done'?'qi-done':'qi-error'}">${txt}</span>${delBtn}</div>`;}).join('');}
-function removeQueueItem(idx){const item=batchQueue[idx];if(!item)return;if(item.status==='processing'){alert('正在处理中的文件无法删除');return;}batchQueue.splice(idx,1);renderQueue();document.getElementById('queueCount').textContent=batchQueue.length;if(batchQueue.length===0&&!batchRunning)document.getElementById('queueArea').style.display='none';}
+function renderQueue(){document.getElementById('queueCount').textContent=batchQueue.length;document.getElementById('queueList').innerHTML=batchQueue.map(item=>`<div class="queue-item"><span class="qi-name">${escHtml(item.name)}</span><span class="${item.status==='pending'?'qi-pending':item.status==='processing'?'qi-processing':item.status==='done'?'qi-done':'qi-error'}">${item.status==='pending'?'等待中':item.status==='processing'?'处理中...':item.status==='done'?'✅ 完成':'❌ '+(item.error||'失败')}</span></div>`).join('');}
 function clearQueue(){batchQueue=batchQueue.filter(q=>q.status==='processing');if(!batchRunning)document.getElementById('queueArea').style.display='none';renderQueue();}
 function readFileAsBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
@@ -847,6 +721,66 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 </script>
 
 <!-- 登录弹窗 -->
+<div id="loginOverlay" class="hidden">
+  <div class="login-box">
+    <span class="close-btn" onclick="hideLogin()">&times;</span>
+    <h2>登录</h2>
+    <div class="login-tabs">
+      <button class="tab-btn active" onclick="switchLoginTab('pwd',this)">密码登录</button>
+      <button class="tab-btn" onclick="switchLoginTab('sms',this)">验证码登录</button>
+    </div>
+    <!-- 密码登录面板 -->
+    <div id="panelPwd" class="login-panel active">
+      <input id="loginPhone" placeholder="手机号" maxlength="11">
+      <input id="loginPwd" type="password" placeholder="密码">
+      <div class="error-msg" id="loginError"></div>
+      <button onclick="doLoginPwd()">登录</button>
+      <div class="switch-link" onclick="showRegister()">没有账号？注册</div>
+    </div>
+    <!-- 验证码登录面板 -->
+    <div id="panelSms" class="login-panel">
+      <input id="smsPhone" placeholder="手机号" maxlength="11">
+      <div style="display:flex;gap:8px">
+        <input id="smsCode" placeholder="验证码">
+        <button onclick="sendSms('smsPhone',this)">发送验证码</button>
+      </div>
+      <div class="error-msg" id="smsError"></div>
+      <button onclick="doLoginSms()">登录</button>
+    </div>
+  </div>
+
+<!-- 注册弹窗 -->
+<div id="registerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;justify-content:center;align-items:center;">
+  <div class="login-box">
+    <span class="close-btn" onclick="closeRegister()">&times;</span>
+    <h2>注册</h2>
+    <div class="login-tabs">
+      <button class="tab-btn active" onclick="switchRegTab('pwd',this)">密码注册</button>
+      <button class="tab-btn" onclick="switchRegTab('sms',this)">验证码注册</button>
+    </div>
+    <!-- 密码注册面板 -->
+    <div id="regPanelPwd" class="login-panel active">
+      <input id="regPhone" placeholder="手机号" maxlength="11">
+      <input id="regPwd" type="password" placeholder="密码">
+      <input id="regPwd2" type="password" placeholder="确认密码">
+      <div class="error-msg" id="regError"></div>
+      <button onclick="doRegPwd()">注册</button>
+      <div class="switch-link" onclick="showLogin()">已有账号？登录</div>
+    </div>
+    <!-- 验证码注册面板 -->
+    <div id="regPanelSms" class="login-panel">
+      <input id="regSmsPhone" placeholder="手机号" maxlength="11">
+      <div style="display:flex;gap:8px">
+        <input id="regSmsCode" placeholder="验证码">
+        <button onclick="sendSms('regSmsPhone',this)">发送验证码</button>
+      </div>
+      <div class="error-msg" id="regSmsError"></div>
+      <button onclick="doRegSms()">注册</button>
+      <div class="switch-link" onclick="showLogin()">已有账号？登录</div>
+    </div>
+  </div>
+</div><!-- 关闭 registerModal -->
+</div><!-- 关闭 loginOverlay -->
 
 <!-- 项目管理标签（顶级，大色块卡片） -->
 <div id="tab-project" class="tab-content" style="display:none">
@@ -858,9 +792,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 <div id="tab-user" class="tab-content" style="display:none">
   <div style="padding:0 40px;">
   <div style="background:linear-gradient(135deg,var(--card),rgba(26,32,56,.8));border-radius:var(--radius);border:1px solid var(--border);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
-    <h3 style="margin:0 0 16px 0;color:var(--accent);font-size:15px;display:flex;align-items:center;gap:12px;">👥 用户管理
-      <button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="showAddUserModal()">＋ 新增用户</button>
-    </h3>
+    <h3 style="margin:0 0 16px 0;color:var(--accent);font-size:15px;">👥 用户管理</h3>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:13px;">
         <thead><tr>
@@ -868,9 +800,8 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
           <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">姓名</th>
           <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">手机号</th>
           <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">角色</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">积分</th>
           <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">注册时间</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;width:200px;">操作</th>
+          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;width:160px;">操作</th>
         </tr></thead>
         <tbody id="userTableBody"></tbody>
       </table>
@@ -927,254 +858,18 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
       <div style="font-size:11px;color:var(--red);margin-top:4px;">⚠️ 导入会覆盖同 ID 的现有数据，请确保只导入一次。新账号需为超管才能看到系统配置。</div>
     </div>
   </div>
-</div><!-- 关闭 card -->
-</div><!-- 关闭 padding -->
 </div><!-- 关闭 tab-datamgmt -->
-
-<!-- Tab: 云端服务（仅超管可见） -->
-<div id="tab-cloudservice" class="tab-content" style="display:none;">
-  <div style="padding:0 40px;">
-    <div style="background:linear-gradient(135deg,var(--card),rgba(26,32,56,.8));border-radius:var(--radius);border:1px solid var(--border);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
-      <h3 style="margin:0 0 16px 0;color:var(--accent);font-size:15px;display:flex;align-items:center;gap:12px;">☁️ 云端服务</h3>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:16px;">查看当前浏览器 IndexedDB 数据库占用空间，以及云端服务状态。</p>
-
-      <!-- IndexedDB 存储占用 -->
-      <div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:bold;">📊 本地数据库占用空间</div>
-        <div id="dbUsageBar" style="height:20px;background:var(--bg3);border-radius:10px;overflow:hidden;margin-bottom:8px;">
-          <div id="dbUsageFill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--cyan));border-radius:10px;transition:width .6s ease;"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);">
-          <span>已用：<span id="dbUsageUsed" style="color:var(--accent);font-weight:bold;">计算中...</span></span>
-          <span>可用：<span id="dbUsageQuota" style="color:var(--cyan);font-weight:bold;">计算中...</span></span>
-          <span>使用率：<span id="dbUsagePct" style="color:var(--text);font-weight:bold;">-</span></span>
-        </div>
-        <button class="btn btn-sm" style="margin-top:12px;" onclick="refreshDBUsage()">🔄 刷新统计</button>
-      </div>
-
-      <!-- 各数据库详情 -->
-      <div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:bold;">🗃️ 数据库详情</div>
-        <div id="dbDetails" style="font-size:12px;color:var(--text2);line-height:2;">加载中...</div>
-      </div>
-
-      <!-- 云端服务状态 -->
-      <div style="background:var(--bg);border-radius:8px;padding:16px;">
-        <div style="font-size:13px;color:var(--accent);margin-bottom:10px;font-weight:bold;">☁️ 云端服务状态</div>
-        <div style="font-size:12px;color:var(--text2);line-height:2;">
-          <div>🔹 <span style="color:var(--text);">OCR 识别服务</span>：<span style="color:var(--green);">正常</span>（火山方舟 API · Cloudflare Worker 代理）</div>
-          <div>🔹 <span style="color:var(--text);">静态托管</span>：<span style="color:var(--green);">正常</span>（GitHub Pages · zhenwu.fun）</div>
-          <div>🔹 <span style="color:var(--text);">数据备份</span>：<span style="color:var(--cyan);">本地存储</span>（IndexedDB，请定期导出备份）</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div><!-- 关闭 tab-cloudservice -->
 
 <!-- Tab: 角色管理 -->
 <div id="tab-rolemanage" class="tab-content">
   <div id="roleManageContent"></div>
 </div>
 
-<!-- Tab: 数据权限 -->
-<div id="tab-dataperm" class="tab-content" style="display:none;">
-  <div id="dataPermContent"></div>
-</div>
-</div><!-- 关闭 mainApp -->
-<!-- 登录首页（全屏） -->
-<div id="loginPage" class="login-page">
-  <div class="login-card">
-    <div class="login-brand">
-      <h1>🔒 真武团战报分析</h1>
-      <p>三国谋定天下 · 专业数据分析平台</p>
-    </div>
-
-    <!-- 登录面板 -->
-    <div id="authLogin" class="auth-panel active">
-      <input id="loginPhone" placeholder="手机号" maxlength="11" autocomplete="username">
-      <input id="loginPwd" type="password" placeholder="密码" autocomplete="current-password">
-      <div class="error-msg" id="loginError"></div>
-      <button onclick="doLoginPwd()">登录</button>
-      <div class="login-link" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;font-size:13px;">
-        <a href="javascript:void(0)" onclick="switchAuthTab('register',this)">没有账号？去注册</a>
-        <a href="javascript:void(0)" onclick="switchAuthTab('find',this)">忘记密码？</a>
-      </div>
-    </div>
-
-    <!-- 注册面板 -->
-    <div id="authRegister" class="auth-panel">
-      <input id="regPhone" placeholder="手机号" maxlength="11">
-      <input id="regName" placeholder="姓名（可选）" maxlength="20">
-      <input id="regPwd" type="password" placeholder="密码（至少6位）">
-      <input id="regPwd2" type="password" placeholder="确认密码">
-      <div class="error-msg" id="regError"></div>
-      <button onclick="doRegPwd()">注册</button>
-      <div class="login-link" style="margin-top:10px;text-align:center;font-size:13px;">
-        <a href="javascript:void(0)" onclick="switchAuthTab('login',this)">已有账号？去登录</a>
-      </div>
-    </div>
-    <!-- 找回密码面板 -->
-    <div id="authFind" class="auth-panel">
-      <div style="text-align:center;padding:10px 0;color:var(--text2);font-size:14px;line-height:1.8;">
-        <div style="font-size:36px;margin-bottom:10px;">🔒</div>
-        <div style="color:var(--text);font-size:15px;margin-bottom:6px;">忘记密码？</div>
-        <div style="margin-bottom:14px;">请联系管理员重置密码</div>
-        <!-- 管理员二维码 -->
-        <div style="margin-bottom:14px;">
-          <img src="wechat_qr.png" alt="管理员微信二维码" style="width:120px;height:120px;border-radius:8px;object-fit:cover;border:1px solid var(--border);">
-        </div>
-        <!-- 管理员微信号 -->
-        <div style="background:var(--bg);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--text);margin-bottom:14px;">
-          📱 管理员微信：<span style="color:var(--accent);font-weight:bold;">jh20201028</span>
-        </div>
-        <!-- 底部切换链接 -->
-        <div class="login-link" style="margin-top:14px;display:flex;justify-content:space-between;font-size:13px;">
-          <a href="javascript:void(0)" onclick="switchAuthTab('login',this)">← 去登录</a>
-          <a href="javascript:void(0)" onclick="switchAuthTab('register',this)">去注册 →</a>
-        </div>
-      </div>
-    </div>
-  </div>
-</div><!-- 关闭 loginPage -->
-
-<!-- 新增用户弹窗 -->
-<div id="addUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10001;justify-content:center;align-items:center;">
-  <div class="login-box" style="margin:0;">
-    <span class="close-btn" onclick="closeAddUserModal()">&times;</span>
-    <h2>新增用户</h2>
-    <input id="addUserName" placeholder="姓名（选填）">
-    <input id="addUserPhone" placeholder="手机号" maxlength="11">
-    <input id="addUserPwd" type="password" placeholder="密码（至少6位）">
-    <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">角色：
-      <select id="addUserRole" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;"></select>
-    </div>
-    <div class="error-msg" id="addUserError"></div>
-    <button onclick="doAddUser()">确认新增</button>
-    <div class="switch-link" onclick="closeAddUserModal()">取消</div>
-  </div>
-</div>
-
-<!-- ========== 积分商城弹窗 ========== -->
-<div id="pointsMallModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10000;justify-content:center;align-items:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;width:90%;max-width:680px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
-      <h3 style="margin:0;color:var(--accent);font-size:16px;">💎 积分商城</h3>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <button onclick="closePointsMall()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;">&times;</button>
-      </div>
-    </div>
-    <div id="mallContent" style="overflow-y:auto;flex:1;padding:20px;"></div>
-  </div>
-</div>
-
-<!-- ========== 积分调整弹窗 ========== -->
-<div id="adjustPointsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10001;justify-content:center;align-items:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;width:90%;max-width:360px;overflow:hidden;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
-      <h3 style="margin:0;color:var(--accent);font-size:15px;">💎 调整用户积分</h3>
-      <button onclick="closeAdjustPointsModal()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
-      <div style="font-size:13px;color:var(--text2);">
-        用户：<span id="adjustPointsPhone" style="font-weight:bold;color:var(--text);font-family:monospace;"></span>
-      </div>
-      <div style="font-size:13px;color:var(--text2);">
-        当前积分：<span id="adjustPointsCurrent" style="font-weight:bold;color:var(--accent);"></span>
-      </div>
-      <div>
-        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">设置积分为（填入最终数值）</label>
-        <input id="adjustPointsInput" type="number" min="0" placeholder="输入积分总数，如 100"
-          style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:14px;box-sizing:border-box;">
-      </div>
-      <div class="error-msg" id="adjustPointsError"></div>
-      <div style="font-size:11px;color:var(--text3);">💡 直接填入目标积分值，系统会自动计算差异</div>
-      <button class="btn btn-primary" onclick="doAdjustPoints()" style="width:100%;padding:10px;">确认调整</button>
-    </div>
-  </div>
-</div>
-
-<!-- ========== 充值弹窗 ========== -->
-<div id="rechargeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:10001;justify-content:center;align-items:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:90%;max-width:400px;overflow:hidden;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
-      <h3 style="margin:0;color:var(--accent);font-size:16px;">💰 确认充值</h3>
-      <button onclick="closeRechargeModal()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-
-    <!-- 步骤1：确认套餐 -->
-    <div id="rechargeStep1" style="display:flex;flex-direction:column;gap:16px;padding:24px;">
-      <div style="text-align:center;">
-        <div style="font-size:28px;font-weight:bold;color:var(--accent);" id="rechargePkgName">-</div>
-        <div style="font-size:16px;color:var(--text2);margin-top:4px;">应付金额：<b style="color:#ff5252;font-size:20px;" id="rechargePkgPrice">-</b></div>
-      </div>
-      <div style="font-size:12px;color:var(--text3);text-align:center;">点击下方按钮将跳转至微信支付</div>
-      <input type="hidden" id="rechargePkgId">
-      <input type="hidden" id="rechargePkgPoints">
-      <input type="hidden" id="rechargePkgPriceHidden">
-      <button class="btn btn-primary" onclick="startRecharge()" style="padding:12px;font-size:14px;">微信支付 · 立即充值</button>
-      <button class="btn btn-secondary" onclick="closeRechargeModal()" style="padding:10px;font-size:13px;">取消</button>
-    </div>
-
-    <!-- 步骤2：微信支付二维码 -->
-    <div id="rechargeQR" style="display:none;flex-direction:column;align-items:center;gap:16px;padding:24px;">
-      <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:bold;color:var(--accent);" id="rechargePkgName2">-</div>
-        <div style="font-size:14px;color:#ff5252;margin-top:4px;">应付：<b id="rechargePkgPrice2">-</b></div>
-      </div>
-      <div style="padding:12px;background:#fff;border-radius:8px;">
-        <img id="qrCodeImg" style="width:180px;height:180px;display:block;" alt="微信支付二维码">
-      </div>
-      <div style="font-size:12px;color:var(--text2);text-align:center;">请使用微信扫码支付<br>支付完成后点击下方"已完成支付"按钮</div>
-      <div style="font-size:11px;color:var(--text3);" id="orderId"></div>
-      <button class="btn btn-primary" onclick="confirmPayment()" style="padding:12px;font-size:14px;width:100%;">✅ 已完成支付</button>
-      <button class="btn btn-secondary" onclick="closeRechargeModal()" style="padding:10px;font-size:13px;">取消</button>
-    </div>
-
-    <!-- 步骤3：充值成功 -->
-    <div id="rechargeSuccess" style="display:none;flex-direction:column;align-items:center;gap:16px;padding:40px 24px;">
-      <div style="font-size:48px;">🎉</div>
-      <div style="font-size:20px;font-weight:bold;color:var(--green);">充值成功！</div>
-      <div style="text-align:center;color:var(--text2);font-size:14px;">
-        恭喜获得 <b style="color:var(--accent);font-size:22px;" id="successPoints">-</b> 积分
-      </div>
-      <div style="text-align:center;color:var(--text3);font-size:13px;">当前积分余额：<b style="color:var(--accent);" id="successBalance">-</b></div>
-      <button class="btn btn-primary" onclick="closeRechargeModal()" style="padding:12px;font-size:14px;width:100%;margin-top:8px;">确定</button>
-    </div>
-  </div>
-</div>
-
-<!-- ========== 截图工具弹窗 ========== -->
-<div id="toolModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:10001;justify-content:center;align-items:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:90%;max-width:420px;overflow:hidden;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
-      <h3 style="margin:0;color:var(--accent);font-size:16px;">🖥️ 截图工具 · 包月</h3>
-      <button onclick="closeToolModal()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="padding:24px;display:flex;flex-direction:column;gap:16px;align-items:center;text-align:center;">
-      <div style="font-size:32px;">🔧</div>
-      <div style="font-size:18px;font-weight:bold;color:var(--text);">截图工具包月套餐</div>
-      <div style="font-size:28px;font-weight:bold;color:#ff5252;">¥18 <span style="font-size:14px;color:var(--text3);font-weight:normal;">/月</span></div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.8;">
-        ✅ 电脑端截图工具永久下载<br>
-        ✅ 多显示器支持 + 截图反馈<br>
-        ✅ 批量处理战报截图
-      </div>
-      <div style="font-size:12px;color:var(--accent);background:rgba(240,180,41,.1);border:1px solid rgba(240,180,41,.2);border-radius:8px;padding:10px 16px;width:100%;">
-        ⚠️ 购买后请联系管理员获取 <b>序列号</b><br>序列号用于激活截图工具权限
-      </div>
-      <button class="btn btn-secondary" onclick="closeToolModal()" style="width:100%;padding:10px;font-size:13px;">暂不需要</button>
-    </div>
-  </div>
-</div>
-
-<script src="cloud-sync.js?v=2026050413"></script>
-<script src="data-system.js?v=2026050401"></script>
-<script src="user-system.js?v=2026050326"></script>
-<script src="project-system.js?v=2026050413"></script>
-<script src="role-system.js?v=2026050412"></script>
-<script src="ocr-system.js?v=2026050325"></script>
-<script src="data-perm.js?v=2026050403"></script>
-<script src="points-mall.js?v=2026050324"></script>
+<script src="data-system.js?v=202605022130"></script>
+<script src="user-system.js?v=202605022130"></script>
+<script src="project-system.js?v=202605022130"></script>
+<script src="role-system.v2.js?v=202605022130"></script>
+<script src="ocr-system.js?v=20260502d"></script>
 <script>
 // 全局兜底：确保 getRolePermissions 始终有定义
 if(typeof getRolePermissions==='undefined'){
@@ -1229,34 +924,6 @@ async function appInit(){
 }
 appInit();
 </script>
-<script src="diagnose.js?v=202605030030"></script>
-<script>
-(function() {
-    var ma = document.getElementById('mainApp');
-    if (!ma) { console.error('[DOM Fix] ❌ mainApp NOT FOUND!'); return; }
-    console.log('[DOM Fix] mainApp found, current children:', ma.children.length);
-
-    // 自动修复：将所有 .tab-content 移入 mainApp
-    var tabs = document.querySelectorAll('.tab-content');
-    console.log('[DOM Fix] Found', tabs.length, '.tab-content elements');
-    var moved = 0;
-    tabs.forEach(function(tab) {
-        if (tab.parentNode.id !== 'mainApp') {
-            console.log('[DOM Fix] Moving', tab.id, 'from', (tab.parentNode.id || tab.parentNode.tagName), '→ mainApp');
-            tab.parentNode.removeChild(tab);
-            ma.appendChild(tab);
-            moved++;
-        }
-    });
-    console.log('[DOM Fix] ✅ Done. Moved', moved, 'tab(s) into mainApp. mainApp children now:', ma.children.length);
-
-    // 最终验证
-    console.log('[DOM Fix] Final check:');
-    document.querySelectorAll('.tab-content').forEach(function(el) {
-        var ok = el.parentNode.id === 'mainApp' ? '✅' : '❌';
-        console.log(' ', ok, el.id, '→ parent:', el.parentNode.id || el.parentNode.tagName);
-    });
-})();
-</script>
+<script src="diagnose.js?v=202605030008"></script>
 </body>
 </html>

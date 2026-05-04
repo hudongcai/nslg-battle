@@ -1,2 +1,17 @@
-wrangler.toml
-worker.js
+# Node
+node_modules/
+package-lock.json
+
+# Wrangler
+.wrangler/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

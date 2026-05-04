@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker - 微信支付 + OCR代理
  * 部署后路由：zhenwu.fun/api/*
- * 版本: v2026050413
+ * 版本: v2026050414
  */
 
 // ========== 微信支付配置（从环境变量读取）==========
@@ -551,6 +551,7 @@ async function handleAddProjectMember(request, env, projectId) {
     const id = phone + '_' + projectId;
     const now = Date.now();
 
+    // 添加到权限表
     const stmt = env.DB.prepare(`
       INSERT OR REPLACE INTO project_permissions (id, phone, project_id, can_edit, can_delete, granted_by, granted_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -566,6 +567,22 @@ async function handleAddProjectMember(request, env, projectId) {
       now
     ).run();
 
+    // 更新 projects.members 字段
+    try {
+      const projStmt = env.DB.prepare('SELECT members FROM projects WHERE id = ?');
+      const proj = await projStmt.bind(projectId).first();
+      if (proj) {
+        const members = JSON.parse(proj.members || '[]');
+        if (!members.includes(phone)) {
+          members.push(phone);
+          const updateStmt = env.DB.prepare('UPDATE projects SET members = ?, updated_at = ? WHERE id = ?');
+          await updateStmt.bind(JSON.stringify(members), now, projectId).run();
+        }
+      }
+    } catch (e) {
+      console.error('[AddMember] 更新 projects.members 失败:', e);
+    }
+
     return jsonResponse({ success: true });
   } catch (e) {
     return jsonResponse({ error: e.message }, 500);
@@ -575,8 +592,23 @@ async function handleAddProjectMember(request, env, projectId) {
 // 删除项目成员
 async function handleRemoveProjectMember(request, env, projectId, phone) {
   try {
+    // 从权限表删除
     const stmt = env.DB.prepare('DELETE FROM project_permissions WHERE project_id = ? AND phone = ?');
     await stmt.bind(projectId, phone).run();
+
+    // 从 projects.members 字段移除
+    try {
+      const projStmt = env.DB.prepare('SELECT members FROM projects WHERE id = ?');
+      const proj = await projStmt.bind(projectId).first();
+      if (proj) {
+        const members = JSON.parse(proj.members || '[]');
+        const newMembers = members.filter(m => m !== phone);
+        const updateStmt = env.DB.prepare('UPDATE projects SET members = ?, updated_at = ? WHERE id = ?');
+        await updateStmt.bind(JSON.stringify(newMembers), Date.now(), projectId).run();
+      }
+    } catch (e) {
+      console.error('[RemoveMember] 更新 projects.members 失败:', e);
+    }
 
     return jsonResponse({ success: true });
   } catch (e) {

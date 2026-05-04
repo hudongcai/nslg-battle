@@ -87,13 +87,37 @@ async function getProjAccessForUser(phone) {
   return await permDBGetByPhone(phone);
 }
 
-// ========== 扩展 getVisibleProjects ==========
+// ========== 扩展 getVisibleProjects（修复：优先从云端获取）==========
 window._origGetVisibleProjects = window.getVisibleProjects || null;
 
 window.getVisibleProjects = async function () {
   if (!currentUser) return [];
-  const all = await projDBGetAll();
+  
+  // 优先从云端获取项目列表
+  let all = [];
+  if (window.cloudSync) {
+    try {
+      const cloudProjects = await window.cloudSync.getProjects();
+      console.log('[Cloud] data-perm 获取云端项目:', cloudProjects.length, '个');
+      // 同步到本地 IndexedDB（作为缓存）
+      for (const proj of cloudProjects) {
+        await projDBPut(proj);
+      }
+      all = cloudProjects;
+    } catch (e) {
+      console.error('[Cloud] 获取云端项目失败，使用本地数据:', e);
+    }
+  }
+  
+  // 如果云端没有数据，fallback 到本地 IndexedDB
+  if (all.length === 0) {
+    all = await projDBGetAll();
+  }
+  
+  // 超管返回全部项目
   if (currentUser.role === 'super_admin') return all;
+  
+  // 普通用户需要过滤权限
   const grantedIds = await getGrantedProjectIds(currentUser.phone);
   return all.filter(p =>
     p.visibility === 'public' ||

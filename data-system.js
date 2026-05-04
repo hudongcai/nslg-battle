@@ -30,13 +30,13 @@ function openDB() {
 }
 
 async function dbAdd(rec) {
-  if (!db) await openDB();
-  return new Promise((resolve, reject) => {
+ if (!db) await openDB();
+ return new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
     const store = tx.objectStore('records');
     // 绑定项目 ID 和上传者
     rec.projectId = window.currentProjectId || '';
-    rec.uploader = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
+    rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
     rec.time = rec.time || new Date().toLocaleString('zh-CN');
     const req = store.add(rec);
     req.onsuccess = () => {
@@ -46,6 +46,27 @@ async function dbAdd(rec) {
       updateGlobalStats();
       syncToLocalStorage();
       renderDataTable();
+      
+      // 同步到云端
+      if(window.cloudSync){
+        const cloudRec = { ...rec };
+        cloudRec.project_id = rec.projectId || null;
+        cloudRec.user_phone = rec.user_phone;
+        cloudRec.data = rec;  // 整个战报数据存到 data 字段
+        delete cloudRec.projectId;  // 使用 project_id
+        try{
+          window.cloudSync.createRecord(cloudRec).then(result => {
+            if(result && result.id){
+              console.log('[Cloud] 战报已同步到云端:', result.id);
+              // 如果云端返回了不同的 ID，更新本地
+              if(result.id !== rec.id){
+                // 可选：更新本地记录的云端 ID 映射
+              }
+            }
+          }).catch(e => console.error('[Cloud] 战报同步失败:', e));
+        }catch(e){console.error('[Cloud] 战报同步异常:', e);}
+      }
+      
       resolve(req.result);
     };
     req.onerror = () => reject(req.error);
@@ -53,10 +74,18 @@ async function dbAdd(rec) {
 }
 
 function dbPut(rec) {
-  return new Promise((resolve, reject) => {
+ return new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
     const req = tx.objectStore('records').put(rec);
-    req.onsuccess = () => resolve(rec.id);
+    req.onsuccess = () => {
+      // 同步到云端
+      if(window.cloudSync && rec.id){
+        try{
+          window.cloudSync.updateRecord(rec.id, rec).catch(e => console.error('[Cloud] 更新失败:', e));
+        }catch(e){console.error('[Cloud] 同步异常:', e);}
+      }
+      resolve(rec.id);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -80,10 +109,17 @@ function dbGet(id) {
 }
 
 function dbDelete(id) {
-  return new Promise((resolve, reject) => {
+ return new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
     const req = tx.objectStore('records').delete(id);
     req.onsuccess = () => {
+      // 先从云端删除
+      if(window.cloudSync){
+        try{
+          window.cloudSync.deleteRecord(id).catch(e => console.error('[Cloud] 删除失败:', e));
+        }catch(e){console.error('[Cloud] 删除异常:', e);}
+      }
+      
       allRecords = allRecords.filter(r => r.id !== id);
       gallerySelectedIds.delete(id);
       updateGlobalStats();

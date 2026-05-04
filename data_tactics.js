@@ -1,0 +1,1 @@
+const ALL_TACTICS = [h.name];

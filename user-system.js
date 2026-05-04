@@ -604,7 +604,7 @@ function updateUserNavPoints(){
   navPoints.style.display = 'inline-block';
 }
 
-function onLoginSuccess(){
+async function onLoginSuccess(){
   hideLogin();
   const mainApp = document.getElementById('mainApp');
   if(mainApp) mainApp.style.display='block';
@@ -632,6 +632,19 @@ function onLoginSuccess(){
   if(typeof dataInit==='function'){
     dataInit();
   }
+  
+  // ========== 项目云同步（与角色同步机制一致）==========
+  // 登录成功后从云端同步项目数据，确保跨浏览器可见
+  if(window.cloudSync && window.cloudSync.syncToLocal){
+    try{
+      console.log('[onLoginSuccess] 开始同步云端项目数据...');
+      const syncResult = await window.cloudSync.syncToLocal();
+      console.log('[onLoginSuccess] 云端项目同步完成:', syncResult);
+    }catch(e){
+      console.error('[onLoginSuccess] 云端项目同步失败:', e);
+    }
+  }
+  
   // 默认进入项目管理页
   showProjectHome();
 }

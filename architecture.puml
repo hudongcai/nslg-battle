@@ -1,0 +1,64 @@
+@startuml
+!define LIGHTBLUE #E1F5FE
+!define LIGHTPURPLE #F3E5F5
+!define LIGHTGREEN #E8F5E9
+!define LIGHTORANGE #FFF3E0
+
+title 三谋战报系统 - 架构 & 权限模型
+
+package "前端层 (浏览器)" {
+  [index.html] as IDX LIGHTBLUE
+  [user-system.js\n用户系统] as USR LIGHTBLUE
+  [role-system.js\n角色权限] as ROLE LIGHTPURPLE
+  [project-system.js\n项目管理] as PROJ LIGHTGREEN
+  [data-system.js\n战报数据] as DATA LIGHTORANGE
+  [ocr-system.js\nOCR识别] as OCR LIGHTORANGE
+}
+
+package "存储层 (IndexedDB)" {
+  database "SanMoUserDB\n(users)" as DB_U
+  database "SanMoRoleDB\n(roles)" as DB_R
+  database "SanMoBattleDB\n(records)" as DB_B
+  database "nslg_syslog\n(logs)" as DB_L
+}
+
+package "本地服务" {
+  [Python HTTP Server\nlocalhost:8765] as SRV
+}
+
+IDX --> USR : 加载
+IDX --> ROLE : 加载
+IDX --> PROJ : 加载
+IDX --> DATA : 加载
+IDX --> OCR : 加载
+
+USR --> DB_U : 读写用户
+ROLE --> DB_R : 读写角色
+PROJ --> DB_U : 读写项目权限
+DATA --> DB_B : 读写战报
+DATA --> DB_U : 读用户
+IDX --> DB_L : 写系统日志
+
+SRV --> IDX : 提供 HTTP 访问\n(绕过 file:// 缓存)
+
+note right of ROLE
+  角色权限模型：
+  - super_admin (内置)
+  - admin (内置)
+  - member (内置)
+  - 自定义角色
+end note
+
+note bottom of DB_U
+  用户表字段：
+  phone / name / password
+  role / createdAt
+end note
+
+note bottom of DB_B
+  战报记录字段：
+  id / imageData / result
+  projectId / uploader / createdAt
+end note
+
+@enduml

@@ -276,6 +276,33 @@ async function saveMembers(projectId){
     proj.memberPhones = selected;
     proj.updatedAt = Date.now();
     await projDBPut(proj);
+    
+    // 同步到云端：先获取云端现有成员，然后添加/删除差异
+    if(window.cloudSync){
+      try{
+        console.log('[Cloud] 同步项目成员到云端:', projectId, selected);
+        // 获取云端当前成员
+        const cloudMembers = await window.cloudSync.getProjectMembers(projectId);
+        const cloudPhones = (cloudMembers || []).map(m => m.phone);
+        
+        // 添加新成员到云端
+        for(const phone of selected){
+          if(!cloudPhones.includes(phone)){
+            await window.cloudSync.addProjectMember(projectId, phone, false, false, currentUser.phone);
+          }
+        }
+        
+        // 从云端删除移除的成员
+        for(const cm of cloudMembers || []){
+          if(!selected.includes(cm.phone)){
+            await window.cloudSync.removeProjectMember(projectId, cm.phone);
+          }
+        }
+        
+        console.log('[Cloud] 项目成员已同步到云端');
+      }catch(e){console.error('[Cloud] 同步成员失败:', e);}
+    }
+    
     closeMemberModal();
     renderProjectManage();
   }catch(e){alert('保存失败：'+e.message);}
