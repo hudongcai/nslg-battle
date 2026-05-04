@@ -610,6 +610,18 @@ async function doRegPwd(){
       createdAt: Date.now()
     };
     await userDBPut(user);
+
+    // 同步到云端（注册时创建云端用户）
+    try {
+      if (window.cloudSync && typeof window.cloudSync.createUser === 'function') {
+        await window.cloudSync.createUser(phone, name||`用户${phone.slice(-4)}`, pwd1, 'member');
+        console.log('[Register] 云端用户创建成功:', phone);
+      }
+    } catch (cloudErr) {
+      console.warn('[Register] 云端用户创建失败（本地已保存）:', cloudErr.message);
+      // 不阻塞注册流程，本地已保存
+    }
+
     msgEl.className='msg-suc';
     msgEl.textContent='注册成功！即将自动登录...（已赠送18积分）';
     saveRememberedUser(phone, pwd1, user.name, 'member');
