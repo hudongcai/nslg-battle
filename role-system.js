@@ -1,7 +1,48 @@
 /* ==========================================================
    ROLE SYSTEM - 角色管理、权限控制
    ========================================================== */
-console.log('[role-system.js] v202605022005 加载');
+console.log('[role-system.js] v2026050410 加载');
+
+// ========== 云端同步函数 ==========
+
+// 从云端获取所有角色
+async function cloudGetRoles() {
+  if (!window.cloudSync) return [];
+  try {
+    const data = await window.cloudSync.request('/roles', { method: 'GET' });
+    return data.success ? (data.data || []) : [];
+  } catch (e) {
+    console.error('[Cloud Role] 获取角色失败:', e);
+    return [];
+  }
+}
+
+// 保存角色到云端
+async function cloudSaveRole(role) {
+  if (!window.cloudSync) return false;
+  try {
+    const data = await window.cloudSync.request('/roles', {
+      method: 'POST',
+      body: role
+    });
+    return data.success === true;
+  } catch (e) {
+    console.error('[Cloud Role] 保存角色失败:', e);
+    return false;
+  }
+}
+
+// 从云端删除角色
+async function cloudDeleteRole(roleId) {
+  if (!window.cloudSync) return false;
+  try {
+    const data = await window.cloudSync.request(`/roles/${roleId}`, { method: 'DELETE' });
+    return data.success === true;
+  } catch (e) {
+    console.error('[Cloud Role] 删除角色失败:', e);
+    return false;
+  }
+}
 
 // ========== 内置角色种子数据 ==========
 const BUILTIN_ROLES = [
@@ -123,7 +164,27 @@ function roleDBDelete(id){
 async function roleSystemInit(){
   try {
     await roleDBOpen();
-    console.log('[roleSystemInit] 开始种子内置角色（仅新增不存在的）...');
+    console.log('[roleSystemInit] 开始初始化角色系统...');
+    
+    // 优先从云端获取角色数据
+    if (window.cloudSync) {
+      try {
+        const cloudRoles = await cloudGetRoles();
+        if (cloudRoles && cloudRoles.length > 0) {
+          console.log('[roleSystemInit] 从云端获取角色:', cloudRoles.length, '个');
+          // 同步到本地 IndexedDB
+          for (const role of cloudRoles) {
+            await roleDBPut(role);
+          }
+          console.log('[roleSystemInit] 云端角色已同步到本地');
+        }
+      } catch (e) {
+        console.error('[roleSystemInit] 从云端获取角色失败，使用本地数据:', e);
+      }
+    }
+    
+    // 确保内置角色存在（如果云端没有，则使用本地内置角色）
+    console.log('[roleSystemInit] 种子内置角色（仅新增不存在的）...');
     let added = 0;
     for(const role of BUILTIN_ROLES){
       const exists = await roleDBGet(role.id);
@@ -136,6 +197,7 @@ async function roleSystemInit(){
       }
     }
     console.log('[roleSystemInit] 种子完成，新增', added, '个角色');
+    
     const all = await roleDBGetAll();
     console.log('[roleSystemInit] 验证：DB共', all.length, '个角色');
   } catch(e) {
@@ -364,6 +426,14 @@ async function saveRole(roleId){
     isBuiltIn: existingRole ? !!existingRole.isBuiltIn : false,
   };
   try{
+    // 先保存到云端
+    if (window.cloudSync) {
+      const cloudResult = await cloudSaveRole(role);
+      if (!cloudResult) {
+        console.warn('[saveRole] 云端保存失败，仅保存到本地');
+      }
+    }
+    // 再保存到本地
     await roleDBPut(role);
     addSysLog('operation', (isEdit?'编辑':'新建')+'角色: '+name);
     closeRoleEdit();
@@ -378,6 +448,13 @@ async function deleteRole(roleId){
   if(role.isBuiltIn){alert('内置角色不可删除');return;}
   if(!confirm('确定删除角色「'+role.name+'」？已分配该角色的用户将变为"普通成员"。'))return;
   try{
+    // 先从云端删除
+    if (window.cloudSync) {
+      const cloudResult = await cloudDeleteRole(roleId);
+      if (!cloudResult) {
+        console.warn('[deleteRole] 云端删除失败，仅从本地删除');
+      }
+    }
     // 将该角色的用户改为 member
     const users = await userDBGetAll();
     for(const u of users){
