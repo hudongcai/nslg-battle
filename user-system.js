@@ -564,7 +564,7 @@ async function doLoginPwd(){
   try{
     const user = await userDBGet(phone);
     if(!user){msgEl.textContent='该手机号未注册';return;}
-    if(user.password!pwd){msgEl.textContent='密码错误';return;}
+    if(user.password!=pwd){msgEl.textContent='密码错误';return;}
     // 登录成功（本地）
     currentUser = user;
     saveSession(user);
