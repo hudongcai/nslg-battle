@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker - 微信支付 + OCR代理
  * 部署后路由：zhenwu.fun/api/*
- * 版本: v2026050414
+ * 版本: v2026050417
  */
 
 // ========== 微信支付配置（从环境变量读取）==========
@@ -538,6 +538,22 @@ async function handleGetProjectMembers(request, env, projectId) {
   }
 }
 
+// 获取某用户在所有项目中的权限
+async function handleGetUserPermissions(request, env, phone) {
+  try {
+    const stmt = env.DB.prepare(`
+      SELECT pp.* FROM project_permissions pp
+      WHERE pp.phone = ?
+    `);
+    const result = await stmt.bind(phone).all();
+    const permissions = result.results || [];
+
+    return jsonResponse({ success: true, data: permissions });
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500);
+  }
+}
+
 // 添加项目成员
 async function handleAddProjectMember(request, env, projectId) {
   try {
@@ -1020,6 +1036,11 @@ export default {
     // 验证用户登录
     if (path === '/api/users/login' && request.method === 'POST') {
       return handleLogin(request, env);
+    }
+    // 获取某用户在所有项目中的权限
+    if (path.match(/^\/api\/users\/[^/]+\/permissions$/) && request.method === 'GET') {
+      const phone = path.split('/')[3];
+      return handleGetUserPermissions(request, env, phone);
     }
     
     // ========== 支付相关 API ==========

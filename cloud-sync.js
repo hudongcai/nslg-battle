@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v2026050416
+ * 版本: v2026050417
  */
 
 // 环境切换：true=本地测试(localhost:8787)，false=线上生产(zhenwu.fun)
@@ -187,7 +187,31 @@ async function syncCloudToLocal() {
     }
     console.log('[Sync] 项目同步完成，共', cloudProjects.length, '个');
 
-    // 2. 同步战报列表（增量同步：只同步有差异的战报）
+    // 2. 同步数据权限（projAccess）
+    try {
+      // 从云端获取当前用户的所有项目权限
+      const cloudPermissions = await cloudRequest(`/users/${currentUser.phone}/permissions`);
+      if (cloudPermissions && cloudPermissions.success && cloudPermissions.data) {
+        const permData = cloudPermissions.data;
+        // 保存到本地 projAccess store
+        for (const perm of permData) {
+          await permDBPut({
+            id: perm.phone + '_' + perm.project_id,
+            phone: perm.phone,
+            projectId: perm.project_id,
+            grantedBy: perm.granted_by || '',
+            grantedAt: perm.granted_at || new Date().toISOString(),
+            canEdit: perm.can_edit === 1 || perm.can_edit === true,
+            canDelete: perm.can_delete === 1 || perm.can_delete === true
+          });
+        }
+        console.log('[Sync] 数据权限同步完成，共', permData.length, '条');
+      }
+    } catch (e) {
+      console.warn('[Sync] 数据权限同步失败（不影响其他数据）:', e);
+    }
+
+    // 3. 同步战报列表（增量同步：只同步有差异的战报）
     try {
       const cloudRecords = await cloudGetRecords();
       let syncCount = 0;
