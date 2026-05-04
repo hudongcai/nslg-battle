@@ -4,10 +4,10 @@
  * 版本: v2026050419
  */
 
-// 环境切换：true=本地测试(localhost:8787)，false=线上生产(zhenwu.fun)
+// 环境切换：true=本地测试(localhost:8787)，false=线上生产(api.zhenwu.fun)
 const CLOUD_LOCAL_DEV = false;
 
-const CLOUD_API_BASE = CLOUD_LOCAL_DEV ? 'http://127.0.0.1:8787/api' : '/api';
+const CLOUD_API_BASE = CLOUD_LOCAL_DEV ? 'http://127.0.0.1:8787/api' : 'https://api.zhenwu.fun/api';
 
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
@@ -24,7 +24,8 @@ async function cloudRequest(path, options = {}) {
   const defaultOptions = {
     headers: {
       'Content-Type': 'application/json'
-    }
+    },
+    credentials: 'include'  // 跨域携带 cookie（session 认证）
   };
   const finalOptions = { ...defaultOptions, ...options };
   if (finalOptions.body && typeof finalOptions.body !== 'string') {
