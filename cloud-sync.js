@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v2026050417
+ * 版本: v2026050419
  */
 
 // 环境切换：true=本地测试(localhost:8787)，false=线上生产(zhenwu.fun)
@@ -119,20 +119,38 @@ async function cloudGetRecords(projectId = null) {
   return data.success ? data.data : [];
 }
 
-// 创建战报（云端）
+// 创建战报（云端）- 排除大字段（图片等）
 async function cloudCreateRecord(record) {
+  // 创建记录的副本，排除大字段
+  const recordForCloud = { ...record };
+  // 移除 base64 图片（太大，D1 限制 1MB）
+  if (recordForCloud.data && typeof recordForCloud.data === 'object') {
+    const dataCopy = { ...recordForCloud.data };
+    delete dataCopy.ocrImage;  // 移除 base64 图片
+    delete dataCopy.imageData;  // 移除其他可能的图片字段
+    recordForCloud.data = dataCopy;
+  }
+  
   const data = await cloudRequest('/records', {
     method: 'POST',
-    body: record
+    body: recordForCloud
   });
   return data.success ? data.data : null;
 }
 
-// 更新战报（云端）
-async function cloudUpdateRecord(recordId, data) {
+// 更新战报（云端）- 排除大字段（图片等）
+async function cloudUpdateRecord(recordId, recordData) {
+  // 创建数据的副本，排除大字段
+  const dataForCloud = { ...recordData };
+  // 移除 base64 图片（太大，D1 限制 1MB）
+  if (dataForCloud && typeof dataForCloud === 'object') {
+    delete dataForCloud.ocrImage;  // 移除 base64 图片
+    delete dataForCloud.imageData;  // 移除其他可能的图片字段
+  }
+  
   const result = await cloudRequest(`/records/${recordId}`, {
     method: 'PUT',
-    body: { data }
+    body: { data: dataForCloud }
   });
   return result.success;
 }
