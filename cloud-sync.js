@@ -4,10 +4,10 @@
  * 版本: v2026050505
  */
 
-// 环境切换：true=本地测试(localhost:8787)，false=线上生产(api.zhenwu.fun)
+// 环境切换：false=使用 FRP 内网穿透
 const CLOUD_LOCAL_DEV = false;
 
-const CLOUD_API_BASE = CLOUD_LOCAL_DEV ? 'http://127.0.0.1:8787/api' : 'https://api.zhenwu.fun/api';
+const CLOUD_API_BASE = 'http://frp-bar.com:51645/api';
 
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
@@ -217,6 +217,49 @@ async function cloudCreateUser(phone, name, password, role = 'member') {
     body: JSON.stringify({ phone, nickname: name, password, role })
   });
   const data = await res.json();
+  return data.code === 200;
+}
+
+// ========== 战报管理（云端）==========
+
+// 创建战报（云端）
+async function cloudCreateBattle(battle) {
+  const data = await cloudRequest('/battles', {
+    method: 'POST',
+    body: {
+      projectId: battle.projectId || battle.project_id,
+      battleDate: battle.battleDate || battle.battle_date,
+      attackerName: battle.attackerName || battle.attacker_name || '',
+      enemyName: battle.enemyName || battle.enemy_name || '',
+      result: battle.result || '',
+      description: battle.description || '',
+      imageIds: battle.imageIds || []
+    }
+  });
+  return data.code === 200 ? data.data : null;
+}
+
+// 获取战报列表（云端）
+async function cloudGetBattles(projectId) {
+  const params = projectId ? `?projectId=${projectId}` : '';
+  const data = await cloudRequest(`/battles${params}`);
+  return data.code === 200 ? data.data.list : [];
+}
+
+// 更新战报（云端）
+async function cloudUpdateBattle(battleId, updates) {
+  const data = await cloudRequest(`/battles/${battleId}`, {
+    method: 'PUT',
+    body: updates
+  });
+  return data.code === 200;
+}
+
+// 删除战报（云端）
+async function cloudDeleteBattle(battleId) {
+  const data = await cloudRequest(`/battles/${battleId}`, {
+    method: 'DELETE'
+  });
   return data.code === 200;
 }
 
