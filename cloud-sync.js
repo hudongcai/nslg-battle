@@ -7,7 +7,7 @@
 // 环境切换：false=使用 FRP 内网穿透
 const CLOUD_LOCAL_DEV = false;
 
-const CLOUD_API_BASE = 'http://frp-bar.com:51645/api';
+const CLOUD_API_BASE = 'https://api.zhenwu.fun/api';
 
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
@@ -206,12 +206,8 @@ async function cloudLogin(phone, password) {
 
 // 创建用户（注册）
 async function cloudCreateUser(phone, name, password, role = 'member') {
-  // 修复：改用 /auth/register 公开接口（不需要权限）
   // 注意：此接口不需要 token，所以不能用 cloudRequest（会自动加 Authorization 头）
-  const base = window.location.hostname === 'localhost'
-    ? 'http://localhost:3000'
-    : 'https://api.zhenwu.fun';
-  const res = await fetch(`${base}/api/auth/register`, {
+  const res = await fetch(`${CLOUD_API_BASE}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, nickname: name, password, role })
