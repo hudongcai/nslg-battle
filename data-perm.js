@@ -87,27 +87,36 @@ async function getProjAccessForUser(phone) {
   return await permDBGetByPhone(phone);
 }
 
-// ========== 扩展 getVisibleProjects（修复：合并云端+本地，超管优先本地）==========
+// ========== 扩展 getVisibleProjects（修复：云端为真相之源，清理本地已删除项目）==========
 window._origGetVisibleProjects = window.getVisibleProjects || null;
 
 window.getVisibleProjects = async function () {
   if (!currentUser) return [];
 
-  // 始终先读本地，保证新创建的项目立即可见
+  // 始终先读本地
   const localProjects = await projDBGetAll();
   let merged = new Map();
   for (const p of localProjects) { merged.set(p.id, p); }
 
-  // 再尝试从云端获取，合并到本地（云端数据作为补充，不覆盖本地）
+  // 再从云端获取，合并到本地
   if (window.cloudSync && window.cloudSync.getToken && window.cloudSync.getToken()) {
     try {
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] data-perm 获取云端项目:', cloudProjects.length, '个');
+      const cloudIds = new Set();
       for (const proj of cloudProjects) {
-        await projDBPut(proj); // 同步到本地缓存
-        // 若本地没有该项目，则加入；若本地已有，保留本地版本（避免云端旧数据覆盖）
-        if (!merged.has(proj.id)) {
-          merged.set(proj.id, proj);
+        cloudIds.add(proj.id);
+        await projDBPut(proj);
+        if (!merged.has(proj.id)) { merged.set(proj.id, proj); }
+      }
+      // 关键修复：超管清理本地有但云端已删除的项目
+      if (cloudProjects.length > 0 && currentUser.role === 'super_admin') {
+        for (const [id, p] of merged) {
+          if (!cloudIds.has(id)) {
+            console.log('[Cloud] 项目', p.name, '(', id, ') 在云端不存在，从本地清理');
+            await projDBDelete(id);
+            merged.delete(id);
+          }
         }
       }
     } catch (e) {
@@ -119,7 +128,7 @@ window.getVisibleProjects = async function () {
 
   let all = Array.from(merged.values());
 
-  // 超管返回全部项目（云端+本地合并）
+  // 超管返回全部项目（云端+本地合并，已清理云端不存在的）
   if (currentUser.role === 'super_admin') return all;
 
   // 普通用户需要过滤权限

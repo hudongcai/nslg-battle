@@ -7,32 +7,45 @@ console.log('[project-system.js] v2026050413 加载');
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
 // visibility: 'public' | 'private'
 
-// ========== 获取当前用户可见项目（修复：合并云端+本地，超管优先本地）==========
+// ========== 获取当前用户可见项目（云端为真相之源，本地多余项目视为已删除）==========
 async function getVisibleProjects(){
   if(!currentUser)return[];
 
-  // 始终先读本地，保证新创建的项目立即可见
+  // 始终先读本地
   const localProjects = await projDBGetAll();
   let merged = new Map();
   for (const p of localProjects) { merged.set(p.id, p); }
 
-  // 再尝试从云端获取，合并到本地（云端数据作为补充，不覆盖本地新项目）
+  // 再从云端获取，合并到本地
   if(window.cloudSync){
     try{
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] 从云端获取项目:', cloudProjects.length, '个');
+      const cloudIds = new Set();
       for(const proj of cloudProjects){
-        await projDBPut(proj);
+        cloudIds.add(proj.id);
+        await projDBPut(proj); // 同步到本地缓存
+        // 保留本地版本（用户新建但云端还未同步的），或更新为云端最新版本
         if(!merged.has(proj.id)){ merged.set(proj.id, proj); }
+      }
+      // 关键修复：清理本地有但云端没有的项目（可能是其他设备/用户删除了）
+      // 仅超管执行清理，避免误删本地新建但云端尚未同步的项目
+      if(cloudProjects.length > 0 && currentUser.role === 'super_admin'){
+        for(const [id, p] of merged){
+          if(!cloudIds.has(id)){
+            console.log('[Cloud] 项目', p.name, '(', id, ') 在云端不存在，从本地清理');
+            await projDBDelete(id);
+            merged.delete(id);
+          }
+        }
       }
     }catch(e){
       console.error('[Cloud] 获取云端项目失败，使用本地数据:', e);
     }
   }
 
-  let all = Array.from(merged.values());
+  const all = Array.from(merged.values());
 
-  // 超管返回全部项目（云端+本地合并）
   if(currentUser.role==='super_admin') return all;
   return all.filter(p=>
     p.visibility==='public' ||
@@ -376,7 +389,6 @@ async function deleteProject(projectId){
     alert('您没有删除该项目的权限');
     return;
   }
-  if(!confirm('确定删除该项目？项目内的战报不会删除，但关联将解除。'))return;
   try{
     // 先从云端删除
     if(window.cloudSync){
