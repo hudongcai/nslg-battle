@@ -52,10 +52,14 @@ const BUILTIN_ROLES = [
     description: '拥有系统所有权限，可管理用户、角色和全局数据',
     isBuiltIn: true,
     permissions: {
-      projectManage:true, library:true, ranking:true, peijiang:true, yanwu:true,
-      systemConfig:true, userManage:true, syslog:true, dataManage:true,
-      projectCreate:true, dataImport:true, winrateAnalysis:true,
-      rolemanage:true, dataperm:true,
+      // 顶级导航
+      projectManage:true, library:true, ranking:true, peijiang:true, yanwu:true, systemConfig:true,
+      // 系统配置子级
+      rolemanage:true, userManage:true, dataperm:true, dataManage:true, cloudService:true, syslog:true,
+      // 项目管理子级
+      projCreate:true, projEdit:true, projDelete:true, projMember:true, projVisible:true,
+      dataImport:true, dataBatchSelect:true, dataRecordDelete:true, dataTableDelete:true, dataExport:true,
+      winrateAnalysis:true,
     },
   },
   {
@@ -64,10 +68,11 @@ const BUILTIN_ROLES = [
     description: '可管理项目数据，无系统配置权限',
     isBuiltIn: true,
     permissions: {
-      projectManage:true, library:true, ranking:true, peijiang:true, yanwu:true,
-      systemConfig:false, userManage:false, syslog:false, dataManage:false,
-      projectCreate:true, dataImport:true, winrateAnalysis:true,
-      rolemanage:false, dataperm:false,
+      projectManage:true, library:true, ranking:true, peijiang:true, yanwu:true, systemConfig:false,
+      rolemanage:false, userManage:false, dataperm:false, dataManage:false, cloudService:false, syslog:false,
+      projCreate:true, projEdit:true, projDelete:false, projMember:false, projVisible:false,
+      dataImport:true, dataBatchSelect:true, dataRecordDelete:true, dataTableDelete:true, dataExport:true,
+      winrateAnalysis:true,
     },
   },
   {
@@ -76,10 +81,11 @@ const BUILTIN_ROLES = [
     description: '仅可访问被分配的项目，无管理权限',
     isBuiltIn: true,
     permissions: {
-      projectManage:true,  library:false, ranking:false, peijiang:false, yanwu:false,
-      systemConfig:false, userManage:false, syslog:false, dataManage:false,
-      projectCreate:false, dataImport:false, winrateAnalysis:false,
-      rolemanage:false, dataperm:false,
+      projectManage:true, library:false, ranking:false, peijiang:false, yanwu:false, systemConfig:false,
+      rolemanage:false, userManage:false, dataperm:false, dataManage:false, cloudService:false, syslog:false,
+      projCreate:false, projEdit:false, projDelete:false, projMember:false, projVisible:false,
+      dataImport:false, dataBatchSelect:false, dataRecordDelete:false, dataTableDelete:false, dataExport:false,
+      winrateAnalysis:false,
     },
   },
 ];
@@ -136,7 +142,25 @@ async function getRolePermissions(roleId){
   if(builtin) return builtin.permissions||{};
   // 自定义角色
   const role = await roleDBGet(roleId);
-  return role? (role.permissions||{}) : null;
+  if(!role) return null;
+  return migratePermissions(role.permissions||{});
+}
+
+// ========== 权限迁移：旧格式 → 新格式 ==========
+function migratePermissions(perms) {
+  const result = { ...perms };
+  // projectCreate → projCreate + projEdit + projDelete
+  if (result.projectCreate) {
+    result.projCreate = true;
+    result.projEdit = true;
+    result.projDelete = true;
+  }
+  // 确保所有新权限字段存在（默认为 false）
+  const allKeys = PERMISSIONS.map(p => p.key);
+  for (const key of allKeys) {
+    if (result[key] === undefined) result[key] = false;
+  }
+  return result;
 }
 
 function roleDBPut(role){
@@ -206,35 +230,37 @@ async function roleSystemInit(){
 }
 
 // ========== 权限定义（所有可配置的权限点）==========
-// parent 为空表示顶级权限，有值表示属于某个父级权限
+// parent 为空表示顶级导航权限，有值表示属于某个父级权限的子权限
 const PERMISSIONS = [
-  // 顶级导航
+  // ========== 顶级导航 ==========
   {key:'projectManage', label:'项目管理',           parent:''},
   {key:'library',       label:'武将战法库',          parent:''},
   {key:'ranking',       label:'数值排行',            parent:''},
   {key:'peijiang',      label:'配将助手',            parent:''},
   {key:'yanwu',         label:'演武助手',            parent:''},
   {key:'systemConfig',  label:'系统配置',            parent:''},
-  // 系统配置子级
-  {key:'userManage',    label:'用户管理',            parent:'systemConfig'},
-  {key:'syslog',        label:'系统日志',            parent:'systemConfig'},
+
+  // ========== 系统配置子级 ==========
   {key:'rolemanage',    label:'角色管理',            parent:'systemConfig'},
+  {key:'userManage',    label:'用户管理',            parent:'systemConfig'},
   {key:'dataperm',      label:'数据权限',            parent:'systemConfig'},
   {key:'dataManage',    label:'数据管理',            parent:'systemConfig'},
-  // 项目内子级
-  {key:'projectCreate', label:'创建/编辑/删除项目',  parent:'projectManage'},
-  {key:'dataImport',    label:'战报导入',             parent:'projectManage'},
-  {key:'winrateAnalysis', label:'克制分析',          parent:'projectManage'},
-];
+  {key:'cloudService',  label:'云端服务',            parent:'systemConfig'},
+  {key:'syslog',        label:'系统日志',            parent:'systemConfig'},
 
-// ========== 获取角色权限（含 fallback）==========
-async function getRolePermissions(roleId){
-  const role = await roleDBGet(roleId);
-  if(role && role.permissions) return role.permissions;
-  // fallback：内置角色
-  const builtin = BUILTIN_ROLES.find(r=>r.id===roleId);
-  return builtin ? builtin.permissions : BUILTIN_ROLES[2].permissions; // 默认 member
-}
+  // ========== 项目管理子级（项目内操作）==========
+  {key:'projCreate',      label:'创建项目',            parent:'projectManage'},
+  {key:'projEdit',        label:'编辑项目',            parent:'projectManage'},
+  {key:'projDelete',      label:'删除项目',            parent:'projectManage'},
+  {key:'projMember',      label:'成员管理',            parent:'projectManage'},
+  {key:'projVisible',     label:'可见性管理',          parent:'projectManage'},
+  {key:'dataImport',      label:'战报导入',            parent:'projectManage'},
+  {key:'dataBatchSelect', label:'战报库批量选择',      parent:'projectManage'},
+  {key:'dataRecordDelete',label:'战报删除',            parent:'projectManage'},
+  {key:'dataTableDelete', label:'数据底表删除',        parent:'projectManage'},
+  {key:'dataExport',      label:'数据底表导出',         parent:'projectManage'},
+  {key:'winrateAnalysis', label:'克制分析导出',         parent:'projectManage'},
+];
 
 // ========== 渲染角色管理页面 ==========
 async function renderRoleManage(){
@@ -398,6 +424,14 @@ function permOnChange(key, parentKey, checked){
       if(cb) cb.checked = false;
     }
   }
+  if(checked && !parentKey){
+    // 顶级权限被勾选 → 自动勾选所有子权限
+    const children = PERMISSIONS.filter(p=>p.parent===key);
+    for(const c of children){
+      const cb = document.getElementById('perm_'+c.key);
+      if(cb && !cb.checked) cb.checked = true;
+    }
+  }
 }
 
 function closeRoleEdit(){
@@ -495,19 +529,17 @@ async function updateNavByRole(){
   }
   // 系统配置子导航
   const subMap = {
-    'subUserManage': 'userManage',
-    'subSysLog':     'syslog',
-    'subDataManage': 'dataManage',
     'subRoleManage': 'rolemanage',
+    'subUserManage': 'userManage',
     'subDataPerm':   'dataperm',
+    'subDataManage': 'dataManage',
+    'subCloudService': 'cloudService',
+    'subSysLog':     'syslog',
   };
   for(const [btnId, permKey] of Object.entries(subMap)){
     const btn = document.getElementById(btnId);
     if(btn) btn.style.display = perms[permKey] ? 'inline-block' : 'none';
   }
-  // 云端服务按钮：仅超管可见（不受权限系统控制）
-  const cloudBtn = document.getElementById('subCloudService');
-  if(cloudBtn) cloudBtn.style.display = (currentUser?.role==='super_admin') ? 'inline-block' : 'none';
   // 如果系统配置不可见，隐藏 subNav
   if(!perms['systemConfig']){
     document.getElementById('systemSubNav').style.display='none';
