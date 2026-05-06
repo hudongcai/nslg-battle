@@ -83,7 +83,9 @@ async function cloudGetProjects() {
   if (!phone) throw new Error('未登录');
 
   const data = await cloudRequest(`/projects?phone=${encodeURIComponent(phone)}&role=${encodeURIComponent(role || '')}`);
-  return data.success ? data.data : [];
+  // 兼容两种响应格式：{ success, data } 或 { code, data } (data 是数组)
+  const list = data.code === 200 ? data.data : (data.success ? data.data : null);
+  return Array.isArray(list) ? list : [];
 }
 
 // 创建项目（云端）
@@ -141,7 +143,9 @@ async function cloudRemoveProjectMember(projectId, phone) {
 async function cloudGetRecords(projectId = null) {
   const url = projectId ? `/records?project_id=${encodeURIComponent(projectId)}` : '/records';
   const data = await cloudRequest(url);
-  return data.success ? data.data : [];
+  // 兼容两种响应格式：{ success, data } 或 { code, data }
+  const list = data.code === 200 ? data.data?.list || data.data : (data.success ? data.data : null);
+  return Array.isArray(list) ? list : [];
 }
 
 // 创建战报（云端）- 排除大字段（图片等）
