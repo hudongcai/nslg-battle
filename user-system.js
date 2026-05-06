@@ -309,9 +309,22 @@ function projDBGet(id){
     openUserDB().then(db=>{
       if(!db.objectStoreNames.contains('projects')){resolve(null);return;}
       const tx = db.transaction(['projects'],'readonly');
-      const req = tx.objectStore('projects').get(id);
-      req.onsuccess = ()=>resolve(req.result||null);
-      req.onerror   = ()=>resolve(null);
+      const store = tx.objectStore('projects');
+      // 先按原类型查找
+      const req = store.get(id);
+      req.onsuccess = (e)=>{
+        let result = e.target.result;
+        if(!result){
+          // 类型不匹配时尝试转换后查找（数字↔字符串）
+          const altId = typeof id === 'string' ? Number(id) : String(id);
+          const req2 = store.get(altId);
+          req2.onsuccess = (e2)=>resolve(e2.target.result||null);
+          req2.onerror   = ()=>resolve(null);
+        } else {
+          resolve(result);
+        }
+      };
+      req.onerror = ()=>resolve(null);
     }).catch(()=>resolve(null));
   });
 }

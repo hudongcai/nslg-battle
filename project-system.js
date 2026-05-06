@@ -54,19 +54,32 @@ async function getVisibleProjects(){
   );
 }
 
-// ========== 项目查询（含云端回退）==========
+// ========== 项目查询（云端优先，失败回退本地）==========
 async function getProjectWithFallback(projectId) {
-  let proj = await projDBGet(projectId);
-  if (!proj && typeof window.cloudSync?.getProject === 'function') {
+  let proj = null;
+  // 云端优先（云端是真相源）
+  if (typeof window.cloudSync?.getProject === 'function') {
     try {
       proj = await window.cloudSync.getProject(projectId);
       if (proj) {
         await projDBPut(proj);
         console.log('[getProjectWithFallback] 从云端获取项目:', proj.name);
+        return proj;
       }
     } catch (e) {
-      console.error('[getProjectWithFallback] 云端获取失败:', e);
+      const errMsg = e.message || String(e);
+      console.warn('[getProjectWithFallback] 云端获取失败:', errMsg);
+      // 云端明确返回"项目不存在"，说明云端已删除，同步删除本地
+      if (errMsg.includes('不存在') || errMsg.includes('Not Found') || errMsg.includes('404')) {
+        console.log('[getProjectWithFallback] 云端项目已删除，清理本地:', projectId);
+        await projDBDelete(projectId);
+      }
     }
+  }
+  // 云端无数据或失败，回退本地
+  proj = await projDBGet(projectId);
+  if (proj) {
+    console.log('[getProjectWithFallback] 使用本地项目:', proj.name);
   }
   return proj;
 }
