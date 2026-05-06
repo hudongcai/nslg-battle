@@ -136,10 +136,20 @@ async function renderDataPerm() {
   if (!container) return;
   container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">⏳ 加载中...</div>';
 
-  if (!currentUser || currentUser.role !== 'super_admin') {
+  // 按权限点 dataperm 控制访问（超级管理员自动拥有所有权限）
+  if (!currentUser) {
     container.innerHTML = `<div style="padding:40px;text-align:center;">
       <div style="font-size:32px;margin-bottom:12px;">⛔</div>
-      <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">仅超级管理员可访问数据权限配置</div>
+      <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">请先登录</div>
+    </div>`;
+    return;
+  }
+  const perms = await getRolePermissions(currentUser.role);
+  if (!perms || !perms['dataperm']) {
+    container.innerHTML = `<div style="padding:40px;text-align:center;">
+      <div style="font-size:32px;margin-bottom:12px;">⛔</div>
+      <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">当前角色无权访问数据权限配置</div>
+      <div style="color:var(--text3);font-size:12px;">请联系管理员分配「数据权限」权限点</div>
     </div>`;
     return;
   }
@@ -202,6 +212,11 @@ async function renderDataPerm() {
 
 // ========== 弹窗：管理项目权限 ==========
 async function showProjectPermModal(projectId) {
+  // 权限检查：需要 dataperm 权限
+  if (!currentUser) { alert('请先登录'); return; }
+  const perms = await getRolePermissions(currentUser.role);
+  if (!perms || !perms['dataperm']) { alert('无权操作：需要「数据权限」权限'); return; }
+
   const allProjects = await projDBGetAll();
   const allUsers = await userDBGetAll();
   const proj = allProjects.find(p => p.id === projectId);
@@ -280,6 +295,11 @@ async function showProjectPermModal(projectId) {
 
 // ========== 保存项目权限 ==========
 async function saveProjectPermissions(projectId) {
+  // 权限检查：需要 dataperm 权限
+  if (!currentUser) { alert('请先登录'); return; }
+  const perms = await getRolePermissions(currentUser.role);
+  if (!perms || !perms['dataperm']) { alert('无权操作：需要「数据权限」权限'); return; }
+
   // 收集勾选的用户
   const checkboxes = document.querySelectorAll('.dp-user-check:checked:not(:disabled)');
   const phones = [...checkboxes].map(cb => cb.dataset.phone);
