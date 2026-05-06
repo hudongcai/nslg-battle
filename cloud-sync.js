@@ -298,23 +298,9 @@ async function syncCloudToLocal() {
     // 2. 同步数据权限（projAccess）
     try {
       // 从云端获取当前用户的所有项目权限
-      const cloudPermissions = await cloudRequest(`/users/${currentUser.phone}/permissions`);
-      if (cloudPermissions && cloudPermissions.success && cloudPermissions.data) {
-        const permData = cloudPermissions.data;
-        // 保存到本地 projAccess store
-        for (const perm of permData) {
-          await permDBPut({
-            id: perm.phone + '_' + perm.project_id,
-            phone: perm.phone,
-            projectId: perm.project_id,
-            grantedBy: perm.granted_by || '',
-            grantedAt: perm.granted_at || new Date().toISOString(),
-            canEdit: perm.can_edit === 1 || perm.can_edit === true,
-            canDelete: perm.can_delete === 1 || perm.can_delete === true
-          });
-        }
-        console.log('[Sync] 数据权限同步完成，共', permData.length, '条');
-      }
+      // 注意：后端 /users/:id/permissions 返回的是角色权限对象，不是项目权限数组
+      // 项目权限通过 /projects/:id/members 获取，此处暂时跳过
+      console.log('[Sync] 数据权限同步：跳过（项目权限通过项目成员接口获取）');
     } catch (e) {
       console.warn('[Sync] 数据权限同步失败（不影响其他数据）:', e);
     }
