@@ -349,6 +349,7 @@ window.cloudSync = {
   createRecord: cloudCreateRecord,
   updateRecord: cloudUpdateRecord,
   deleteRecord: cloudDeleteRecord,
+  getProject: cloudGetProject,
   login: cloudLogin,
   createUser: cloudCreateUser,
   syncToLocal: syncCloudToLocal,

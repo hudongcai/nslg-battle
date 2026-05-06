@@ -37,8 +37,25 @@ async function getVisibleProjects(){
   return all.filter(p=>
     p.visibility==='public' ||
     p.creator === currentUser.phone ||
-    (p.memberPhones||[]).includes(currentUser.phone)
+      (p.memberPhones||[]).includes(currentUser.phone)
   );
+}
+
+// ========== 项目查询（含云端回退）==========
+async function getProjectWithFallback(projectId) {
+  let proj = await projDBGet(projectId);
+  if (!proj && typeof window.cloudSync?.getProject === 'function') {
+    try {
+      proj = await window.cloudSync.getProject(projectId);
+      if (proj) {
+        await projDBPut(proj);
+        console.log('[getProjectWithFallback] 从云端获取项目:', proj.name);
+      }
+    } catch (e) {
+      console.error('[getProjectWithFallback] 云端获取失败:', e);
+    }
+  }
+  return proj;
 }
 
 // ========== 渲染项目管理页 ==========
@@ -166,7 +183,7 @@ async function saveProject(projectId){
     let proj;
     if(projectId){
       // 编辑现有项目
-      proj = await projDBGet(projectId);
+      proj = await getProjectWithFallback(projectId);
       if(!proj){alert('项目不存在');return;}
       proj.name = name; proj.desc = desc; proj.visibility = visibility; proj.updatedAt = Date.now();
       await projDBPut(proj);
@@ -239,7 +256,7 @@ async function manageProjectMembers(projectId){
     alert('只有超级管理员可以分配项目成员');
     return;
   }
-  const proj = await projDBGet(projectId);
+  const proj = await getProjectWithFallback(projectId);
   if(!proj){alert('项目不存在');return;}
   const allUsers = await userDBGetAll();
   const members = proj.memberPhones||[];
@@ -310,27 +327,8 @@ async function saveMembers(projectId){
 
 // ========== 查看项目（进入项目详情，显示子导航） ==========
 async function viewProject(projectId){
-  // 先查本地，如果不存在则尝试从云端获取
-  let proj = await projDBGet(projectId);
-  if(!proj){
-    // 云端回退：尝试从云端获取项目详情
-    if(typeof cloudGetProject === 'function'){
-      try {
-        proj = await cloudGetProject(projectId);
-        if(proj){
-          // 保存到本地 IndexedDB
-          await projDBPut(proj);
-          console.log('[viewProject] 从云端获取项目详情成功:', proj.name);
-        }
-      } catch(e) {
-        console.error('[viewProject] 云端获取项目失败:', e.message);
-      }
-    }
-    if(!proj){
-      alert('项目不存在');
-      return;
-    }
-  }
+  const proj = await getProjectWithFallback(projectId);
+  if(!proj){ alert('项目不存在'); return; }
   window.currentProjectId = projectId;
   // 隐藏项目列表，显示项目子导航
   document.getElementById('tab-project').style.display='none';
@@ -364,7 +362,7 @@ function exitProject(){
 // ========== 删除项目 ==========
 async function deleteProject(projectId){
   // 权限检查：超管 / 创建者 / 有 canDelete 权限的用户
-  const proj = await projDBGet(projectId);
+  const proj = await getProjectWithFallback(projectId);
   if(!proj){alert('项目不存在');return;}
   const isOwner = proj.creator === currentUser.phone;
   const isSuperAdmin = currentUser.role === 'super_admin';
