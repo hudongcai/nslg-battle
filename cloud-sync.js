@@ -88,6 +88,13 @@ async function cloudGetProjects() {
   return Array.isArray(list) ? list : [];
 }
 
+// 获取单个项目详情（从云端）
+async function cloudGetProject(projectId) {
+  const data = await cloudRequest(`/projects/${projectId}`);
+  const project = data.code === 200 ? data.data : (data.success ? data.data : null);
+  return project || null;
+}
+
 // 创建项目（云端）
 async function cloudCreateProject(project) {
   const data = await cloudRequest('/projects', {

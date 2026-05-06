@@ -310,8 +310,27 @@ async function saveMembers(projectId){
 
 // ========== 查看项目（进入项目详情，显示子导航） ==========
 async function viewProject(projectId){
-  const proj = await projDBGet(projectId);
-  if(!proj){alert('项目不存在');return;}
+  // 先查本地，如果不存在则尝试从云端获取
+  let proj = await projDBGet(projectId);
+  if(!proj){
+    // 云端回退：尝试从云端获取项目详情
+    if(typeof cloudGetProject === 'function'){
+      try {
+        proj = await cloudGetProject(projectId);
+        if(proj){
+          // 保存到本地 IndexedDB
+          await projDBPut(proj);
+          console.log('[viewProject] 从云端获取项目详情成功:', proj.name);
+        }
+      } catch(e) {
+        console.error('[viewProject] 云端获取项目失败:', e.message);
+      }
+    }
+    if(!proj){
+      alert('项目不存在');
+      return;
+    }
+  }
   window.currentProjectId = projectId;
   // 隐藏项目列表，显示项目子导航
   document.getElementById('tab-project').style.display='none';
