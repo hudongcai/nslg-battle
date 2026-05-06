@@ -189,25 +189,8 @@ async function roleSystemInit(){
   try {
     await roleDBOpen();
     console.log('[roleSystemInit] 开始初始化角色系统...');
-    
-    // 优先从云端获取角色数据
-    if (window.cloudSync) {
-      try {
-        const cloudRoles = await cloudGetRoles();
-        if (cloudRoles && cloudRoles.length > 0) {
-          console.log('[roleSystemInit] 从云端获取角色:', cloudRoles.length, '个');
-          // 同步到本地 IndexedDB
-          for (const role of cloudRoles) {
-            await roleDBPut(role);
-          }
-          console.log('[roleSystemInit] 云端角色已同步到本地');
-        }
-      } catch (e) {
-        console.error('[roleSystemInit] 从云端获取角色失败，使用本地数据:', e);
-      }
-    }
-    
-    // 确保内置角色存在（如果云端没有，则使用本地内置角色）
+
+    // 确保内置角色存在（只新增本地不存在的，绝不覆盖已有角色）
     console.log('[roleSystemInit] 种子内置角色（仅新增不存在的）...');
     let added = 0;
     for(const role of BUILTIN_ROLES){
@@ -221,7 +204,32 @@ async function roleSystemInit(){
       }
     }
     console.log('[roleSystemInit] 种子完成，新增', added, '个角色');
-    
+
+    // 云端同步：仅在本地角色为空时从云端拉取，避免覆盖本地修改
+    if (window.cloudSync) {
+      try {
+        const localRoles = await roleDBGetAll();
+        if (localRoles.length === 0) {
+          // 本地没有任何角色，才从云端拉取
+          const cloudRoles = await cloudGetRoles();
+          if (cloudRoles && cloudRoles.length > 0) {
+            console.log('[roleSystemInit] 本地无角色，从云端同步:', cloudRoles.length, '个');
+            for (const role of cloudRoles) {
+              await roleDBPut(role);
+            }
+          }
+        } else {
+          console.log('[roleSystemInit] 本地已有', localRoles.length, '个角色，跳过云端覆盖');
+          // 后台静默同步：将本地修改推送到云端（双向同步）
+          for (const role of localRoles) {
+            try { await cloudSaveRole(role); } catch(e) {}
+          }
+        }
+      } catch (e) {
+        console.error('[roleSystemInit] 云端同步失败，使用本地数据:', e);
+      }
+    }
+
     const all = await roleDBGetAll();
     console.log('[roleSystemInit] 验证：DB共', all.length, '个角色');
   } catch(e) {
@@ -461,9 +469,10 @@ async function saveRole(roleId){
   };
   try{
     // 先保存到云端
+    let cloudOK = true;
     if (window.cloudSync) {
-      const cloudResult = await cloudSaveRole(role);
-      if (!cloudResult) {
+      cloudOK = await cloudSaveRole(role);
+      if (!cloudOK) {
         console.warn('[saveRole] 云端保存失败，仅保存到本地');
       }
     }
@@ -472,6 +481,10 @@ async function saveRole(roleId){
     addSysLog('operation', (isEdit?'编辑':'新建')+'角色: '+name);
     closeRoleEdit();
     await renderRoleManage();
+    // 明确告知用户云端同步状态
+    if (!cloudOK) {
+      alert('角色已保存到本地，但云端同步失败！\n下次刷新前请检查网络连接，或手动重新保存。');
+    }
   }catch(e){alert('保存失败：'+e.message);}
 }
 

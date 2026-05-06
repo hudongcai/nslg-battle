@@ -7,32 +7,32 @@ console.log('[project-system.js] v2026050413 加载');
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
 // visibility: 'public' | 'private'
 
-// ========== 获取当前用户可见项目 ==========
+// ========== 获取当前用户可见项目（修复：合并云端+本地，超管优先本地）==========
 async function getVisibleProjects(){
   if(!currentUser)return[];
-  
-  // 优先从云端获取
-  let cloudProjects = [];
+
+  // 始终先读本地，保证新创建的项目立即可见
+  const localProjects = await projDBGetAll();
+  let merged = new Map();
+  for (const p of localProjects) { merged.set(p.id, p); }
+
+  // 再尝试从云端获取，合并到本地（云端数据作为补充，不覆盖本地新项目）
   if(window.cloudSync){
     try{
-      cloudProjects = await window.cloudSync.getProjects();
+      const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] 从云端获取项目:', cloudProjects.length, '个');
-      // 同步到本地 IndexedDB（作为缓存）
       for(const proj of cloudProjects){
         await projDBPut(proj);
+        if(!merged.has(proj.id)){ merged.set(proj.id, proj); }
       }
     }catch(e){
       console.error('[Cloud] 获取云端项目失败，使用本地数据:', e);
     }
   }
-  
-  // 如果云端获取成功，返回云端数据；否则返回本地数据
-  if(cloudProjects.length > 0){
-    return cloudProjects;
-  }
-  
-  //  fallback：从本地获取
-  const all = await projDBGetAll();
+
+  let all = Array.from(merged.values());
+
+  // 超管返回全部项目（云端+本地合并）
   if(currentUser.role==='super_admin') return all;
   return all.filter(p=>
     p.visibility==='public' ||
@@ -141,7 +141,8 @@ async function showCreateProject(projectId){
   const isEdit = !!projectId;
   let proj = null;
   if(isEdit){
-    proj = await projDBGet(projectId);
+    // 修复：使用 getProjectWithFallback，本地找不到时尝试从云端获取
+    proj = await getProjectWithFallback(projectId);
     if(!proj){alert('项目不存在');return;}
   }
   const overlay = document.createElement('div');

@@ -87,39 +87,41 @@ async function getProjAccessForUser(phone) {
   return await permDBGetByPhone(phone);
 }
 
-// ========== 扩展 getVisibleProjects（修复：优先从云端获取）==========
+// ========== 扩展 getVisibleProjects（修复：合并云端+本地，超管优先本地）==========
 window._origGetVisibleProjects = window.getVisibleProjects || null;
 
 window.getVisibleProjects = async function () {
   if (!currentUser) return [];
-  
-  // 优先从云端获取项目列表
-  let all = [];
-  // 修复：先检查 token 是否存在，无 token 时不调用云端 API
+
+  // 始终先读本地，保证新创建的项目立即可见
+  const localProjects = await projDBGetAll();
+  let merged = new Map();
+  for (const p of localProjects) { merged.set(p.id, p); }
+
+  // 再尝试从云端获取，合并到本地（云端数据作为补充，不覆盖本地）
   if (window.cloudSync && window.cloudSync.getToken && window.cloudSync.getToken()) {
     try {
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] data-perm 获取云端项目:', cloudProjects.length, '个');
-      // 同步到本地 IndexedDB（作为缓存）
       for (const proj of cloudProjects) {
-        await projDBPut(proj);
+        await projDBPut(proj); // 同步到本地缓存
+        // 若本地没有该项目，则加入；若本地已有，保留本地版本（避免云端旧数据覆盖）
+        if (!merged.has(proj.id)) {
+          merged.set(proj.id, proj);
+        }
       }
-      all = cloudProjects;
     } catch (e) {
       console.error('[Cloud] 获取云端项目失败，使用本地数据:', e.message || e);
     }
   } else {
     console.log('[Cloud] 无有效 token，跳过云端获取，使用本地数据');
   }
-  
-  // 如果云端没有数据，fallback 到本地 IndexedDB
-  if (all.length === 0) {
-    all = await projDBGetAll();
-  }
-  
-  // 超管返回全部项目
+
+  let all = Array.from(merged.values());
+
+  // 超管返回全部项目（云端+本地合并）
   if (currentUser.role === 'super_admin') return all;
-  
+
   // 普通用户需要过滤权限
   const grantedIds = await getGrantedProjectIds(currentUser.phone);
   return all.filter(p =>
