@@ -192,10 +192,13 @@ async function cloudDeleteRecord(recordId) {
 
 // 用户登录（云端验证）
 async function cloudLogin(phone, password) {
-  const data = await cloudRequest('/auth/login', {
+  // 登录接口不需要 token，不能用 cloudRequest（会自动加 Authorization 头）
+  const res = await fetch(`${CLOUD_API_BASE}/auth/login`, {
     method: 'POST',
-    body: { phone, password }
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, password })
   });
+  const data = await res.json();
   // 后端返回格式: { code: 200, data: { token, user } }
   if (data && data.code === 200 && data.data && data.data.token) {
     setToken(data.data.token);
