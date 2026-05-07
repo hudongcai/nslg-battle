@@ -72,13 +72,13 @@ async function callOCRAPI(base64Data) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OCR_CONFIG.timeout);
 
-  const promptText = `请识别这张三国谋定天下游戏的战报截图。格式要求：
+  const promptText = `请识别这张三国谋定天下游戏的战报截图，严格按照格式输出：
 【左侧】
-玩家名：xxx（在头像上方，格式如"真武|憨憨牛"或"同盟|玩家名"）
-同盟：xxx
-阵型：xxx（如雁形阵、箕形阵）
-战损兵力：数字
-总兵力：数字（如24383/30000中的30000）
+同盟：xxx（头像上方"|"前面的部分，如"真武|憨憨牛"则同盟=真武）
+玩家：xxx（头像上方"|"后面的部分，如"真武|憨憨牛"则玩家=憨憨牛）
+阵型：xxx（如雁形阵、箕形阵、鱼鳞阵）
+战损：数字（如 8152）
+总兵：数字（如 30000）
 武将1：武将名
 战法1：战法A,战法B,战法C
 武将2：武将名
@@ -86,16 +86,22 @@ async function callOCRAPI(base64Data) {
 武将3：武将名
 战法3：战法G,战法H,战法I
 【右侧】
-（同上格式）
+同盟：xxx
+玩家：xxx
+阵型：xxx
+战损：数字
+总兵：数字
+武将1：武将名
+战法1：战法A,战法B,战法C
+武将2：武将名
+战法2：战法D,战法E,战法F
+武将3：武将名
+战法3：战法G,战法H,战法I
 【结果】
-胜负：胜/败/平
+胜负：胜 或 败 或 平
 【日期】
-战斗日期：YYYY-MM-DD 格式，如 2026-05-07
-注意：
-1. 玩家名在头像上方，可能带同盟前缀如"真武|憨憨牛"
-2. 每个武将对应3个战法（自带+2个配置），用英文逗号分隔
-3. 无法识别用"未知"
-4. 日期无法识别则留空`;
+战斗日期：YYYY-MM-DD，如 2026-05-07，无法识别则留空
+注意：每个武将对应3个战法，用英文逗号分隔；无法识别填"未知"`;
 
   try {
     const reqBody = {
@@ -202,7 +208,9 @@ function parseOCRResponse(text) {
       if (side === 'left') flush('left'); else if (side === 'right') flush('right');
       side = 'result'; continue;
     }
-    const ci = line.indexOf('：');
+    // 支持全角：和半角 : 两种冒号
+    let ci = line.indexOf('：');
+    if (ci === -1) ci = line.indexOf(':');
     if (ci === -1) continue;
     const key = line.substring(0, ci).trim();
     const val = line.substring(ci + 1).trim();

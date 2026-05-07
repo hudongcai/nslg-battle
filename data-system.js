@@ -218,7 +218,13 @@ async function dbAdd(rec) {
             attackerName: rec.leftPlayer || rec.attackerName || '',
             enemyName: rec.rightPlayer || rec.enemyName || '',
             result: rec.result || '',
-            description: JSON.stringify(rec.data || rec)
+            // description 只存战报武将/战法信息（不含图片等大数据）
+            description: JSON.stringify({
+              leftGenerals: rec.leftGenerals || [],
+              rightGenerals: rec.rightGenerals || [],
+              leftTactics: rec.leftTactics || [],
+              rightTactics: rec.rightTactics || []
+            })
           };
           window.cloudSync.createRecord(cloudRec).then(result => {
             if(result && result.id){
