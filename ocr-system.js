@@ -458,8 +458,19 @@ async function startBatchProcess() {
           // 同步到云端（如果云同步可用）
           if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
             try {
-              const cloudRec = { ...record, project_id: window.currentProjectId };
-              delete cloudRec.imageBase64; // 不上传图片数据
+              const cloudRec = {
+                projectId: window.currentProjectId,
+                battleDate: new Date().toISOString().split('T')[0], // 今天作为战报日期
+                attackerName: record.leftPlayer || '',
+                enemyName: record.rightPlayer || '',
+                result: '',
+                description: JSON.stringify({
+                  leftGenerals: record.leftGenerals || [],
+                  rightGenerals: record.rightGenerals || [],
+                  leftTactics: record.leftTactics || [],
+                  rightTactics: record.rightTactics || []
+                })
+              };
               await window.cloudSync.createRecord(cloudRec);
               console.log('[OCR] 战报已同步到云端');
             } catch(e) {
@@ -488,8 +499,14 @@ async function startBatchProcess() {
             // 同步到云端（如果云同步可用）
             if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
               try {
-                const cloudRec = { ...errRec, project_id: window.currentProjectId };
-                delete cloudRec.imageBase64;
+                const cloudRec = {
+                  projectId: window.currentProjectId,
+                  battleDate: new Date().toISOString().split('T')[0],
+                  attackerName: errRec.imageName || '',
+                  enemyName: '',
+                  result: '',
+                  description: '解析失败: ' + (errRec._errorMsg || '未知错误')
+                };
                 await window.cloudSync.createRecord(cloudRec);
               } catch(e) {
                 console.error('[OCR] 云端同步失败:', e);

@@ -224,21 +224,13 @@ async function cloudCreateRecord(record) {
   return data.success ? data.data : null;
 }
 
-// 更新战报（云端）- 排除大字段（图片等）
+// 更新战报（云端）
 async function cloudUpdateRecord(recordId, recordData) {
-  // 创建数据的副本，排除大字段
-  const dataForCloud = { ...recordData };
-  // 移除 base64 图片（太大，D1 限制 1MB）
-  if (dataForCloud && typeof dataForCloud === 'object') {
-    delete dataForCloud.ocrImage;  // 移除 base64 图片
-    delete dataForCloud.imageData;  // 移除其他可能的图片字段
-  }
-  
   const result = await cloudRequest(`/records/${recordId}`, {
     method: 'PUT',
-    body: { data: dataForCloud }
+    body: recordData
   });
-  return result.success;
+  return result.success || result.code === 200;
 }
 
 // 删除战报（云端）

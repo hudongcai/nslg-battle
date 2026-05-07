@@ -211,19 +211,18 @@ async function dbAdd(rec) {
       
       // 同步到云端
       if(window.cloudSync){
-        const cloudRec = { ...rec };
-        cloudRec.project_id = rec.projectId || null;
-        cloudRec.user_phone = rec.user_phone;
-        cloudRec.data = rec;  // 整个战报数据存到 data 字段
-        delete cloudRec.projectId;  // 使用 project_id
         try{
+          const cloudRec = {
+            projectId: rec.projectId || window.currentProjectId || null,
+            battleDate: rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            attackerName: rec.leftPlayer || rec.attackerName || '',
+            enemyName: rec.rightPlayer || rec.enemyName || '',
+            result: rec.result || '',
+            description: JSON.stringify(rec.data || rec)
+          };
           window.cloudSync.createRecord(cloudRec).then(result => {
             if(result && result.id){
               console.log('[Cloud] 战报已同步到云端:', result.id);
-              // 如果云端返回了不同的 ID，更新本地
-              if(result.id !== rec.id){
-                // 可选：更新本地记录的云端 ID 映射
-              }
             }
           }).catch(e => console.error('[Cloud] 战报同步失败:', e));
         }catch(e){console.error('[Cloud] 战报同步异常:', e);}
@@ -243,7 +242,15 @@ function dbPut(rec) {
       // 同步到云端
       if(window.cloudSync && rec.id){
         try{
-          window.cloudSync.updateRecord(rec.id, rec).catch(e => console.error('[Cloud] 更新失败:', e));
+          const cloudRec = {
+            projectId: rec.projectId || window.currentProjectId || null,
+            battleDate: rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            attackerName: rec.leftPlayer || rec.attackerName || '',
+            enemyName: rec.rightPlayer || rec.enemyName || '',
+            result: rec.result || '',
+            description: JSON.stringify(rec.data || rec)
+          };
+          window.cloudSync.updateRecord(rec.id, cloudRec).catch(e => console.error('[Cloud] 更新失败:', e));
         }catch(e){console.error('[Cloud] 同步异常:', e);}
       }
       resolve(rec.id);
