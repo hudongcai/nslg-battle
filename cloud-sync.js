@@ -344,7 +344,7 @@ async function syncCloudToLocal() {
 // ========== 数据权限 API（projAccess 本地读取）==========
 // getMyAccess：返回当前用户在 projAccess 表中的所有授权记录
 // 用于 filterVisibleProjects 的 P4 公共项目 + P2 成员可见性校验
-const PROJ_ACCESS_STORE = 'projAccess';
+// 注意：PROJ_ACCESS_STORE 已由 data-perm.js 在全局声明
 
 function _openUserDBForAccess() {
   return new Promise((resolve, reject) => {
