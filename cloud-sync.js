@@ -47,25 +47,53 @@ async function cloudRequest(path, options = {}) {
     finalOptions.body = JSON.stringify(finalOptions.body);
   }
 
-  try {
-    // 动态超时：OCR 90秒，数据同步/批量操作 60秒，普通请求 30秒
-    const isOCR = url.includes('/ocr');
-    const isBatch = url.includes('/records') || url.includes('/battles');
-    const timeoutMs = isOCR ? 90000 : (isBatch ? 60000 : 30000);
+    try {
+      // 动态超时：OCR 90秒，数据同步/批量操作 60秒，普通请求 30秒
+      const isOCR = url.includes('/ocr');
+      const isBatch = url.includes('/records') || url.includes('/battles');
+      const timeoutMs = isOCR ? 90000 : (isBatch ? 60000 : 30000);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const resp = await fetch(url, { ...finalOptions, signal: controller.signal });
-    clearTimeout(timeoutId);
-    const data = await resp.json();
-    if (!resp.ok) {
-      // 401: Token 无效或过期，清除本地 token
-      if (resp.status === 401) {
-        console.warn('[Cloud Sync] Token 无效或过期，已清除本地 token');
-        setToken(null);  // 清除无效 token
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const resp = await fetch(url, { ...finalOptions, signal: controller.signal });
+      clearTimeout(timeoutId);
+      const data = await resp.json();
+      if (!resp.ok) {
+        // 401: Token 无效或过期，尝试自动重新登录
+        if (resp.status === 401) {
+          console.warn('[Cloud Sync] Token 无效或过期，尝试自动重新登录...');
+          setToken(null);  // 先清除无效 token
+          
+          // 尝试重新登录
+          if (currentUser && currentUser.phone) {
+            try {
+              await cloudLogin(currentUser.phone, currentUser.password || '');
+              console.log('[Cloud Sync] 自动重新登录成功，重试请求...');
+              // 重新发送请求
+              const newToken = getToken();
+              if (newToken) {
+                finalOptions.headers['Authorization'] = 'Bearer ' + newToken;
+                const retryResp = await fetch(url, { ...finalOptions, signal: controller.signal });
+                const retryData = await retryResp.json();
+                if (retryResp.ok) {
+                  // 标准化返回格式
+                  if (retryData.code === 200 && !retryData.success) {
+                    retryData.success = true;
+                  } else if (retryData.success === true && !retryData.code) {
+                    retryData.code = 200;
+                  }
+                  return retryData;
+                }
+              }
+            } catch (loginErr) {
+              console.error('[Cloud Sync] 自动重新登录失败:', loginErr.message);
+            }
+          }
+          
+          throw new Error('登录已过期，请重新登录');
+        }
+        throw new Error(data.message || data.error || `请求失败(${resp.status})`);
       }
-      throw new Error(data.message || data.error || `请求失败(${resp.status})`);
-    }
     // 标准化：后端返回 { success:true, data } 或 { code:200, data }，统一字段
     if (data.code === 200 && !data.success) {
       data.success = true;
@@ -94,15 +122,28 @@ async function cloudRequestAPI(path, options = {}) {
 // ========== 项目管理 API ==========
 
 // 获取项目列表（从云端）
+// 后端根据 JWT token 中的用户身份返回项目（超管返回全部）
 async function cloudGetProjects() {
-  const phone = getCurrentUserPhone();
-  const role = getCurrentUserRole();
-  if (!phone) throw new Error('未登录');
+  if (!getToken()) {
+    // 无 token，尝试重新登录获取 token
+    if (currentUser && currentUser.phone) {
+      try {
+        await cloudLogin(currentUser.phone, currentUser.password || '');
+      } catch (e) {
+        console.warn('[cloudGetProjects] 重新登录失败:', e.message);
+      }
+    }
+    if (!getToken()) {
+      console.warn('[cloudGetProjects] 无有效 token，无法获取云端项目');
+      return [];
+    }
+  }
 
-  const data = await cloudRequest(`/projects?phone=${encodeURIComponent(phone)}&role=${encodeURIComponent(role || '')}`);
-  // 兼容两种响应格式：{ success, data } 或 { code, data } (data 是数组)
-  const list = data.code === 200 ? data.data : (data.success ? data.data : null);
-  return Array.isArray(list) ? list : [];
+  const data = await cloudRequest('/projects');
+  // 后端返回格式：{ code:200, data: [...] }  (data 是数组)
+  const list = Array.isArray(data.data) ? data.data : [];
+  console.log('[cloudGetProjects] 获取到', list.length, '个项目');
+  return list;
 }
 
 // 获取单个项目详情（从云端）
