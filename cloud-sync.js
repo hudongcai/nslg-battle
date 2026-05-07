@@ -49,7 +49,7 @@ async function cloudRequest(path, options = {}) {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const resp = await fetch(url, { ...finalOptions, signal: controller.signal });
     clearTimeout(timeoutId);
     const data = await resp.json();
@@ -69,7 +69,11 @@ async function cloudRequest(path, options = {}) {
     }
     return data;
   } catch (e) {
-    console.error('[Cloud Sync] 请求失败:', path, e.message || e);
+    if (e.name === 'AbortError') {
+      console.error('[Cloud Sync] 请求超时:', path, '(15秒)');
+    } else {
+      console.error('[Cloud Sync] 请求失败:', path, e.message || e);
+    }
     throw e;
   }
 }
