@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v2026050713
+ * 版本: v202605072345
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -48,8 +48,13 @@ async function cloudRequest(path, options = {}) {
   }
 
   try {
+    // 动态超时：OCR 90秒，数据同步/批量操作 60秒，普通请求 30秒
+    const isOCR = url.includes('/ocr');
+    const isBatch = url.includes('/records') || url.includes('/battles');
+    const timeoutMs = isOCR ? 90000 : (isBatch ? 60000 : 30000);
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const resp = await fetch(url, { ...finalOptions, signal: controller.signal });
     clearTimeout(timeoutId);
     const data = await resp.json();
@@ -70,7 +75,10 @@ async function cloudRequest(path, options = {}) {
     return data;
   } catch (e) {
     if (e.name === 'AbortError') {
-      console.error('[Cloud Sync] 请求超时:', path, '(30秒)');
+      const isOCR = path.includes('/ocr');
+      const isBatch = path.includes('/records') || path.includes('/battles');
+      const timeoutLabel = isOCR ? '90秒' : (isBatch ? '60秒' : '30秒');
+      console.error('[Cloud Sync] 请求超时:', path, `(${timeoutLabel})`);
     } else {
       console.error('[Cloud Sync] 请求失败:', path, e.message || e);
     }
