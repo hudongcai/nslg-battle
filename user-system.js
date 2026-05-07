@@ -234,7 +234,7 @@ async function getUserPoints(phone){
   try {
     const token = getToken();
     if (token && typeof cloudRequest === 'function') {
-      const res = await cloudRequest('/users/me');
+      const res = await cloudRequest('/auth/profile');
       if (res && res.code === 200 && res.data && res.data.points !== undefined) {
         const cloudPoints = res.data.points;
         // 同步到本地
