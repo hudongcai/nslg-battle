@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605080350
+ * 版本: v202605080620
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -212,10 +212,14 @@ async function cloudGetRecords(projectId = null) {
   // 兼容两种响应格式：{ code, data:{list} } 或 { code, data:[...] }
   const list = data.code === 200 ? (Array.isArray(data.data) ? data.data : (data.data?.list || [])) : [];
   // 字段映射：云端驼峰 → 前端 IndexedDB 字段名
-  return list.map(r => ({
+  // 注意：必须同时返回 battleDate（用于 dbDelete 匹配）和 time（用于本地显示）
+  return list.map(r => {
+    const battleDate = r.battleDate || r.battle_date || r.battleTime || '';
+    return {
     id: r.id,
     projectId: (r.projectId !== undefined && r.projectId !== null) ? r.projectId : (r.project_id || null),
-    time: r.battleDate || r.battle_date || r.battleTime || '',
+    battleDate: battleDate,  // 必须保留，供 dbDelete 业务字段匹配使用
+    time: battleDate,
     result: r.result || '',
     leftPlayer: r.attackerName || r.attacker_name || '',
     rightPlayer: r.enemyName || r.enemy_name || '',
@@ -401,45 +405,100 @@ async function syncCloudToLocal() {
           if (matched) {
             // 已有 cloudId 关联：直接用本地记录，用云端数据补全空字段
             localRec = matched;
-            // 合并：云端有值 && 本地无值 → 用云端值
-            for (const key of ['attackerName','enemyName','result','leftAlliance','rightAlliance',
-                              'leftFormation','rightFormation','description']) {
-              if ((!localRec[key] || localRec[key] === '') && rec[key]) {
-                localRec[key] = rec[key];
+            // 合并字段：云端有值 && 本地无值 → 用云端值
+            // rec 的字段名是 leftPlayer/rightPlayer 格式（cloudGetRecords 映射后的）
+            const mergeMap = {
+              leftPlayer:      ['leftPlayer', 'attackerName'],
+              rightPlayer:     ['rightPlayer', 'enemyName'],
+              result:          ['result'],
+              leftAlliance:    ['leftAlliance'],
+              rightAlliance:   ['rightAlliance'],
+              leftFormation:   ['leftFormation'],
+              rightFormation:  ['rightFormation'],
+              description:     ['description'],
+              leftGenerals:    ['leftGenerals'],
+              rightGenerals:   ['rightGenerals'],
+              leftTactics:     ['leftTactics'],
+              rightTactics:    ['rightTactics'],
+              leftLoss:        ['leftLoss'],
+              rightLoss:       ['rightLoss'],
+              leftTotal:       ['leftTotal'],
+              rightTotal:      ['rightTotal'],
+              leftLossRate:    ['leftLossRate'],
+              rightLossRate:   ['rightLossRate'],
+              imageBase64:     ['imageBase64'],
+            };
+            for (const [cloudKey, localKeys] of Object.entries(mergeMap)) {
+              const cloudVal = rec[cloudKey];
+              if (!cloudVal && cloudVal !== 0) continue;
+              // 本地可能用不同的字段名，遍历所有可能的本地字段名
+              for (const localKey of localKeys) {
+                if (!localRec[localKey] || localRec[localKey] === '') {
+                  localRec[localKey] = cloudVal;
+                  break; // 找到一个本地字段写入即可
+                }
               }
             }
-            // 用云端 ID 覆盖本地 ID（统一以云端 ID 为主）
-            localRec.id = rec.id;
+            // 不动 localRec.id（IndexedDB 主键），只更新同步标记
             localRec._synced = true;
             localRec._syncTime = Date.now();
             await dbPut(localRec);
           } else {
             // 3.2 按业务字段匹配（OCR 记录还没关联 cloudId）
-            const bizMatch = allLocal.find(r =>
-              r.battleDate === rec.battleDate &&
-              (r.leftPlayer || '') === (rec.leftPlayer || '') &&
-              (r.rightPlayer || '') === (rec.rightPlayer || '')
-            );
+            // 兼容：本地记录可能用 leftPlayer/rightPlayer 或 attackerName/enemyName
+            const bizMatch = allLocal.find(r => {
+              const localDate = r.battleDate || '';
+              const cloudDate = rec.battleDate || '';
+              const localLeft  = r.leftPlayer || r.attackerName || '';
+              const localRight = r.rightPlayer || r.enemyName || '';
+              const cloudLeft  = rec.leftPlayer || '';
+              const cloudRight = rec.rightPlayer || '';
+              return localDate === cloudDate &&
+                     localLeft === cloudLeft &&
+                     localRight === cloudRight;
+            });
 
             if (bizMatch) {
               // 找到本地对应记录：合并云端数据，保留本地图片/详细字段
               localRec = bizMatch;
               localRec.cloudId = rec.id;
-              // 云端有值 && 本地无值 → 用云端值
-              for (const key of ['attackerName','enemyName','result','leftAlliance','rightAlliance',
-                                'leftFormation','rightFormation','description']) {
-                if ((!localRec[key] || localRec[key] === '') && rec[key]) {
-                  localRec[key] = rec[key];
+              // 合并字段（同上）
+              const mergeMap = {
+                leftPlayer:      ['leftPlayer', 'attackerName'],
+                rightPlayer:     ['rightPlayer', 'enemyName'],
+                result:          ['result'],
+                leftAlliance:    ['leftAlliance'],
+                rightAlliance:   ['rightAlliance'],
+                leftFormation:   ['leftFormation'],
+                rightFormation:  ['rightFormation'],
+                description:     ['description'],
+                leftGenerals:    ['leftGenerals'],
+                rightGenerals:   ['rightGenerals'],
+                leftTactics:     ['leftTactics'],
+                rightTactics:    ['rightTactics'],
+                leftLoss:        ['leftLoss'],
+                rightLoss:       ['rightLoss'],
+                leftTotal:       ['leftTotal'],
+                rightTotal:      ['rightTotal'],
+                leftLossRate:    ['leftLossRate'],
+                rightLossRate:   ['rightLossRate'],
+                imageBase64:     ['imageBase64'],
+              };
+              for (const [cloudKey, localKeys] of Object.entries(mergeMap)) {
+                const cloudVal = rec[cloudKey];
+                if (!cloudVal && cloudVal !== 0) continue;
+                for (const localKey of localKeys) {
+                  if (!localRec[localKey] || localRec[localKey] === '') {
+                    localRec[localKey] = cloudVal;
+                    break;
+                  }
                 }
               }
               // 保留本地 ID（IndexedDB 主键不变），只更新 cloudId
               localRec._synced = true;
               localRec._syncTime = Date.now();
               await dbPut(localRec);
-              // 同时以云端 ID 写入一条（确保可以通过云端 ID 查到）
-              const cloudCopy = { ...localRec, id: rec.id };
-              delete cloudCopy.cloudId;  // 避免循环
-              await dbPut(cloudCopy);
+              // 不再写入重复记录（cloudId 已关联，无需再用云端 ID 写入）
             } else {
               // 3.3 本地完全没有 → 直接写入云端记录（补全本地图片）
               let imgSrc = null;

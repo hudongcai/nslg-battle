@@ -304,24 +304,32 @@ function dbDelete(id) {
             cloudDelId = rec.cloudId;
           } else {
             // 没有 cloudId，尝试通过业务字段匹配云端记录
-            // 注意：cloudRecords 的字段已被 cloudGetRecords 映射为 leftPlayer/rightPlayer
-            if (rec && rec.battleDate) {
-              try {
-                const cloudRecords = await window.cloudSync.getRecords(rec.projectId || null);
-                const match = cloudRecords.find(c =>
-                  c.battleDate === rec.battleDate &&
-                  (c.leftPlayer || '') === (rec.leftPlayer || '') &&
-                  (c.rightPlayer || '') === (rec.rightPlayer || '')
-                );
-                if (match) cloudDelId = match.id;
-              } catch(e) {}
+            // 兼容：rec 可能是本地字段名（attackerName/enemyName）或已映射名（leftPlayer/rightPlayer）
+            if (rec) {
+              const recDate = rec.battleDate || rec.time || '';
+              const recLeft  = rec.leftPlayer || rec.attackerName || '';
+              const recRight = rec.rightPlayer || rec.enemyName || '';
+              if (recDate || recLeft || recRight) {
+                try {
+                  const cloudRecords = await window.cloudSync.getRecords(rec.projectId || null);
+                  const match = cloudRecords.find(c => {
+                    const cDate = c.battleDate || c.time || '';
+                    const cLeft  = c.leftPlayer || '';
+                    const cRight = c.rightPlayer || '';
+                    return cDate === recDate &&
+                           cLeft === recLeft &&
+                           cRight === recRight;
+                  });
+                  if (match) cloudDelId = match.id;
+                } catch(e) {}
+              }
             }
           }
           if (cloudDelId) {
             await window.cloudSync.deleteRecord(cloudDelId);
             console.log('[Cloud] 云端删除成功, id:', cloudDelId);
           } else {
-            console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id);
+            console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id, 'rec:', rec ? {date: rec.battleDate||rec.time, left: rec.leftPlayer||rec.attackerName, right: rec.rightPlayer||rec.enemyName} : 'null');
           }
         }catch(e){console.error('[Cloud] 删除异常:', e);}
       }
