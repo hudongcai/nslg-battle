@@ -305,20 +305,14 @@ function dbDelete(id) {
           } else {
             // 没有 cloudId，尝试通过业务字段匹配云端记录
             // 注意：cloudRecords 的字段已被 cloudGetRecords 映射为 leftPlayer/rightPlayer
-            // 但本地 rec 可能使用 attackerName/enemyName（旧字段名），需要兼容两种格式
             if (rec && rec.battleDate) {
               try {
                 const cloudRecords = await window.cloudSync.getRecords(rec.projectId || null);
-                const match = cloudRecords.find(c => {
-                  // 兼容：本地可能用 attackerName/enemyName 或 leftPlayer/rightPlayer
-                  const localLeft = rec.leftPlayer || rec.attackerName || '';
-                  const localRight = rec.rightPlayer || rec.enemyName || '';
-                  const cloudLeft = c.leftPlayer || '';
-                  const cloudRight = c.rightPlayer || '';
-                  return c.battleDate === rec.battleDate &&
-                    (cloudLeft === localLeft) &&
-                    (cloudRight === localRight);
-                });
+                const match = cloudRecords.find(c =>
+                  c.battleDate === rec.battleDate &&
+                  (c.leftPlayer || '') === (rec.leftPlayer || '') &&
+                  (c.rightPlayer || '') === (rec.rightPlayer || '')
+                );
                 if (match) cloudDelId = match.id;
               } catch(e) {}
             }
@@ -327,7 +321,7 @@ function dbDelete(id) {
             await window.cloudSync.deleteRecord(cloudDelId);
             console.log('[Cloud] 云端删除成功, id:', cloudDelId);
           } else {
-            console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id, 'rec:', rec ? {battleDate: rec.battleDate, left: rec.leftPlayer||rec.attackerName, right: rec.rightPlayer||rec.enemyName} : 'null');
+            console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id);
           }
         }catch(e){console.error('[Cloud] 删除异常:', e);}
       }
