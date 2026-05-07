@@ -1,7 +1,7 @@
 /* ==========================================================
    PROJECT SYSTEM - 项目管理、权限控制
    ========================================================== */
-console.log('[project-system.js] v2026050715 加载');
+console.log('[project-system.js] v202605080159 加载');
 
 // ========== 项目数据结构 ==========
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
