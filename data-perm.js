@@ -16,7 +16,7 @@ console.log('[DataPerm] data-perm.js V2.1 开始加载');
 // }
 // 注："成员"权限仍通过 project.memberPhones 控制
 
-const PROJ_ACCESS_STORE = 'projAccess';
+const PROJ_ACCESS_DB = 'projAccess';
 
 function openPermDB() {
   return openUserDB();
@@ -25,10 +25,10 @@ function openPermDB() {
 // ========== DB 操作 ==========
 async function permDBGetAll() {
   const db = await openPermDB();
-  if (!db.objectStoreNames.contains(PROJ_ACCESS_STORE)) return [];
+  if (!db.objectStoreNames.contains(PROJ_ACCESS_DB)) return [];
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([PROJ_ACCESS_STORE], 'readonly');
-    const req = tx.objectStore(PROJ_ACCESS_STORE).getAll();
+    const tx = db.transaction([PROJ_ACCESS_DB], 'readonly');
+    const req = tx.objectStore(PROJ_ACCESS_DB).getAll();
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => resolve([]);
   });
@@ -42,8 +42,8 @@ async function permDBGetByProject(projectId) {
 async function permDBPut(entry) {
   const db = await openPermDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([PROJ_ACCESS_STORE], 'readwrite');
-    const req = tx.objectStore(PROJ_ACCESS_STORE).put(entry);
+    const tx = db.transaction([PROJ_ACCESS_DB], 'readwrite');
+    const req = tx.objectStore(PROJ_ACCESS_DB).put(entry);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
@@ -52,8 +52,8 @@ async function permDBPut(entry) {
 async function permDBDelete(id) {
   const db = await openPermDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([PROJ_ACCESS_STORE], 'readwrite');
-    const req = tx.objectStore(PROJ_ACCESS_STORE).delete(id);
+    const tx = db.transaction([PROJ_ACCESS_DB], 'readwrite');
+    const req = tx.objectStore(PROJ_ACCESS_DB).delete(id);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });

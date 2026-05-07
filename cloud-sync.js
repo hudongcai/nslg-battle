@@ -359,10 +359,10 @@ async function cloudGetMyAccess() {
   if (!phone) return [];
   try {
     const db = await _openUserDBForAccess();
-    if (!db.objectStoreNames.contains(PROJ_ACCESS_STORE)) return [];
+    if (!db.objectStoreNames.contains(PROJ_ACCESS_DB)) return [];
     return new Promise((resolve, reject) => {
-      const tx  = db.transaction([PROJ_ACCESS_STORE], 'readonly');
-      const all = tx.objectStore(PROJ_ACCESS_STORE).getAll();
+      const tx  = db.transaction([PROJ_ACCESS_DB], 'readonly');
+      const all = tx.objectStore(PROJ_ACCESS_DB).getAll();
       all.onsuccess = () => resolve((all.result || []).filter(a => a.phone === phone));
       all.onerror   = () => resolve([]);
     });
