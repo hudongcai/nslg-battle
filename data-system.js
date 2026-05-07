@@ -290,17 +290,41 @@ function dbGet(id) {
 }
 
 function dbDelete(id) {
- return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
     const req = tx.objectStore('records').delete(id);
-    req.onsuccess = () => {
-      // 先从云端删除
+    req.onsuccess = async () => {
+      // 先从云端删除（用 cloudId 或尝试匹配）
       if(window.cloudSync){
         try{
-          window.cloudSync.deleteRecord(id).catch(e => console.error('[Cloud] 删除失败:', e));
+          // 获取被删记录，看是否有 cloudId
+          const rec = allRecords.find(r => r.id === id);
+          let cloudDelId = null;
+          if (rec && rec.cloudId) {
+            cloudDelId = rec.cloudId;
+          } else {
+            // 没有 cloudId，尝试通过业务字段匹配云端记录
+            if (rec && rec.battleDate && rec.attackerName !== undefined) {
+              try {
+                const cloudRecords = await window.cloudSync.getRecords(rec.projectId || null);
+                const match = cloudRecords.find(c =>
+                  c.battleDate === rec.battleDate &&
+                  c.attackerName === (rec.leftPlayer || '') &&
+                  c.enemyName === (rec.rightPlayer || '')
+                );
+                if (match) cloudDelId = match.id;
+              } catch(e) {}
+            }
+          }
+          if (cloudDelId) {
+            await window.cloudSync.deleteRecord(cloudDelId);
+            console.log('[Cloud] 云端删除成功, id:', cloudDelId);
+          } else {
+            console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id);
+          }
         }catch(e){console.error('[Cloud] 删除异常:', e);}
       }
-      
+
       allRecords = allRecords.filter(r => r.id !== id);
       gallerySelectedIds.delete(id);
       updateGlobalStats();
@@ -927,7 +951,21 @@ async function deleteRecord(id) {
 }
 
 async function clearAllData() {
-  if (!confirm('确定清空所有数据？')) return;
+  if (!confirm('确定清空所有数据？此操作会同时清空云端数据！')) return;
+
+  // 先清空云端记录（按 cloudId 或业务字段匹配）
+  if (window.cloudSync) {
+    try {
+      const cloudRecords = await window.cloudSync.getRecords(window.currentProjectId || null);
+      for (const cr of cloudRecords) {
+        try { await window.cloudSync.deleteRecord(cr.id); } catch (e) {}
+      }
+      console.log('[clearAllData] 云端记录已清空，共', cloudRecords.length, '条');
+    } catch (e) {
+      console.warn('[clearAllData] 云端清空失败（继续清本地）:', e.message);
+    }
+  }
+
   // 同时清空所有项目的 battleRecordIds
   try {
     const projects = await projDBGetAll();

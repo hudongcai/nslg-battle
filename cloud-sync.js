@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605080159
+ * 版本: v202605080530
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -391,7 +391,30 @@ async function syncCloudToLocal() {
       let syncCount = 0;
       for (const rec of cloudRecords) {
         try {
+          // 检查本地是否有 cloudId 匹配的旧记录（OCR 产生的本地记录）
+          let existingLocalId = null;
+          try {
+            const allLocal = await dbGetAll();
+            const matched = allLocal.find(r => r.cloudId == rec.id);
+            if (matched) existingLocalId = matched.id;
+          } catch (e) {}
+
+          // 保留本地已有记录的 imageBase64（云端记录不含图片）
+          if (!rec.imageBase64) {
+            const srcRec = existingLocalId ? await dbGet(existingLocalId) : await dbGet(rec.id);
+            if (srcRec && srcRec.imageBase64) {
+              rec.imageBase64 = srcRec.imageBase64;
+            }
+          }
+
+          // 写入云端记录（以云端 ID 为主键）
           await dbPut(rec);
+
+          // 如果本地有 cloudId 匹配的旧记录，删除它（避免重复）
+          if (existingLocalId && existingLocalId != rec.id) {
+            try { await dbDelete(existingLocalId); } catch (e) {}
+            console.log('[Sync] 合并本地记录 cloudId=' + existingLocalId + ' → 云端 id=' + rec.id);
+          }
           syncCount++;
         } catch (e) {
           console.warn('[Sync] 战报同步失败（跳过）:', rec.id, e);

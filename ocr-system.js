@@ -506,7 +506,6 @@ async function startBatchProcess() {
             try {
               const cloudRec = {
                 projectId: window.currentProjectId,
-                // 优先用 OCR 识别到的日期，识别不到才用当天
                 battleDate: record.battleDate || new Date().toISOString().split('T')[0],
                 attackerName: record.leftPlayer || '',
                 enemyName: record.rightPlayer || '',
@@ -518,8 +517,15 @@ async function startBatchProcess() {
                   rightTactics: record.rightTactics || []
                 })
               };
-              await window.cloudSync.createRecord(cloudRec);
-              console.log('[OCR] 战报已同步到云端');
+              const cloudResult = await window.cloudSync.createRecord(cloudRec);
+              // 将云端ID写回本地记录，避免刷新后出现重复记录
+              if (cloudResult && cloudResult.id) {
+                record.cloudId = cloudResult.id;
+                await dbPut(record);
+                console.log('[OCR] 战报已同步到云端，cloudId:', cloudResult.id);
+              } else {
+                console.log('[OCR] 战报已同步到云端');
+              }
             } catch(e) {
               console.error('[OCR] 云端同步失败:', e);
             }
