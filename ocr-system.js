@@ -509,6 +509,18 @@ async function startBatchProcess() {
                 battleDate: record.battleDate || new Date().toISOString().split('T')[0],
                 attackerName: record.leftPlayer || '',
                 enemyName: record.rightPlayer || '',
+                // 新增字段：联盟/阵型/伤亡
+                leftAlliance: record.leftAlliance || '',
+                rightAlliance: record.rightAlliance || '',
+                leftFormation: record.leftFormation || '',
+                rightFormation: record.rightFormation || '',
+                leftLoss: record.leftLoss ?? null,
+                leftTotal: record.leftTotal ?? null,
+                rightLoss: record.rightLoss ?? null,
+                rightTotal: record.rightTotal ?? null,
+                leftLossRate: record.leftLossRate ?? null,
+                rightLossRate: record.rightLossRate ?? null,
+                // 描述（含将领/战法 JSON）
                 result: record.result || '',
                 description: JSON.stringify({
                   leftGenerals: record.leftGenerals || [],

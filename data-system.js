@@ -304,13 +304,14 @@ function dbDelete(id) {
             cloudDelId = rec.cloudId;
           } else {
             // 没有 cloudId，尝试通过业务字段匹配云端记录
-            if (rec && rec.battleDate && rec.attackerName !== undefined) {
+            // 注意：cloudRecords 的字段已被 cloudGetRecords 映射为 leftPlayer/rightPlayer
+            if (rec && rec.battleDate) {
               try {
                 const cloudRecords = await window.cloudSync.getRecords(rec.projectId || null);
                 const match = cloudRecords.find(c =>
                   c.battleDate === rec.battleDate &&
-                  c.attackerName === (rec.leftPlayer || '') &&
-                  c.enemyName === (rec.rightPlayer || '')
+                  (c.leftPlayer || '') === (rec.leftPlayer || '') &&
+                  (c.rightPlayer || '') === (rec.rightPlayer || '')
                 );
                 if (match) cloudDelId = match.id;
               } catch(e) {}
