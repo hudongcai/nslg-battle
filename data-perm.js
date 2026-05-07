@@ -277,7 +277,8 @@ async function showProjectPermModal(projectId) {
 
   const allProjects = await projDBGetAll();
   const allUsers = await userDBGetAll();
-  const proj = allProjects.find(p => p.id === projectId);
+  // 类型兼容：proj.id 可能是数字或字符串
+  const proj = allProjects.find(p => p.id == projectId || String(p.id) === String(projectId) || Number(p.id) === Number(projectId));
   if (!proj) { alert('项目不存在'); return; }
 
   const normalUsers = allUsers.filter(u => u.role !== 'super_admin');
@@ -424,7 +425,7 @@ async function canUserEditProject(phone, projectId) {
   const proj = await projDBGet(projectId);
   if (proj && proj.creator === phone) return true;
   const all = await permDBGetAll();
-  const entry = all.find(a => a.phone === phone && a.projectId === projectId);
+  const entry = all.find(a => a.phone === phone && (a.projectId == projectId || String(a.projectId) === String(projectId)));
   return !!(entry && entry.canEdit);
 }
 
@@ -436,7 +437,7 @@ async function canUserDeleteProject(phone, projectId) {
   const proj = await projDBGet(projectId);
   if (proj && proj.creator === phone) return true;
   const all = await permDBGetAll();
-  const entry = all.find(a => a.phone === phone && a.projectId === projectId);
+  const entry = all.find(a => a.phone === phone && (a.projectId == projectId || String(a.projectId) === String(projectId)));
   return !!(entry && entry.canDelete);
 }
 
