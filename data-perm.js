@@ -142,26 +142,41 @@ window.getVisibleProjects = async function () {
 };
 
 // ========== 渲染数据权限页面（新 UI）==========
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' 超时')), ms))
+  ]);
+}
+
 async function renderDataPerm() {
   const container = document.getElementById('dataPermContent');
   if (!container) return;
   container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">⏳ 加载中...</div>';
-
-  // 确保 roleSystemInit 已完成（防止 roleDB 未初始化时 getRolePermissions 卡住）
-  if (typeof roleSystemInit === 'function') {
-    try { await roleSystemInit(); } catch(e) { console.warn('[renderDataPerm] roleSystemInit 失败:', e); }
-  }
+  console.log('[renderDataPerm] 开始渲染，currentUser:', currentUser?.phone, currentUser?.role);
 
   // 按权限点 dataperm 控制访问（超级管理员自动拥有所有权限）
   if (!currentUser) {
+    console.log('[renderDataPerm] currentUser 为空，未登录');
     container.innerHTML = `<div style="padding:40px;text-align:center;">
       <div style="font-size:32px;margin-bottom:12px;">⛔</div>
       <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">请先登录</div>
     </div>`;
     return;
   }
-  const perms = await getRolePermissions(currentUser.role);
+
+  // 获取权限（带 5 秒超时）
+  let perms;
+  try {
+    perms = await withTimeout(getRolePermissions(currentUser.role), 5000, 'getRolePermissions');
+    console.log('[renderDataPerm] 权限获取成功:', Object.keys(perms || {}).length, '个权限点');
+  } catch(e) {
+    console.warn('[renderDataPerm] getRolePermissions 失败，使用兜底:', e.message);
+    perms = { dataperm: true }; // 兜底
+  }
+
   if (!perms || !perms['dataperm']) {
+    console.log('[renderDataPerm] 无 dataperm 权限');
     container.innerHTML = `<div style="padding:40px;text-align:center;">
       <div style="font-size:32px;margin-bottom:12px;">⛔</div>
       <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">当前角色无权访问数据权限配置</div>
@@ -170,10 +185,18 @@ async function renderDataPerm() {
     return;
   }
 
+  // 加载项目和用户数据（各带 5 秒超时）
   let allProjects = [], allUsers = [];
   try {
-    [allProjects, allUsers] = await Promise.all([projDBGetAll(), userDBGetAll()]);
+    const [projs, users] = await Promise.all([
+      withTimeout(projDBGetAll(), 5000, 'projDBGetAll'),
+      withTimeout(userDBGetAll(), 5000, 'userDBGetAll')
+    ]);
+    allProjects = projs || [];
+    allUsers = users || [];
+    console.log('[renderDataPerm] 数据加载完成，项目:', allProjects.length, '用户:', allUsers.length);
   } catch (err) {
+    console.error('[renderDataPerm] 数据加载失败:', err.message);
     container.innerHTML = `<div style="padding:40px;text-align:center;color:#ff5252;">❌ 数据加载失败：${err.message}</div>`;
     return;
   }

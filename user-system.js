@@ -183,18 +183,6 @@ async function migrateUserRoles(){
   }catch(e){console.error('migrateUserRoles failed:',e);}
 }
 
-// ========== 项目 DB 操作 ==========
-function projDBGetAll(){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      const tx = db.transaction(['users'],'readonly');
-      const req = tx.objectStore('users').getAll();
-      req.onsuccess = ()=>resolve(req.result||[]);
-      req.onerror   = ()=>reject(req.error);
-    }).catch(reject);
-  });
-}
-
 function userDBDelete(phone){
   return new Promise((resolve,reject)=>{
     openUserDB().then(db=>{
