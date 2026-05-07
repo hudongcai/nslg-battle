@@ -2,7 +2,7 @@
    DATA PERM - 数据权限管理（重构版 V2）
    ========================================================== */
 
-console.log('[DataPerm] data-perm.js V2 开始加载');
+console.log('[DataPerm] data-perm.js V2.1 开始加载');
 
 // ========== projAccess 新数据结构 ==========
 // {
@@ -146,6 +146,11 @@ async function renderDataPerm() {
   const container = document.getElementById('dataPermContent');
   if (!container) return;
   container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">⏳ 加载中...</div>';
+
+  // 确保 roleSystemInit 已完成（防止 roleDB 未初始化时 getRolePermissions 卡住）
+  if (typeof roleSystemInit === 'function') {
+    try { await roleSystemInit(); } catch(e) { console.warn('[renderDataPerm] roleSystemInit 失败:', e); }
+  }
 
   // 按权限点 dataperm 控制访问（超级管理员自动拥有所有权限）
   if (!currentUser) {

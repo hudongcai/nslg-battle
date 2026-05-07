@@ -100,6 +100,7 @@ const ROLE_DB_NAME = 'nslg_roles';
 const ROLE_DB_VER  = 1;
 const ROLE_STORE   = 'roles';
 let roleDB = null;
+let _roleInitPromise = null;  // 保证 roleSystemInit 只执行一次
 
 function roleDBOpen(){
   return new Promise((resolve,reject)=>{
@@ -142,6 +143,13 @@ function roleDBGetAll(){
 
 // ========== 获取角色权限 ==========
 async function getRolePermissions(roleId){
+  // 确保 roleSystemInit 已完成（roleDB 已打开），最多等 3 秒
+  if (_roleInitPromise) {
+    await Promise.race([
+      _roleInitPromise.catch(() => {}),
+      new Promise(r => setTimeout(r, 3000))  // 超时 3 秒直接继续
+    ]);
+  }
   // 先查 IndexedDB（数据库同步后的最新值）
   const role = await roleDBGet(roleId);
   if(role) return migratePermissions(role.permissions||{});
@@ -191,6 +199,13 @@ function roleDBDelete(id){
 // ========== 初始化角色系统（种子内置角色）==========
 // 只新增不存在的角色，不覆盖用户对已内置角色的修改
 async function roleSystemInit(){
+  // 保证只初始化一次
+  if (_roleInitPromise) return _roleInitPromise;
+  _roleInitPromise = _doRoleSystemInit();
+  return _roleInitPromise;
+}
+
+async function _doRoleSystemInit(){
   try {
     await roleDBOpen();
     console.log('[roleSystemInit] 开始初始化角色系统...');
