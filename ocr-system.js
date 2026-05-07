@@ -458,9 +458,9 @@ async function startBatchProcess() {
           // 同步到云端（如果云同步可用）
           if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
             try {
-              const cloudRec = { ...record };
+              const cloudRec = { ...record, project_id: window.currentProjectId };
               delete cloudRec.imageBase64; // 不上传图片数据
-              await window.cloudSync.createRecord(window.currentProjectId, cloudRec);
+              await window.cloudSync.createRecord(cloudRec);
               console.log('[OCR] 战报已同步到云端');
             } catch(e) {
               console.error('[OCR] 云端同步失败:', e);
@@ -488,7 +488,9 @@ async function startBatchProcess() {
             // 同步到云端（如果云同步可用）
             if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
               try {
-                await window.cloudSync.createRecord(window.currentProjectId, errRec);
+                const cloudRec = { ...errRec, project_id: window.currentProjectId };
+                delete cloudRec.imageBase64;
+                await window.cloudSync.createRecord(cloudRec);
               } catch(e) {
                 console.error('[OCR] 云端同步失败:', e);
               }
