@@ -455,6 +455,17 @@ async function startBatchProcess() {
           if (window.currentProjectId && typeof addBattleToProject === 'function' && newId) {
             await addBattleToProject(window.currentProjectId, newId);
           }
+          // 同步到云端（如果云同步可用）
+          if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
+            try {
+              const cloudRec = { ...record };
+              delete cloudRec.imageBase64; // 不上传图片数据
+              await window.cloudSync.createRecord(window.currentProjectId, cloudRec);
+              console.log('[OCR] 战报已同步到云端');
+            } catch(e) {
+              console.error('[OCR] 云端同步失败:', e);
+            }
+          }
         }
         item.status = 'done';
       } catch (e) {
@@ -473,6 +484,14 @@ async function startBatchProcess() {
             // 同步更新项目的 battleRecordIds
             if (window.currentProjectId && typeof addBattleToProject === 'function' && newId) {
               await addBattleToProject(window.currentProjectId, newId);
+            }
+            // 同步到云端（如果云同步可用）
+            if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
+              try {
+                await window.cloudSync.createRecord(window.currentProjectId, errRec);
+              } catch(e) {
+                console.error('[OCR] 云端同步失败:', e);
+              }
             }
           }
         } catch (e2) { console.error('保存失败图片出错:', e2); }

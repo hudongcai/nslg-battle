@@ -470,6 +470,8 @@ window.cloudSync = {
   saveRole: cloudSaveRole,
   // 存储统计
   getStorageStats: cloudGetStorageStats,
+  // 积分同步
+  updateUserPoints: cloudUpdateUserPoints,
 };
 
 // ========== 存储统计 API ==========

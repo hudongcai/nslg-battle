@@ -267,7 +267,13 @@ function addUserPoints(phone, amount){
       currentUser.points = u.points;
       saveSession(currentUser);
     }
-    return userDBPut(u).then(()=>u.points);
+    return userDBPut(u).then(()=>{
+      // 同步到云端
+      if (window.cloudSync && typeof window.cloudSync.updateUserPoints === 'function') {
+        window.cloudSync.updateUserPoints(phone, u.points).catch(e => console.error('[积分同步] 云端更新失败:', e));
+      }
+      return u.points;
+    });
   });
 }
 
@@ -281,7 +287,13 @@ function deductUserPoints(phone, amount){
       currentUser.points = u.points;
       saveSession(currentUser);
     }
-    return userDBPut(u).then(()=>true);
+    return userDBPut(u).then(()=>{
+      // 同步到云端
+      if (window.cloudSync && typeof window.cloudSync.updateUserPoints === 'function') {
+        window.cloudSync.updateUserPoints(phone, u.points).catch(e => console.error('[积分同步] 云端更新失败:', e));
+      }
+      return true;
+    });
   });
 }
 
