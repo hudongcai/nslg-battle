@@ -152,90 +152,106 @@ function withTimeout(promise, ms, label) {
 async function renderDataPerm() {
   const container = document.getElementById('dataPermContent');
   if (!container) return;
-  container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">⏳ 加载中...</div>';
-  console.log('[renderDataPerm] 开始渲染，currentUser:', currentUser?.phone, currentUser?.role);
 
-  // 按权限点 dataperm 控制访问（超级管理员自动拥有所有权限）
-  if (!currentUser) {
-    console.log('[renderDataPerm] currentUser 为空，未登录');
-    container.innerHTML = `<div style="padding:40px;text-align:center;">
-      <div style="font-size:32px;margin-bottom:12px;">⛔</div>
-      <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">请先登录</div>
-    </div>`;
-    return;
-  }
+  // 全局 10 秒兜底超时：无论哪里卡住，10 秒后一定渲染内容或错误
+  const finish = (html) => {
+    if (document.getElementById('dataPermContent')) {
+      document.getElementById('dataPermContent').innerHTML = html;
+    }
+  };
+  const globalTimeout = setTimeout(() => {
+    console.error('[renderDataPerm] 全局 10 秒超时，强制渲染');
+    finish('<div style="padding:40px;text-align:center;color:#ff5252;">⚠️ 加载超时，请刷新重试</div>');
+  }, 10000);
 
-  // 获取权限（带 5 秒超时）
-  let perms;
   try {
-    perms = await withTimeout(getRolePermissions(currentUser.role), 5000, 'getRolePermissions');
-    console.log('[renderDataPerm] 权限获取成功:', Object.keys(perms || {}).length, '个权限点');
-  } catch(e) {
-    console.warn('[renderDataPerm] getRolePermissions 失败，使用兜底:', e.message);
-    perms = { dataperm: true }; // 兜底
-  }
+    container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">⏳ 加载中...</div>';
+    console.log('[renderDataPerm] 开始渲染，currentUser:', currentUser?.phone, currentUser?.role);
 
-  if (!perms || !perms['dataperm']) {
-    console.log('[renderDataPerm] 无 dataperm 权限');
-    container.innerHTML = `<div style="padding:40px;text-align:center;">
-      <div style="font-size:32px;margin-bottom:12px;">⛔</div>
-      <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">当前角色无权访问数据权限配置</div>
-      <div style="color:var(--text3);font-size:12px;">请联系管理员分配「数据权限」权限点</div>
-    </div>`;
-    return;
-  }
+    // 按权限点 dataperm 控制访问（超级管理员自动拥有所有权限）
+    if (!currentUser) {
+      console.log('[renderDataPerm] currentUser 为空，未登录');
+      clearTimeout(globalTimeout);
+      finish(`<div style="padding:40px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">⛔</div>
+        <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">请先登录</div>
+      </div>`);
+      return;
+    }
 
-  // 加载项目和用户数据（各带 5 秒超时）
-  let allProjects = [], allUsers = [];
-  try {
-    const [projs, users] = await Promise.all([
-      withTimeout(projDBGetAll(), 5000, 'projDBGetAll'),
-      withTimeout(userDBGetAll(), 5000, 'userDBGetAll')
-    ]);
-    allProjects = projs || [];
-    allUsers = users || [];
-    console.log('[renderDataPerm] 数据加载完成，项目:', allProjects.length, '用户:', allUsers.length);
-  } catch (err) {
-    console.error('[renderDataPerm] 数据加载失败:', err.message);
-    container.innerHTML = `<div style="padding:40px;text-align:center;color:#ff5252;">❌ 数据加载失败：${err.message}</div>`;
-    return;
-  }
+    // 获取权限（带 5 秒超时）
+    let perms;
+    try {
+      perms = await withTimeout(getRolePermissions(currentUser.role), 5000, 'getRolePermissions');
+      console.log('[renderDataPerm] 权限获取成功:', Object.keys(perms || {}).length, '个权限点');
+    } catch(e) {
+      console.warn('[renderDataPerm] getRolePermissions 失败，使用兜底:', e.message);
+      perms = { dataperm: true }; // 兜底：超时不拒绝访问
+    }
 
-  const normalUsers = allUsers.filter(u => u.role !== 'super_admin');
+    if (!perms || !perms['dataperm']) {
+      console.log('[renderDataPerm] 无 dataperm 权限');
+      clearTimeout(globalTimeout);
+      finish(`<div style="padding:40px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">⛔</div>
+        <div style="color:var(--text);font-size:14px;font-weight:bold;margin-bottom:8px;">当前角色无权访问数据权限配置</div>
+        <div style="color:var(--text3);font-size:12px;">请联系管理员分配「数据权限」权限点</div>
+      </div>`);
+      return;
+    }
 
-  let html = `
-  <div style="padding:20px 28px;">
-    <div style="background:linear-gradient(135deg,var(--card),rgba(26,32,56,.8));border-radius:var(--radius);border:1px solid var(--border);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-        <h3 style="margin:0;color:var(--accent);font-size:15px;">🔐 数据权限配置</h3>
-        <span style="font-size:11px;color:var(--text3);">共 ${allProjects.length} 个项目 · ${normalUsers.length} 个普通用户</span>
-      </div>
-      <p style="font-size:12px;color:var(--text2);margin:0 0 20px 0;padding-bottom:12px;border-bottom:1px solid var(--border);">
-        点击「管理权限」为指定用户分配本项目的访问、编辑和删除权限。<br>
-        默认规则：用户可访问自己创建的项目、被加入成员的项目、以及公开项目。
-      </p>`;
+    // 加载项目和用户数据（各带 5 秒超时）
+    let allProjects = [], allUsers = [];
+    try {
+      const [projs, users] = await Promise.all([
+        withTimeout(projDBGetAll(), 5000, 'projDBGetAll'),
+        withTimeout(userDBGetAll(), 5000, 'userDBGetAll')
+      ]);
+      allProjects = projs || [];
+      allUsers = users || [];
+      console.log('[renderDataPerm] 数据加载完成，项目:', allProjects.length, '用户:', allUsers.length);
+    } catch (err) {
+      console.error('[renderDataPerm] 数据加载失败:', err.message);
+      clearTimeout(globalTimeout);
+      finish(`<div style="padding:40px;text-align:center;color:#ff5252;">❌ 数据加载失败：${err.message}</div>`);
+      return;
+    }
 
-  if (allProjects.length === 0) {
-    html += '<div style="padding:32px;text-align:center;color:var(--text3);">暂无项目</div>';
-  } else {
-    for (const proj of allProjects) {
-      const isPublic = proj.visibility === 'public';
-      const creatorUser = allUsers.find(u => u.phone === proj.creator);
-      const creatorName = creatorUser ? (creatorUser.name || proj.creator) : proj.creator;
-      const memberCount = (proj.memberPhones || []).length;
+    const normalUsers = allUsers.filter(u => u.role !== 'super_admin');
 
-      html += `
-        <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg2);">
-          <div style="background:var(--bg3);padding:10px 16px;display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <span style="font-weight:bold;color:var(--text);font-size:13px;">${escHtml(proj.name)}</span>
-              <span style="font-size:10px;padding:2px 8px;border-radius:4px;${isPublic ? 'background:rgba(81,207,102,.12);color:var(--green);' : 'background:rgba(255,107,107,.1);color:var(--red);'}">${isPublic ? '🌐 公开' : '🔒 私有'}</span>
-              <span style="font-size:11px;color:var(--text3);">创建者：${escHtml(creatorName)}</span>
-              <span style="font-size:11px;color:var(--text3);">${memberCount} 成员 · ${(proj.battleRecordIds || []).length} 战报</span>
+    let html = `
+    <div style="padding:20px 28px;">
+      <div style="background:linear-gradient(135deg,var(--card),rgba(26,32,56,.8));border-radius:var(--radius);border:1px solid var(--border);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <h3 style="margin:0;color:var(--accent);font-size:15px;">🔐 数据权限配置</h3>
+          <span style="font-size:11px;color:var(--text3);">共 ${allProjects.length} 个项目 · ${normalUsers.length} 个普通用户</span>
+        </div>
+        <p style="font-size:12px;color:var(--text2);margin:0 0 20px 0;padding-bottom:12px;border-bottom:1px solid var(--border);">
+          点击「管理权限」为指定用户分配本项目的访问、编辑和删除权限。<br>
+          默认规则：用户可访问自己创建的项目、被加入成员的项目、以及公开项目。
+        </p>`;
+
+    if (allProjects.length === 0) {
+      html += '<div style="padding:32px;text-align:center;color:var(--text3);">暂无项目</div>';
+    } else {
+      for (const proj of allProjects) {
+        const isPublic = proj.visibility === 'public';
+        const creatorUser = allUsers.find(u => u.phone === proj.creator);
+        const creatorName = creatorUser ? (creatorUser.name || proj.creator) : proj.creator;
+        const memberCount = (proj.memberPhones || []).length;
+
+        html += `
+          <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg2);">
+            <div style="background:var(--bg3);padding:10px 16px;display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <span style="font-weight:bold;color:var(--text);font-size:13px;">${escHtml(proj.name)}</span>
+                <span style="font-size:10px;padding:2px 8px;border-radius:4px;${isPublic ? 'background:rgba(81,207,102,.12);color:var(--green);' : 'background:rgba(255,107,107,.1);color:var(--red);'}">${isPublic ? '🌐 公开' : '🔒 私有'}</span>
+                <span style="font-size:11px;color:var(--text3);">创建者：${escHtml(creatorName)}</span>
+                <span style="font-size:11px;color:var(--text3);">${memberCount} 成员 · ${(proj.battleRecordIds || []).length} 战报</span>
+              </div>
+              <button onclick="showProjectPermModal('${proj.id}')" style="padding:5px 14px;border-radius:6px;border:1px solid var(--accent);background:rgba(240,180,41,.08);color:var(--accent);cursor:pointer;font-size:12px;font-weight:bold;">⚙️ 管理权限</button>
             </div>
-            <button onclick="showProjectPermModal('${proj.id}')" style="padding:5px 14px;border-radius:6px;border:1px solid var(--accent);background:rgba(240,180,41,.08);color:var(--accent);cursor:pointer;font-size:12px;font-weight:bold;">⚙️ 管理权限</button>
-          </div>
-        </div>`;
+          </div>`;
     }
   }
 
@@ -246,7 +262,13 @@ async function renderDataPerm() {
     </div>
   </div>`;
 
-  container.innerHTML = html;
+  clearTimeout(globalTimeout);
+  finish(html);
+  } catch(e) {
+    clearTimeout(globalTimeout);
+    console.error('[renderDataPerm] 渲染异常:', e.message || e);
+    finish(`<div style="padding:40px;text-align:center;color:#ff5252;">❌ 页面加载异常：${e.message || e}</div>`);
+  }
 }
 
 // ========== 弹窗：管理项目权限 ==========

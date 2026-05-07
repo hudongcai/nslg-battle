@@ -519,13 +519,34 @@ async function switchTab(tabId, btn) {
     if (typeof renderDataPerm === 'function') {
       renderDataPerm();
     } else {
-      // 兜底：data-perm.js 可能还在缓存，加载一次
+      // 兜底：data-perm.js 可能还没加载或还在缓存
       console.warn('[switchTab] renderDataPerm 未定义，尝试动态加载 data-perm.js...');
       const c = document.getElementById('dataPermContent');
       if (c) c.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">⏳ 加载中，请稍候...</div>';
       var s = document.createElement('script');
       s.src = 'data-perm.js?v=' + Date.now();
-      s.onload = function() { console.log('[switchTab] data-perm.js 动态加载成功'); if(typeof renderDataPerm==='function') renderDataPerm(); };
+      s.onload = function() {
+        console.log('[switchTab] data-perm.js 动态加载成功，renderDataPerm:', typeof renderDataPerm);
+        if (typeof renderDataPerm === 'function') {
+          // 用 setTimeout 确保脚本加载完成后上下文已就绪；同时加 12 秒全局兜底
+          setTimeout(function() {
+            try {
+              var t = setTimeout(function() {
+                console.error('[switchTab] renderDataPerm 12秒未完成，强制替换loading');
+                if (c) c.innerHTML = '<div style="padding:40px;text-align:center;color:#ff5252;">⚠️ 加载超时，请刷新重试</div>';
+              }, 12000);
+              renderDataPerm();
+              clearTimeout(t);
+            } catch(e) {
+              clearTimeout(t);
+              console.error('[switchTab] renderDataPerm 执行异常:', e.message || e);
+              if (c) c.innerHTML = '<div style="padding:40px;text-align:center;color:#ff5252;">❌ 加载异常：'+e.message+'</div>';
+            }
+          }, 0);
+        } else {
+          if (c) c.innerHTML = '<div style="padding:40px;text-align:center;color:#ff5252;">❌ 脚本加载失败（renderDataPerm未定义），请 Ctrl+Shift+R 刷新</div>';
+        }
+      };
       s.onerror = function() { if(c) c.innerHTML = '<div style="padding:40px;text-align:center;color:#ff5252;">❌ data-perm.js 加载失败，请 Ctrl+Shift+R 刷新</div>'; };
       document.head.appendChild(s);
     }
