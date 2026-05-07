@@ -1,7 +1,7 @@
 /* ==========================================================
    PROJECT SYSTEM - 项目管理、权限控制
    ========================================================== */
-console.log('[project-system.js] v202605080159 加载');
+console.log('[project-system.js] v202605080208 加载');
 
 // ========== 项目数据结构 ==========
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
@@ -471,10 +471,10 @@ function getProjectFilteredIds(){
 }
 
 // ========== 清除项目过滤（"全部"按钮回调）==========
-function clearProjectFilter(){
+async function clearProjectFilter(){
   window.currentProjectId = null;
   renderProjectSwitcher();
-  if(typeof loadAllRecords === 'function'){ loadAllRecords(); }
+  if(typeof loadAllRecords === 'function'){ await loadAllRecords(); }
   // 如果当前在 data/winrate  tab，重新渲染
   const tabData = document.getElementById('tab-data');
   const tabWin = document.getElementById('tab-winrate');
