@@ -140,8 +140,17 @@ async function cloudGetProjects() {
   }
 
   const data = await cloudRequest('/projects');
-  // 后端返回格式：{ code:200, data: [...] }  (data 是数组)
-  const list = Array.isArray(data.data) ? data.data : [];
+  // 后端返回格式：{ code:200, data: { list: [...] } } 或 { code:200, data: [...] }
+  let list = [];
+  if (data && data.code === 200) {
+    if (Array.isArray(data.data)) {
+      list = data.data;  // 旧格式：data.data 是数组
+    } else if (data.data && Array.isArray(data.data.list)) {
+      list = data.data.list;  // 新格式：data.data.list 是数组
+    } else if (Array.isArray(data.list)) {
+      list = data.list;  // 备选格式
+    }
+  }
   console.log('[cloudGetProjects] 获取到', list.length, '个项目');
   return list;
 }
