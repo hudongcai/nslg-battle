@@ -468,4 +468,22 @@ window.cloudSync = {
   // 用户同步
   getUsers: cloudGetUsers,
   saveRole: cloudSaveRole,
+  // 存储统计
+  getStorageStats: cloudGetStorageStats,
 };
+
+// ========== 存储统计 API ==========
+
+// 获取存储统计
+async function cloudGetStorageStats() {
+  try {
+    const data = await cloudRequest('/stats/storage');
+    if (data && data.code === 200 && data.data) {
+      return data.data;
+    }
+    return null;
+  } catch (e) {
+    console.error('[cloudGetStorageStats] 失败:', e);
+    return null;
+  }
+}

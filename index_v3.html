@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>真武团的三谋队伍克制分析工具</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+<style>
+html { font-family: 'Sevetica Neue', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; background: #0a0e1c; color: #e0e0e0; margin: 0; padding: 0; min-height: 100vh; }
+body { margin: 0; min-height: 100vh; background: linear-gradient(135deg, #0a0e1c 0%, #111828 50%, #0a0e1c 100%); }
+/* Loading screen */
+#loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0e1c; z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.3s ease; }
+#loading-screen.hidden { opacity: 0; pointer-events: none; }
+.loading-spinner { width: 40px; height: 40px; border: 3px solid rgba(240,180,41,0.2); border-top: 3px solid #f0b429; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.loading-text { color: var(--accent, #f0b429); font-size: 13px; }
+</style>
+</head>
+<body>
+<!-- Loading screen -->
+<div id="loading-screen"><div class="loading-spinner"></div><div class="loading-text">正在加载真武团工具...</div></div>
+
+<!-- The rest of the app UI (simplified for cache-busting version) -->
+<div id="app"></div>
+
+<script>
+// Aggressive cache busting: add timestamp to all script tags
+(function() {
+    'use strict';
+    
+    // Force no-cache for this HTML
+    if (window.location.search.indexOf('cache=') < 0) {
+        window.location.href = window.location.pathname + '?cache=' + Date.now();
+        return;
+    }
+    
+    console.log('[Cache Buster] Forcing fresh load...');
+})();
+</script>
+
+<!-- Load all JS with aggressive cache busting -->
+<script src="cloud-sync.js?cache=202605071800"></script>
+<script src="data-system.js?cache=202605071800"></script>
+<script src="user-system.js?cache=202605071800"></script>
+<script src="credit-system.js?cache=2026050401"></script>
+<script src="project-system.js?cache=202605071800"></script>
+<script src="role-system.js?cache=202605071800"></script>
+<script src="ocr-system.js?cache=2026050501"></script>
+<script src="data-perm.js?cache=202605071800"></script>
+<script src="points-mall.js?cache=2026050324"></script>
+<script>
+console.log('[Cache Buster] All scripts loaded with cache busting');
+// Remove loading screen after a delay
+setTimeout(function() {
+    var el = document.getElementById('loading-screen');
+    if (el) el.classList.add('hidden');
+}, 500);
+</script>
+</body>
+</html>

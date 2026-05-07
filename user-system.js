@@ -602,8 +602,8 @@ async function doLoginPwd(){
         const cloudUser = await cloudLogin(phone, pwd);
         if (cloudUser) {
           console.log('[Login] 云端登录成功，JWT token 已保存');
-          // 同步云端用户积分到本地（关键修复）
-          if (cloudUser.points !== undefined && cloudUser.points !== user.points) {
+          // 同步云端用户积分到本地（云端积分 > 0 时才同步，避免0覆盖本地积分）
+          if (cloudUser.points !== undefined && cloudUser.points > 0 && cloudUser.points !== user.points) {
             user.points = cloudUser.points;
             currentUser.points = cloudUser.points;
             await userDBPut(user);

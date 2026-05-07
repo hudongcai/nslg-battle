@@ -551,7 +551,7 @@ async function switchTab(tabId, btn) {
       document.head.appendChild(s);
     }
   }
-  if (tabId === 'cloudservice') { if(typeof refreshDBUsage==='function') refreshDBUsage(); }
+  if (tabId === 'cloudservice') { if(typeof refreshDBUsage==='function') refreshDBUsage(); if(typeof refreshCloudStorageStats==='function') refreshCloudStorageStats(); }
   if (tabId === 'system') {
     // 系统配置：调用 showSystemConfig 切换第一个可见子菜单
     if(typeof showSystemConfig==='function') showSystemConfig();
@@ -630,6 +630,75 @@ async function refreshDBUsage() {
   }
   const el = document.getElementById('dbDetails');
   if (el) el.innerHTML = detailsHTML || '暂无数据';
+}
+
+// ========== 云端服务：刷新云端数据库统计 ==========
+async function refreshCloudStorageStats() {
+  const container = document.getElementById('cloudStorageStats');
+  if (!container) return;
+
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);">⏳ 加载中...</div>';
+
+  try {
+    let stats = null;
+    if (window.cloudSync && window.cloudSync.getStorageStats) {
+      stats = await window.cloudSync.getStorageStats();
+    }
+
+    if (!stats) {
+      container.innerHTML = '<div style="text-align:center;padding:20px;color:#ff5252;">❌ 无法获取云端统计数据</div>';
+      return;
+    }
+
+    const formatSize = (kb) => {
+      if (!kb || kb <= 0) return '0 KB';
+      if (kb >= 1024) return (kb / 1024).toFixed(1) + ' MB';
+      return kb + ' KB';
+    };
+
+    const updateTime = stats.collectedAt
+      ? new Date(stats.collectedAt).toLocaleString('zh-CN')
+      : '未知';
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text3);margin-bottom:4px;">📦 数据库记录</div>
+          <div style="font-size:18px;font-weight:700;color:var(--accent);">${stats.dbRecords || 0}</div>
+          <div style="color:var(--text3);font-size:10px;">条</div>
+        </div>
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text3);margin-bottom:4px;">💾 数据库大小</div>
+          <div style="font-size:18px;font-weight:700;color:var(--accent);">${formatSize(stats.dbSizeKB || 0)}</div>
+        </div>
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text3);margin-bottom:4px;">📁 上传文件</div>
+          <div style="font-size:18px;font-weight:700;color:var(--cyan);">${stats.uploadFiles || 0}</div>
+          <div style="color:var(--text3);font-size:10px;">个</div>
+        </div>
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text3);margin-bottom:4px;">🗂️ 上传大小</div>
+          <div style="font-size:18px;font-weight:700;color:var(--cyan);">${formatSize(stats.uploadSizeKB || 0)}</div>
+        </div>
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text3);margin-bottom:4px;">👥 活跃用户</div>
+          <div style="font-size:18px;font-weight:700;color:var(--green);">${stats.activeUsers || 0}</div>
+          <div style="color:var(--text3);font-size:10px;">人</div>
+        </div>
+        <div style="padding:12px;background:var(--bg3);border-radius:6px;">
+          <div style="color:var(--text3);margin-bottom:4px;">⚔️ 战报数量</div>
+          <div style="font-size:18px;font-weight:700;color:var(--green);">${stats.battlesCount || 0}</div>
+          <div style="color:var(--text3);font-size:10px;">条</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);text-align:center;">
+        🔄 每10秒自动更新 · ${updateTime}
+      </div>
+    `;
+  } catch (e) {
+    console.error('[refreshCloudStorageStats] 失败:', e);
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:#ff5252;">❌ 加载失败: ' + e.message + '</div>';
+  }
 }
 
 function switchLibSub(sub) {
