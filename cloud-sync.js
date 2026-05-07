@@ -214,7 +214,7 @@ async function cloudGetRecords(projectId = null) {
   // 字段映射：云端驼峰 → 前端 IndexedDB 字段名
   return list.map(r => ({
     id: r.id,
-    projectId: r.projectId || r.project_id || null,
+    projectId: (r.projectId !== undefined && r.projectId !== null) ? r.projectId : (r.project_id || null),
     time: r.battleDate || r.battle_date || r.battleTime || '',
     result: r.result || '',
     leftPlayer: r.attackerName || r.attacker_name || '',

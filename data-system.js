@@ -334,10 +334,11 @@ async function loadAllRecords() {
       if (changed) migratePromises.push(dbPut(rec));
     }
     if (migratePromises.length > 0) await Promise.all(migratePromises);
-    // 按项目过滤
+    // 按项目过滤（统一转字符串比较，避免云端数字ID vs 本地字符串ID不一致）
     const pid = window.currentProjectId;
     if (pid) {
-      allRecords = records.filter(r => r.projectId === pid);
+      const pidStr = String(pid);
+      allRecords = records.filter(r => String(r.projectId) === pidStr);
     } else {
       // 无项目过滤：超管看全部，普通用户只看有权限项目的战报
       if (typeof currentUser !== 'undefined' && currentUser && currentUser.role !== 'super_admin') {
@@ -345,11 +346,11 @@ async function loadAllRecords() {
         let visibleProjIds = new Set();
         try {
           const visProjs = await (typeof getVisibleProjects === 'function' ? getVisibleProjects() : Promise.resolve([]));
-          visProjs.forEach(p => visibleProjIds.add(p.id));
+          visProjs.forEach(p => visibleProjIds.add(String(p.id)));
         } catch(e) {}
         allRecords = records.filter(r =>
           !r.projectId ||                          // 无项目关联的旧数据
-          visibleProjIds.has(r.projectId)           // 有权限访问的项目
+          visibleProjIds.has(String(r.projectId))   // 有权限访问的项目（统一字符串）
         );
       } else {
         allRecords = records;
@@ -386,7 +387,8 @@ async function loadAllRecords() {
           }
           allRecords = await dbGetAll();
           if (window.currentProjectId) {
-            allRecords = allRecords.filter(r => r.projectId === window.currentProjectId);
+            const pidStr = String(window.currentProjectId);
+            allRecords = allRecords.filter(r => String(r.projectId) === pidStr);
           }
         }
       } catch (e) { }
