@@ -48,7 +48,10 @@ async function cloudRequest(path, options = {}) {
   }
 
   try {
-    const resp = await fetch(url, finalOptions);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(url, { ...finalOptions, signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await resp.json();
     if (!resp.ok) {
       // 401: Token 无效或过期，清除本地 token
