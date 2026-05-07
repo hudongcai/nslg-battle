@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v2026050505
+ * 版本: v2026050713
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -58,9 +58,11 @@ async function cloudRequest(path, options = {}) {
       }
       throw new Error(data.message || data.error || `请求失败(${resp.status})`);
     }
-    // 标准化：后端返回 { code:200, data }，前端期望 { success:true, data }
+    // 标准化：后端返回 { success:true, data } 或 { code:200, data }，统一字段
     if (data.code === 200 && !data.success) {
       data.success = true;
+    } else if (data.success === true && !data.code) {
+      data.code = 200;
     }
     return data;
   } catch (e) {
@@ -336,6 +338,63 @@ async function syncCloudToLocal() {
   }
 }
 
+// ========== 数据权限 API（projAccess 本地读取）==========
+// getMyAccess：返回当前用户在 projAccess 表中的所有授权记录
+// 用于 filterVisibleProjects 的 P4 公共项目 + P2 成员可见性校验
+const PROJ_ACCESS_STORE = 'projAccess';
+
+function _openUserDBForAccess() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('nslg_userdb', 1);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function cloudGetMyAccess() {
+  const phone = getCurrentUserPhone();
+  if (!phone) return [];
+  try {
+    const db = await _openUserDBForAccess();
+    if (!db.objectStoreNames.contains(PROJ_ACCESS_STORE)) return [];
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction([PROJ_ACCESS_STORE], 'readonly');
+      const all = tx.objectStore(PROJ_ACCESS_STORE).getAll();
+      all.onsuccess = () => resolve((all.result || []).filter(a => a.phone === phone));
+      all.onerror   = () => resolve([]);
+    });
+  } catch(e) {
+    return [];
+  }
+}
+
+// 角色同步：从云端拉取所有角色（数据库为真相之源）
+async function cloudGetRoles() {
+  try {
+    const data = await cloudRequest('/roles');
+    // 后端返回 { success: true, data: [...] }
+    if (data && (data.success === true || data.code === 200)) {
+      return data.data || [];
+    }
+    return [];
+  } catch(e) {
+    console.error('[cloudGetRoles] 失败:', e);
+    return [];
+  }
+}
+
+// 角色同步：推送单个角色到云端
+async function cloudSaveRole(role) {
+  try {
+    await cloudRequest('/roles', {
+      method: 'POST',
+      body: JSON.stringify(role),
+    });
+  } catch(e) {
+    console.error('[cloudSaveRole] 失败:', e);
+  }
+}
+
 // 导出给全局使用
 window.cloudSync = {
   getProjects: cloudGetProjects,
@@ -357,5 +416,10 @@ window.cloudSync = {
   request: cloudRequestAPI,
   // Token 管理
   setToken: setToken,
-  getToken: getToken
+  getToken: getToken,
+  // 数据权限
+  getMyAccess: cloudGetMyAccess,
+  // 角色同步
+  getRoles: cloudGetRoles,
+  saveRole: cloudSaveRole,
 };

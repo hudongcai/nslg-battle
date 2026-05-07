@@ -1,6 +1,8 @@
 /* ==========================================================
-   ROLE SYSTEM - 角色管理、权限控制
-   ========================================================== */
+  ROLE SYSTEM - 角色管理、权限控制
+  双层权限：菜单权限（角色） + 数据权限（项目归属）
+  版本: v2026050713
+  ========================================================== */
 console.log('[role-system.js] v2026050412 加载');
 
 // ========== 云端同步函数 ==========
@@ -45,6 +47,9 @@ async function cloudDeleteRole(roleId) {
 }
 
 // ========== 内置角色种子数据 ==========
+// ⚑3 projCreate：创建项目权限（内置到角色模板，非写死）
+// ⚑2 projVisibilityToggle：可见性开关（私有项目细粒度可分配权限）
+// ⚑1 projDelete：公共项目禁止任何删除（超管可绕过），在 canDoAction 中强制校验
 const BUILTIN_ROLES = [
   {
     id: 'super_admin',
@@ -57,7 +62,7 @@ const BUILTIN_ROLES = [
       // 系统配置子级
       rolemanage:true, userManage:true, dataperm:true, dataManage:true, cloudService:true, syslog:true,
       // 项目管理子级
-      projCreate:true, projEdit:true, projDelete:true, projMember:true, projVisible:true,
+      projCreate:true, projEdit:true, projDelete:true, projMember:true, projVisibilityToggle:true,
       dataImport:true, dataBatchSelect:true, dataRecordDelete:true, dataTableDelete:true, dataExport:true,
       winrateAnalysis:true,
     },
@@ -70,7 +75,7 @@ const BUILTIN_ROLES = [
     permissions: {
       projectManage:true, library:true, ranking:true, peijiang:true, yanwu:true, systemConfig:false,
       rolemanage:false, userManage:false, dataperm:false, dataManage:false, cloudService:false, syslog:false,
-      projCreate:true, projEdit:true, projDelete:false, projMember:false, projVisible:false,
+      projCreate:true, projEdit:true, projDelete:false, projMember:true, projVisibilityToggle:false,
       dataImport:true, dataBatchSelect:true, dataRecordDelete:true, dataTableDelete:true, dataExport:true,
       winrateAnalysis:true,
     },
@@ -83,7 +88,7 @@ const BUILTIN_ROLES = [
     permissions: {
       projectManage:true, library:false, ranking:false, peijiang:false, yanwu:false, systemConfig:false,
       rolemanage:false, userManage:false, dataperm:false, dataManage:false, cloudService:false, syslog:false,
-      projCreate:false, projEdit:false, projDelete:false, projMember:false, projVisible:false,
+      projCreate:false, projEdit:false, projDelete:false, projMember:false, projVisibilityToggle:false,
       dataImport:false, dataBatchSelect:false, dataRecordDelete:false, dataTableDelete:false, dataExport:false,
       winrateAnalysis:false,
     },
@@ -137,13 +142,13 @@ function roleDBGetAll(){
 
 // ========== 获取角色权限 ==========
 async function getRolePermissions(roleId){
-  // 内置角色
+  // 先查 IndexedDB（数据库同步后的最新值）
+  const role = await roleDBGet(roleId);
+  if(role) return migratePermissions(role.permissions||{});
+  // 没有才用内置角色兜底
   const builtin = BUILTIN_ROLES.find(r=>r.id===roleId);
   if(builtin) return builtin.permissions||{};
-  // 自定义角色
-  const role = await roleDBGet(roleId);
-  if(!role) return null;
-  return migratePermissions(role.permissions||{});
+  return null;
 }
 
 // ========== 权限迁移：旧格式 → 新格式 ==========
@@ -205,24 +210,14 @@ async function roleSystemInit(){
     }
     console.log('[roleSystemInit] 种子完成，新增', added, '个角色');
 
-    // 云端同步：仅在本地角色为空时从云端拉取，避免覆盖本地修改
+    // 云端同步：角色权限以数据库为真相之源，每次启动都强制从云端拉取最新
     if (window.cloudSync) {
       try {
-        const localRoles = await roleDBGetAll();
-        if (localRoles.length === 0) {
-          // 本地没有任何角色，才从云端拉取
-          const cloudRoles = await cloudGetRoles();
-          if (cloudRoles && cloudRoles.length > 0) {
-            console.log('[roleSystemInit] 本地无角色，从云端同步:', cloudRoles.length, '个');
-            for (const role of cloudRoles) {
-              await roleDBPut(role);
-            }
-          }
-        } else {
-          console.log('[roleSystemInit] 本地已有', localRoles.length, '个角色，跳过云端覆盖');
-          // 后台静默同步：将本地修改推送到云端（双向同步）
-          for (const role of localRoles) {
-            try { await cloudSaveRole(role); } catch(e) {}
+        const cloudRoles = await cloudGetRoles();
+        if (cloudRoles && cloudRoles.length > 0) {
+          console.log('[roleSystemInit] 从云端同步', cloudRoles.length, '个角色（覆盖本地缓存）');
+          for (const role of cloudRoles) {
+            await roleDBPut(role); // 直接覆盖，保证最新
           }
         }
       } catch (e) {
@@ -238,6 +233,8 @@ async function roleSystemInit(){
 }
 
 // ========== 权限定义（所有可配置的权限点）==========
+// ⚑2 visibility_toggle → projVisibilityToggle（可见性开关，加入私有项目细粒度可分配权限）
+// ⚑3 projectCreate → projCreate（创建项目，内置角色权限）
 // parent 为空表示顶级导航权限，有值表示属于某个父级权限的子权限
 const PERMISSIONS = [
   // ========== 顶级导航 ==========
@@ -257,17 +254,17 @@ const PERMISSIONS = [
   {key:'syslog',        label:'系统日志',            parent:'systemConfig'},
 
   // ========== 项目管理子级（项目内操作）==========
-  {key:'projCreate',      label:'创建项目',            parent:'projectManage'},
-  {key:'projEdit',        label:'编辑项目',            parent:'projectManage'},
-  {key:'projDelete',      label:'删除项目',            parent:'projectManage'},
-  {key:'projMember',      label:'成员管理',            parent:'projectManage'},
-  {key:'projVisible',     label:'可见性管理',          parent:'projectManage'},
-  {key:'dataImport',      label:'战报导入',            parent:'projectManage'},
-  {key:'dataBatchSelect', label:'战报库批量选择',      parent:'projectManage'},
-  {key:'dataRecordDelete',label:'战报删除',            parent:'projectManage'},
-  {key:'dataTableDelete', label:'数据底表删除',        parent:'projectManage'},
-  {key:'dataExport',      label:'数据底表导出',         parent:'projectManage'},
-  {key:'winrateAnalysis', label:'克制分析导出',         parent:'projectManage'},
+  {key:'projCreate',         label:'创建项目',              parent:'projectManage'},   // ⚑3
+  {key:'projEdit',           label:'编辑项目',              parent:'projectManage'},
+  {key:'projDelete',         label:'删除项目',              parent:'projectManage'},   // ⚑1 公共项目禁止
+  {key:'projMember',         label:'成员管理',              parent:'projectManage'},
+  {key:'projVisibilityToggle',label:'可见性开关',           parent:'projectManage'},   // ⚑2
+  {key:'dataImport',         label:'战报导入',              parent:'projectManage'},
+  {key:'dataBatchSelect',    label:'战报库批量选择',        parent:'projectManage'},
+  {key:'dataRecordDelete',   label:'战报删除',              parent:'projectManage'},
+  {key:'dataTableDelete',    label:'数据底表删除',          parent:'projectManage'},
+  {key:'dataExport',         label:'数据底表导出',           parent:'projectManage'},
+  {key:'winrateAnalysis',    label:'克制分析导出',          parent:'projectManage'},
 ];
 
 // ========== 渲染角色管理页面 ==========
@@ -567,6 +564,101 @@ async function hasProjectPermission(permKey){
   if(!currentUser) return false;
   const perms = await getRolePermissions(currentUser.role);
   return !!perms[permKey];
+}
+
+// ==========================================================
+// 双层权限核心函数
+// 层级：P1 超管 > P2 创建者私有权限 > P3 角色菜单权限 > P4 公共项目兜底只读
+// ==========================================================
+
+// ---------- hasPermission ----------
+// P1+P3：纯角色菜单权限（不含数据归属校验，供 UI 显隐用）
+// ⚑3：projCreate → 角色菜单权限，创建项目时调用
+async function hasPermission(permKey) {
+  if (!currentUser) return false;
+  // P1：超管 bypass
+  if (currentUser.role === 'super_admin') return true;
+  const perms = await getRolePermissions(currentUser.role);
+  return !!perms[permKey];
+}
+
+// ---------- filterVisibleProjects ----------
+// P2+P4：数据层可见性过滤（项目列表 → 只返回有权限看到的项目）
+// 返回 filteredProjects（不在项目内的成员/公开项目创建者可见）
+async function filterVisibleProjects(projects) {
+  if (!currentUser) return [];
+  // P1：超管看全部
+  if (currentUser.role === 'super_admin') return projects;
+
+  // 云端优先：先同步最新项目归属
+  if (window.cloudSync) {
+    try {
+      await window.cloudSync.syncToLocal ? window.cloudSync.syncToLocal() : Promise.resolve();
+    } catch(e) {}
+  }
+
+  // P2：创建者 + P4：公开项目
+  const visible = projects.filter(p => {
+    // 创建者
+    if (p.creator === currentUser.id) return true;
+    // 公开项目
+    if (p.visibility === 'public') return true;
+    // 项目成员（需要查 project_members 或 projAccess）
+    return false;
+  });
+
+  // 补充成员可见性（查本地 projAccess + cloud）
+  if (window.cloudSync) {
+    try {
+      const myAccess = await (window.cloudSync.getMyAccess ? window.cloudSync.getMyAccess() : Promise.resolve([]));
+      const accessProjIds = new Set(myAccess.map(a => a.projectId));
+      for (const p of projects) {
+        if (accessProjIds.has(String(p.id)) || accessProjIds.has(Number(p.id))) {
+          if (!visible.find(v => v.id === p.id)) visible.push(p);
+        }
+      }
+    } catch(e) {}
+  }
+
+  return visible;
+}
+
+// ---------- canDoAction ----------
+// 完整 P1-P4 权限判断（含 ⚑1 公共项目操作禁止）
+// actionKey: 'projEdit' | 'projDelete' | 'projMember' | 'projVisibilityToggle' |
+//            'dataImport' | 'dataBatchSelect' | 'dataRecordDelete' | 'dataTableDelete' | 'dataExport' | 'winrateAnalysis'
+// project: 当前项目对象（必须含 id, creator, visibility 字段）
+// 返回: true = 允许，false = 拒绝
+async function canDoAction(actionKey, project) {
+  if (!currentUser) return false;
+
+  // P1：超管 bypass ⚑1 之外的所有校验
+  if (currentUser.role === 'super_admin') {
+    // ⚑1 唯一限制：超管也不能删公共项目（除非未来需求变更）
+    // if (actionKey === 'projDelete' && project?.visibility === 'public') return false;
+    // 当前规则：超管可删一切，这里保持宽松
+    return true;
+  }
+
+  // 基础校验：用户必须在该项目内有身份（创建者 / 公开 / 成员）
+  const isCreator = project && project.creator === currentUser.id;
+  const isPublic  = project && project.visibility === 'public';
+  const isMember  = false; // TODO: 后续接 project_members / projAccess 后补充
+
+  if (!isCreator && !isPublic && !isMember) return false;
+
+  // ⚑1 公共项目操作禁止：projDelete
+  if (actionKey === 'projDelete' && isPublic) return false;
+
+  // P2：创建者私有权限（强制拥有，与角色无关）
+  const creatorForcedKeys = ['projEdit', 'projMember', 'projVisibilityToggle',
+                             'dataImport', 'dataBatchSelect', 'dataRecordDelete',
+                             'dataTableDelete', 'dataExport', 'winrateAnalysis'];
+  if (isCreator && creatorForcedKeys.includes(actionKey)) return true;
+
+  // P3：角色菜单权限
+  const perms = await getRolePermissions(currentUser.role);
+  return !!perms[actionKey];
 }
 
 // ========== escHtml 防御（如果全局没有则定义）==========

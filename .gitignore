@@ -15,3 +15,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# 敏感脚本（含 Token，禁止提交）
+push-fix*.py
+put-api.py
+do-git-push.ps1
