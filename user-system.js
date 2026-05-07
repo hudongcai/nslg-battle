@@ -793,6 +793,20 @@ async function renderUserManage(){
   if(!currentUser)return;
   const perms = await getRolePermissions(currentUser.role);
   if(!perms||!perms['userManage'])return;
+
+  // 优先从云端同步用户数据
+  if(window.cloudSync && window.cloudSync.getToken && window.cloudSync.getToken()){
+    try{
+      const cloudUsers = await window.cloudSync.getUsers();
+      console.log('[UserManage] 云端用户同步:', cloudUsers.length, '个');
+      for(const u of cloudUsers){
+        await userDBPut(u);
+      }
+    }catch(e){
+      console.warn('[UserManage] 云端用户同步失败，使用本地数据:', e.message);
+    }
+  }
+
   const users  = await userDBGetAll();
   const roles  = await roleDBGetAll();
   const tbody  = document.getElementById('userTableBody');

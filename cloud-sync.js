@@ -100,6 +100,24 @@ async function cloudGetProject(projectId) {
   return project || null;
 }
 
+// ========== 用户管理 API ==========
+async function cloudGetUsers() {
+  try {
+    const data = await cloudRequest('/users');
+    return (data.data || []).map(u => ({
+      phone: u.phone,
+      name: u.name,
+      role: u.role,
+      points: u.points || 0,
+      createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now(),
+      password: u.password || ''
+    }));
+  } catch (e) {
+    console.error('[cloudGetUsers] 失败:', e);
+    return [];
+  }
+}
+
 // 创建项目（云端）
 async function cloudCreateProject(project) {
   const data = await cloudRequest('/projects', {
@@ -424,5 +442,7 @@ window.cloudSync = {
   getMyAccess: cloudGetMyAccess,
   // 角色同步
   getRoles: cloudGetRoles,
+  // 用户同步
+  getUsers: cloudGetUsers,
   saveRole: cloudSaveRole,
 };
