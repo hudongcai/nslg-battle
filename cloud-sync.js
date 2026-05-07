@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605072345
+ * 版本: v202605080130
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -214,22 +214,27 @@ async function cloudGetRecords(projectId = null) {
 }
 
 // 创建战报（云端）- 排除大字段（图片等）
+// 接收字段：projectId, battleDate, attackerName, enemyName, result, description
 async function cloudCreateRecord(record) {
   // 创建记录的副本，排除大字段
   const recordForCloud = { ...record };
   // 移除 base64 图片（太大，D1 限制 1MB）
+  delete recordForCloud.imageBase64;
+  delete recordForCloud.imageData;
+  delete recordForCloud.ocrImage;
   if (recordForCloud.data && typeof recordForCloud.data === 'object') {
     const dataCopy = { ...recordForCloud.data };
-    delete dataCopy.ocrImage;  // 移除 base64 图片
-    delete dataCopy.imageData;  // 移除其他可能的图片字段
+    delete dataCopy.ocrImage;
+    delete dataCopy.imageBase64;
+    delete dataCopy.imageData;
     recordForCloud.data = dataCopy;
   }
-  
-  const data = await cloudRequest('/records', {
+
+  const data = await cloudRequest('/battles', {
     method: 'POST',
     body: recordForCloud
   });
-  return data.success ? data.data : null;
+  return data.code === 200 ? data.data : null;
 }
 
 // 更新战报（云端）
@@ -281,29 +286,19 @@ async function cloudCreateUser(phone, name, password, role = 'member') {
 }
 
 // ========== 战报管理（云端）==========
-
-// 创建战报（云端）
-async function cloudCreateBattle(battle) {
-  const data = await cloudRequest('/battles', {
-    method: 'POST',
-    body: {
-      projectId: battle.projectId || battle.project_id,
-      battleDate: battle.battleDate || battle.battle_date,
-      attackerName: battle.attackerName || battle.attacker_name || '',
-      enemyName: battle.enemyName || battle.enemy_name || '',
-      result: battle.result || '',
-      description: battle.description || '',
-      imageIds: battle.imageIds || []
-    }
-  });
-  return data.code === 200 ? data.data : null;
-}
+// 注意：所有创建/更新调用统一走 cloudCreateRecord / cloudUpdateRecord
+// 字段规范：projectId, battleDate, attackerName, enemyName, result, description
 
 // 获取战报列表（云端）
+// 后端返回格式：{ code:200, data:{ list:[], total, page, pageSize } }
 async function cloudGetBattles(projectId) {
   const params = projectId ? `?projectId=${projectId}` : '';
   const data = await cloudRequest(`/battles${params}`);
-  return data.code === 200 ? data.data.list : [];
+  // 兼容两种返回格式：data.data.list 或 data.data
+  if (data && data.code === 200 && data.data) {
+    return Array.isArray(data.data) ? data.data : (data.data.list || []);
+  }
+  return [];
 }
 
 // 更新战报（云端）
