@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605080710
+ * 版本: v202605080350
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -386,35 +386,76 @@ async function syncCloudToLocal() {
     }
 
     // 3. 同步战报列表（增量同步：只同步有差异的战报）
+    // 核心逻辑：云端记录（可能缺字段）不应覆盖本地有值记录
     try {
       const cloudRecords = await cloudGetRecords();
       let syncCount = 0;
       for (const rec of cloudRecords) {
         try {
-          // 检查本地是否有 cloudId 匹配的旧记录（OCR 产生的本地记录）
-          let existingLocalId = null;
-          try {
-            const allLocal = await dbGetAll();
-            const matched = allLocal.find(r => r.cloudId == rec.id);
-            if (matched) existingLocalId = matched.id;
-          } catch (e) {}
+          let localRec = null;
 
-          // 保留本地已有记录的 imageBase64（云端记录不含图片）
-          if (!rec.imageBase64) {
-            const srcRec = existingLocalId ? await dbGet(existingLocalId) : await dbGet(rec.id);
-            if (srcRec && srcRec.imageBase64) {
-              rec.imageBase64 = srcRec.imageBase64;
+          // 3.1 按 cloudId 找本地记录
+          const allLocal = await dbGetAll();
+          let matched = allLocal.find(r => r.cloudId == rec.id);
+
+          if (matched) {
+            // 已有 cloudId 关联：直接用本地记录，用云端数据补全空字段
+            localRec = matched;
+            // 合并：云端有值 && 本地无值 → 用云端值
+            for (const key of ['attackerName','enemyName','result','leftAlliance','rightAlliance',
+                              'leftFormation','rightFormation','description']) {
+              if ((!localRec[key] || localRec[key] === '') && rec[key]) {
+                localRec[key] = rec[key];
+              }
+            }
+            // 用云端 ID 覆盖本地 ID（统一以云端 ID 为主）
+            localRec.id = rec.id;
+            localRec._synced = true;
+            localRec._syncTime = Date.now();
+            await dbPut(localRec);
+          } else {
+            // 3.2 按业务字段匹配（OCR 记录还没关联 cloudId）
+            const bizMatch = allLocal.find(r =>
+              r.battleDate === rec.battleDate &&
+              (r.leftPlayer || '') === (rec.leftPlayer || '') &&
+              (r.rightPlayer || '') === (rec.rightPlayer || '')
+            );
+
+            if (bizMatch) {
+              // 找到本地对应记录：合并云端数据，保留本地图片/详细字段
+              localRec = bizMatch;
+              localRec.cloudId = rec.id;
+              // 云端有值 && 本地无值 → 用云端值
+              for (const key of ['attackerName','enemyName','result','leftAlliance','rightAlliance',
+                                'leftFormation','rightFormation','description']) {
+                if ((!localRec[key] || localRec[key] === '') && rec[key]) {
+                  localRec[key] = rec[key];
+                }
+              }
+              // 保留本地 ID（IndexedDB 主键不变），只更新 cloudId
+              localRec._synced = true;
+              localRec._syncTime = Date.now();
+              await dbPut(localRec);
+              // 同时以云端 ID 写入一条（确保可以通过云端 ID 查到）
+              const cloudCopy = { ...localRec, id: rec.id };
+              delete cloudCopy.cloudId;  // 避免循环
+              await dbPut(cloudCopy);
+            } else {
+              // 3.3 本地完全没有 → 直接写入云端记录（补全本地图片）
+              let imgSrc = null;
+              // 找本地是否有相同图片的记录
+              const imgMatch = allLocal.find(r => r.imageBase64 && r.imageBase64.length > 100);
+              if (imgMatch) imgSrc = imgMatch;
+
+              if (!rec.imageBase64 && imgSrc) {
+                rec.imageBase64 = imgSrc.imageBase64;
+              }
+              rec._synced = true;
+              rec._syncTime = Date.now();
+              await dbPut(rec);
             }
           }
 
-          // 写入云端记录（以云端 ID 为主键）
-          await dbPut(rec);
-
-          // 如果本地有 cloudId 匹配的旧记录，删除它（避免重复）
-          if (existingLocalId && existingLocalId != rec.id) {
-            try { await dbDelete(existingLocalId); } catch (e) {}
-            console.log('[Sync] 合并本地记录 cloudId=' + existingLocalId + ' → 云端 id=' + rec.id);
-          }
           syncCount++;
         } catch (e) {
           console.warn('[Sync] 战报同步失败（跳过）:', rec.id, e);
