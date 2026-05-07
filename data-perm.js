@@ -253,7 +253,6 @@ async function renderDataPerm() {
             </div>
           </div>`;
     }
-  }
 
   html += `
       <div style="margin-top:16px;padding:12px 14px;background:rgba(116,192,252,.04);border:1px solid rgba(116,192,252,.15);border-radius:8px;font-size:11px;color:var(--text2);">
