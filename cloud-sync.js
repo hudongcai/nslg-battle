@@ -265,8 +265,9 @@ async function cloudCreateRecord(record) {
 }
 
 // 更新战报（云端）
+// 注意：后端路由是 /battles，不是 /records
 async function cloudUpdateRecord(recordId, recordData) {
-  const result = await cloudRequest(`/records/${recordId}`, {
+  const result = await cloudRequest(`/battles/${recordId}`, {
     method: 'PUT',
     body: recordData
   });
@@ -275,10 +276,10 @@ async function cloudUpdateRecord(recordId, recordData) {
 
 // 删除战报（云端）
 async function cloudDeleteRecord(recordId) {
-  const data = await cloudRequest(`/records/${recordId}`, {
+  const data = await cloudRequest(`/battles/${recordId}`, {
     method: 'DELETE'
   });
-  return data.success;
+  return data.success || data.code === 200;
 }
 
 // ========== 用户管理 API ==========

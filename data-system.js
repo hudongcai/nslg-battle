@@ -248,7 +248,13 @@ function dbPut(rec) {
             attackerName: rec.leftPlayer || rec.attackerName || '',
             enemyName: rec.rightPlayer || rec.enemyName || '',
             result: rec.result || '',
-            description: JSON.stringify(rec.data || rec)
+            // description 只存战报武将/战法信息（不含图片等大数据）
+            description: JSON.stringify({
+              leftGenerals: rec.leftGenerals || [],
+              rightGenerals: rec.rightGenerals || [],
+              leftTactics: rec.leftTactics || [],
+              rightTactics: rec.rightTactics || []
+            })
           };
           window.cloudSync.updateRecord(rec.id, cloudRec).catch(e => console.error('[Cloud] 更新失败:', e));
         }catch(e){console.error('[Cloud] 同步异常:', e);}
