@@ -934,6 +934,22 @@ async function doAdjustPoints() {
     const oldPoints = u.points || 0;
     u.points = val;
     await userDBPut(u);
+
+    // 同步到云端（超管调整积分）
+    try {
+      if (typeof cloudUpdateUserPoints === 'function') {
+        const synced = await cloudUpdateUserPoints(phone, val);
+        if (synced) {
+          console.log('[doAdjustPoints] 云端积分同步成功:', phone, val);
+        } else {
+          console.warn('[doAdjustPoints] 云端积分同步失败:', phone);
+        }
+      }
+    } catch (cloudErr) {
+      console.warn('[doAdjustPoints] 云端同步异常:', cloudErr.message);
+      // 不阻塞流程，本地已更新
+    }
+
     // 如果是当前用户，同步内存中的积分
     if (currentUser && currentUser.phone === phone) {
       currentUser.points = val;

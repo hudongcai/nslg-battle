@@ -119,6 +119,28 @@ async function cloudGetUsers() {
   }
 }
 
+// 更新用户积分（云端）
+async function cloudUpdateUserPoints(phone, points) {
+  try {
+    // 需要通过手机号找到用户的云端ID
+    const data = await cloudRequest('/users');
+    const list = (data.data && data.data.list) || [];
+    const user = list.find(u => u.phone === phone);
+    if (!user || !user.id) {
+      console.warn('[cloudUpdateUserPoints] 未找到用户:', phone);
+      return false;
+    }
+    const res = await cloudRequest(`/users/${user.id}`, {
+      method: 'PUT',
+      body: { points: points }
+    });
+    return res.code === 200;
+  } catch (e) {
+    console.error('[cloudUpdateUserPoints] 失败:', e);
+    return false;
+  }
+}
+
 // 创建项目（云端）
 async function cloudCreateProject(project) {
   const data = await cloudRequest('/projects', {
