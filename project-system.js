@@ -470,6 +470,23 @@ function getProjectFilteredIds(){
   return projDBGet(window.currentProjectId).then(p=>p?p.battleRecordIds||[]:null);
 }
 
+// ========== 清除项目过滤（"全部"按钮回调）==========
+function clearProjectFilter(){
+  window.currentProjectId = null;
+  renderProjectSwitcher();
+  if(typeof loadAllRecords === 'function'){ loadAllRecords(); }
+  // 如果当前在 data/winrate  tab，重新渲染
+  const tabData = document.getElementById('tab-data');
+  const tabWin = document.getElementById('tab-winrate');
+  if(tabData && tabData.classList.contains('active')){
+    if(typeof renderDataTable === 'function') renderDataTable();
+    if(typeof renderGallery === 'function') renderGallery();
+  }
+  if(tabWin && tabWin.classList.contains('active')){
+    if(typeof renderWinRateTable === 'function') renderWinRateTable();
+  }
+}
+
 // ========== 将战报关联到项目 ==========
 async function assignRecordToProject(recordId, projectId){
   const proj = await projDBGet(projectId);

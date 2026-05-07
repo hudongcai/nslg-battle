@@ -358,6 +358,20 @@ async function loadAllRecords() {
   } catch (e) {
     allRecords = [];
   }
+  // 健壮性：如果 currentProjectId 指向一个已删除的项目，自动清除过滤
+  if (window.currentProjectId) {
+    try {
+      const proj = await projDBGet(window.currentProjectId);
+      if (!proj) {
+        console.warn('[loadAllRecords] 当前项目不存在（可能已被删除），自动清除过滤');
+        window.currentProjectId = null;
+        if (typeof renderProjectSwitcher === 'function') renderProjectSwitcher();
+        // 重新过滤（不过滤）
+        const all = await dbGetAll();
+        allRecords = all;
+      }
+    } catch (e) {}
+  }
   // 从 localStorage 兜底（仅在无项目时）
   if (allRecords.length === 0 && !window.currentProjectId) {
     const b = localStorage.getItem('sanmo_records_backup');

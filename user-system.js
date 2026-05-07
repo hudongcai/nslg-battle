@@ -764,6 +764,8 @@ async function onLoginSuccess(){
     }
   }
   
+  // 渲染项目切换栏（含"全部"按钮）
+  if(typeof renderProjectSwitcher === 'function') renderProjectSwitcher();
   // 默认进入项目管理页
   showProjectHome();
 }
