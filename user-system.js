@@ -228,9 +228,34 @@ function userDBGetAll(){
   });
 }
 
-// 获取用户积分
-function getUserPoints(phone){
-  return userDBGet(phone).then(u=> u ? (u.points || 0) : 0);
+// 获取用户积分（优先从云端获取，失败后回退到本地）
+async function getUserPoints(phone){
+  // 优先从云端获取最新积分
+  try {
+    const token = getToken();
+    if (token && typeof cloudRequest === 'function') {
+      const res = await cloudRequest('/users/me');
+      if (res && res.code === 200 && res.data && res.data.points !== undefined) {
+        const cloudPoints = res.data.points;
+        // 同步到本地
+        const u = await userDBGet(phone);
+        if (u && u.points !== cloudPoints) {
+          u.points = cloudPoints;
+          await userDBPut(u);
+          if (currentUser && currentUser.phone === phone) {
+            currentUser.points = cloudPoints;
+            saveSession(currentUser);
+          }
+        }
+        return cloudPoints;
+      }
+    }
+  } catch (e) {
+    console.warn('[getUserPoints] 云端获取失败，使用本地缓存:', e.message);
+  }
+  // 回退到本地
+  const u = await userDBGet(phone);
+  return u ? (u.points || 0) : 0;
 }
 
 // 增加用户积分（充值时调用）
@@ -577,6 +602,13 @@ async function doLoginPwd(){
         const cloudUser = await cloudLogin(phone, pwd);
         if (cloudUser) {
           console.log('[Login] 云端登录成功，JWT token 已保存');
+          // 同步云端用户积分到本地（关键修复）
+          if (cloudUser.points !== undefined && cloudUser.points !== user.points) {
+            user.points = cloudUser.points;
+            currentUser.points = cloudUser.points;
+            await userDBPut(user);
+            console.log('[Login] 已同步云端积分:', cloudUser.points);
+          }
         }
       }
     } catch (cloudErr) {
