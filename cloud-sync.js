@@ -1,7 +1,7 @@
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605080130
+ * 版本: v202605080230
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -205,12 +205,39 @@ async function cloudRemoveProjectMember(projectId, phone) {
 // ========== 战报管理 API ==========
 
 // 获取战报列表（从云端）
+// 后端路由是 /battles，不是 /records
 async function cloudGetRecords(projectId = null) {
-  const url = projectId ? `/records?project_id=${encodeURIComponent(projectId)}` : '/records';
+  const url = projectId ? `/battles?projectId=${encodeURIComponent(projectId)}` : '/battles';
   const data = await cloudRequest(url);
-  // 兼容两种响应格式：{ success, data } 或 { code, data }
-  const list = data.code === 200 ? data.data?.list || data.data : (data.success ? data.data : null);
-  return Array.isArray(list) ? list : [];
+  // 兼容两种响应格式：{ code, data:{list} } 或 { code, data:[...] }
+  const list = data.code === 200 ? (Array.isArray(data.data) ? data.data : (data.data?.list || [])) : [];
+  // 字段映射：云端驼峰 → 前端 IndexedDB 字段名
+  return list.map(r => ({
+    id: r.id,
+    projectId: r.projectId || r.project_id || null,
+    time: r.battleDate || r.battle_date || r.battleTime || '',
+    result: r.result || '',
+    leftPlayer: r.attackerName || r.attacker_name || '',
+    rightPlayer: r.enemyName || r.enemy_name || '',
+    leftAlliance: r.leftAlliance || r.left_alliance || '',
+    rightAlliance: r.rightAlliance || r.right_alliance || '',
+    leftGenerals: r.leftGenerals || [],
+    rightGenerals: r.rightGenerals || [],
+    leftTactics: r.leftTactics || [],
+    rightTactics: r.rightTactics || [],
+    leftFormation: r.leftFormation || r.left_formation || '',
+    rightFormation: r.rightFormation || r.right_formation || '',
+    leftLoss: r.leftLoss ?? r.left_loss ?? null,
+    leftTotal: r.leftTotal ?? r.left_total ?? null,
+    rightLoss: r.rightLoss ?? r.right_loss ?? null,
+    rightTotal: r.rightTotal ?? r.right_total ?? null,
+    leftLossRate: r.leftLossRate ?? r.left_loss_rate ?? null,
+    rightLossRate: r.rightLossRate ?? r.right_loss_rate ?? null,
+    description: r.description || '',
+    imageBase64: r.imageBase64 || r.image_base64 || '',
+    _synced: true,
+    _syncTime: Date.now()
+  }));
 }
 
 // 创建战报（云端）- 排除大字段（图片等）
