@@ -104,13 +104,14 @@ async function cloudGetProject(projectId) {
 async function cloudGetUsers() {
   try {
     const data = await cloudRequest('/users');
-    return (data.data || []).map(u => ({
+    const list = (data.data && data.data.list) || [];
+    return list.map(u => ({
       phone: u.phone,
-      name: u.name,
-      role: u.role,
+      name: u.nickname || u.name || '',
+      role: u.role_id || u.role || 'member',
       points: u.points || 0,
       createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now(),
-      password: u.password || ''
+      password: ''
     }));
   } catch (e) {
     console.error('[cloudGetUsers] 失败:', e);
