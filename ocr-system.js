@@ -74,11 +74,11 @@ async function callOCRAPI(base64Data) {
 
   const promptText = `请识别这张三国谋定天下游戏的战报截图。格式要求：
 【左侧】
-玩家：xxx
+玩家名：xxx（在头像上方，格式如"真武|憨憨牛"或"同盟|玩家名"）
 同盟：xxx
-阵型：xxx
+阵型：xxx（如雁形阵、箕形阵）
 战损兵力：数字
-总兵力：数字
+总兵力：数字（如24383/30000中的30000）
 武将1：武将名
 战法1：战法A,战法B,战法C
 武将2：武将名
@@ -89,7 +89,13 @@ async function callOCRAPI(base64Data) {
 （同上格式）
 【结果】
 胜负：胜/败/平
-注意：每个武将对应3个战法（自带+2个配置），用英文逗号分隔。无法识别用"未知"。`;
+【日期】
+战斗日期：YYYY-MM-DD 格式，如 2026-05-07
+注意：
+1. 玩家名在头像上方，可能带同盟前缀如"真武|憨憨牛"
+2. 每个武将对应3个战法（自带+2个配置），用英文逗号分隔
+3. 无法识别用"未知"
+4. 日期无法识别则留空`;
 
   try {
     const reqBody = {
@@ -159,11 +165,13 @@ function parseOCRResponse(text) {
     rightLoss: null,
     rightTotal: null,
   };
+  let rawText = text; // 保存原始文本用于兜底解析
 
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   let side = '';
   let generalMap = {};
   let tacticsMap = {};
+  let battleDate = ''; // OCR 识别到的战斗日期
 
   function flush(sideKey) {
     const indices = Object.keys(generalMap).map(Number).sort((a, b) => a - b);
@@ -218,9 +226,12 @@ function parseOCRResponse(text) {
       else if (side === 'right') record.rightTactics = tacts;
       continue;
     }
-    if (key.includes('玩家')) {
-      if (side === 'left') record.leftPlayer = val;
-      else if (side === 'right') record.rightPlayer = val;
+    if (key.includes('玩家') || key.includes('玩家名')) {
+      // 支持 "真武|憨憨牛" 格式，取 | 后面部分作为玩家名
+      let name = val;
+      if (name.includes('|')) name = name.split('|').pop().trim();
+      if (side === 'left') record.leftPlayer = name;
+      else if (side === 'right') record.rightPlayer = name;
     } else if (key.includes('同盟')) {
       if (side === 'left') record.leftAlliance = val;
       else if (side === 'right') record.rightAlliance = val;
@@ -255,6 +266,13 @@ function parseOCRResponse(text) {
       if (val.includes('胜')) record.result = '胜';
       else if (val.includes('败')) record.result = '败';
       else record.result = '平';
+    } else if (key.includes('日期') || key.includes('时间') || key.includes('战斗日期')) {
+      // 尝试解析 YYYY-MM-DD 格式日期
+      const dateMatch = val.match(/(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})/);
+      if (dateMatch) {
+        const y = dateMatch[1], m = dateMatch[2].padStart(2,'0'), d = dateMatch[3].padStart(2,'0');
+        battleDate = `${y}-${m}-${d}`;
+      }
     }
   }
 
@@ -266,6 +284,26 @@ function parseOCRResponse(text) {
   if (record.rightLoss != null && record.rightTotal != null && record.rightTotal > 0)
     record.rightLossRate = (record.rightLoss / record.rightTotal) * 100;
 
+  // ========== 兜底：如果玩家名为空，尝试从原始文本直接提取 ==========
+  if (!record.leftPlayer || !record.rightPlayer) {
+    // 匹配中文/英文/数字/·•/| 组成的人名（2~15个字符）
+    const namePattern = /([\u4E00-\u9FA5a-zA-Z0-9\u00B7\u2022\-|]{2,15})/g;
+    const allMatches = [...rawText.matchAll(namePattern)].map(m => m[1]);
+    // 去重后，排除已知的关键词
+    const excludeWords = ['左侧','右侧','结果','胜负','胜','败','平','未知','雁形阵','箕形阵','鱼鳞阵','方圆阵','长蛇阵','锋矢阵','虎翼阵','阵型','战法','武将','兵力','总兵','战损','同盟','玩家','玩家名','战斗日期'];
+    const candidates = [...new Set(allMatches)].filter(n => {
+      if (n.length < 2 || n.length > 15) return false;
+      if (excludeWords.some(w => n.includes(w))) return false;
+      // 排除纯数字
+      if (/^\d+$/.test(n)) return false;
+      return true;
+    });
+    if (!record.leftPlayer && candidates.length > 0) record.leftPlayer = candidates[0];
+    if (!record.rightPlayer && candidates.length > 1) record.rightPlayer = candidates[1];
+  }
+
+  // 写入识别到的战斗日期（OCR 识别不到则为空，由调用方补默认值）
+  record.battleDate = battleDate || '';
   return record;
 }
 
@@ -460,10 +498,11 @@ async function startBatchProcess() {
             try {
               const cloudRec = {
                 projectId: window.currentProjectId,
-                battleDate: new Date().toISOString().split('T')[0], // 今天作为战报日期
+                // 优先用 OCR 识别到的日期，识别不到才用当天
+                battleDate: record.battleDate || new Date().toISOString().split('T')[0],
                 attackerName: record.leftPlayer || '',
                 enemyName: record.rightPlayer || '',
-                result: '',
+                result: record.result || '',
                 description: JSON.stringify({
                   leftGenerals: record.leftGenerals || [],
                   rightGenerals: record.rightGenerals || [],
