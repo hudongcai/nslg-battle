@@ -252,12 +252,10 @@ async function renderDataPerm() {
               <button onclick="showProjectPermModal('${proj.id}')" style="padding:5px 14px;border-radius:6px;border:1px solid var(--accent);background:rgba(240,180,41,.08);color:var(--accent);cursor:pointer;font-size:12px;font-weight:bold;">⚙️ 管理权限</button>
             </div>
           </div>`;
+      }
     }
 
-  html += `
-      <div style="margin-top:16px;padding:12px 14px;background:rgba(116,192,252,.04);border:1px solid rgba(116,192,252,.15);border-radius:8px;font-size:11px;color:var(--text2);">
-        💡 <b style="color:var(--blue);">说明</b>：「成员」权限在项目管理的成员按钮中设置；此处管理额外的访问、编辑、删除权限。
-      </div>
+    html += `
     </div>
   </div>`;
 
