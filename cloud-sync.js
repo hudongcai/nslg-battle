@@ -6,10 +6,8 @@ console.log('[cloud-sync.js] 脚本开始加载 v202605081410');
  * 版本: v202605081410
  */
 
-// 环境切换：false=使用 FRP 内网穿透
-const CLOUD_LOCAL_DEV = false;
-
-const CLOUD_API_BASE = 'https://www.zhenwu.fun/api';
+// 使用本地 MySQL 后端作为唯一数据源
+const CLOUD_API_BASE = 'http://localhost:3000/api';
 
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
@@ -142,7 +140,13 @@ async function cloudGetProjects() {
     }
   }
 
-  const data = await cloudRequest('/projects');
+  const phone = getCurrentUserPhone();
+  if (!phone) {
+    console.warn('[cloudGetProjects] 缺少 phone 参数');
+    return [];
+  }
+
+  const data = await cloudRequest(`/projects?phone=${encodeURIComponent(phone)}`);
   // 后端返回格式：{ code:200, data: { list: [...] } } 或 { code:200, data: [...] }
   let list = [];
   if (data && data.code === 200) {
