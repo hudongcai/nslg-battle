@@ -171,6 +171,8 @@ async function cloudGetUsers() {
       phone: u.phone,
       name: u.nickname || u.name || '',
       role: u.role_id || u.role || 'member',
+      avatar: u.avatar || '',
+      status: u.status ?? 1,
       points: u.points || 0,
       createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now(),
       password: ''
@@ -236,10 +238,11 @@ async function cloudGetProjectMembers(projectId) {
 }
 
 // 添加项目成员（云端）
-async function cloudAddProjectMember(projectId, phone, canEdit = true, canDelete = false, grantedBy = '') {
+// ⚠️ 注意：后端只处理 phone 和 role，其他字段已移除
+async function cloudAddProjectMember(projectId, phone, role = 'viewer') {
   const data = await cloudRequest(`/projects/${projectId}/members`, {
     method: 'POST',
-    body: { phone, can_edit: canEdit, can_delete: canDelete, granted_by: grantedBy }
+    body: { phone, role }  // 只发送后端实际处理的字段
   });
   return data.success;
 }
@@ -289,6 +292,12 @@ async function cloudGetRecords(projectId = null) {
     rightLossRate: r.rightLossRate ?? r.right_loss_rate ?? null,
     description: r.description || '',
     imageBase64: r.imageBase64 || r.image_base64 || '',
+    // 额外字段（云端有返回，本地可能需要）
+    createdBy: r.createdBy ?? r.created_by ?? null,
+    createdAt: r.createdAt || r.created_at || null,
+    updatedAt: r.updatedAt || r.updated_at || null,
+    status: r.status ?? 1,
+    projectName: r.project_name || r.projectName || '',
     _synced: true,
     _syncTime: Date.now()
   }));
@@ -356,12 +365,12 @@ async function cloudLogin(phone, password) {
 }
 
 // 创建用户（注册）
-async function cloudCreateUser(phone, name, password, role = 'member') {
+async function cloudCreateUser(phone, name, password, role = 'member', avatar = '') {
   // 注意：此接口不需要 token，所以不能用 cloudRequest（会自动加 Authorization 头）
   const res = await fetch(`${CLOUD_API_BASE}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, nickname: name, password, role })
+    body: JSON.stringify({ phone, nickname: name, password, role, avatar })
   });
   const data = await res.json();
   return data.code === 200;

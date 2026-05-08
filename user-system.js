@@ -614,12 +614,31 @@ async function doLoginPwd(){
         const cloudUser = await cloudLogin(phone, pwd);
         if (cloudUser) {
           console.log('[Login] 云端登录成功，JWT token 已保存');
-          // 同步云端用户积分到本地（云端积分 > 0 时才同步，避免0覆盖本地积分）
+          // 同步云端用户信息到本地
+          let updated = false;
+          // 同步积分（云端积分 > 0 时才同步，避免0覆盖本地积分）
           if (cloudUser.points !== undefined && cloudUser.points > 0 && cloudUser.points !== user.points) {
             user.points = cloudUser.points;
             currentUser.points = cloudUser.points;
-            await userDBPut(user);
+            updated = true;
             console.log('[Login] 已同步云端积分:', cloudUser.points);
+          }
+          // 同步头像
+          if (cloudUser.avatar !== undefined && cloudUser.avatar !== user.avatar) {
+            user.avatar = cloudUser.avatar;
+            currentUser.avatar = cloudUser.avatar;
+            updated = true;
+            console.log('[Login] 已同步云端头像:', cloudUser.avatar);
+          }
+          // 同步状态
+          if (cloudUser.status !== undefined && cloudUser.status !== user.status) {
+            user.status = cloudUser.status;
+            currentUser.status = cloudUser.status;
+            updated = true;
+            console.log('[Login] 已同步云端状态:', cloudUser.status);
+          }
+          if (updated) {
+            await userDBPut(user);
           }
         }
       }

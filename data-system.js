@@ -217,14 +217,22 @@ async function dbAdd(rec) {
             battleDate: rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
             attackerName: rec.leftPlayer || rec.attackerName || '',
             enemyName: rec.rightPlayer || rec.enemyName || '',
+            leftAlliance: rec.leftAlliance || '',
+            rightAlliance: rec.rightAlliance || '',
+            leftFormation: rec.leftFormation || '',
+            rightFormation: rec.rightFormation || '',
+            leftGenerals: rec.leftGenerals || [],
+            rightGenerals: rec.rightGenerals || [],
+            leftTactics: rec.leftTactics || [],
+            rightTactics: rec.rightTactics || [],
+            leftLoss: rec.leftLoss ?? null,
+            rightLoss: rec.rightLoss ?? null,
+            leftTotal: rec.leftTotal ?? null,
+            rightTotal: rec.rightTotal ?? null,
+            leftLossRate: rec.leftLossRate ?? null,
+            rightLossRate: rec.rightLossRate ?? null,
             result: rec.result || '',
-            // description 只存战报武将/战法信息（不含图片等大数据）
-            description: JSON.stringify({
-              leftGenerals: rec.leftGenerals || [],
-              rightGenerals: rec.rightGenerals || [],
-              leftTactics: rec.leftTactics || [],
-              rightTactics: rec.rightTactics || []
-            })
+            description: rec.description || ''
           };
           window.cloudSync.createRecord(cloudRec).then(result => {
             if(result && result.id){
@@ -233,7 +241,7 @@ async function dbAdd(rec) {
           }).catch(e => console.error('[Cloud] 战报同步失败:', e));
         }catch(e){console.error('[Cloud] 战报同步异常:', e);}
       }
-      
+
       resolve(req.result);
     };
     req.onerror = () => reject(req.error);
@@ -253,14 +261,22 @@ function dbPut(rec) {
             battleDate: rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
             attackerName: rec.leftPlayer || rec.attackerName || '',
             enemyName: rec.rightPlayer || rec.enemyName || '',
+            leftAlliance: rec.leftAlliance || '',
+            rightAlliance: rec.rightAlliance || '',
+            leftFormation: rec.leftFormation || '',
+            rightFormation: rec.rightFormation || '',
+            leftGenerals: rec.leftGenerals || [],
+            rightGenerals: rec.rightGenerals || [],
+            leftTactics: rec.leftTactics || [],
+            rightTactics: rec.rightTactics || [],
+            leftLoss: rec.leftLoss ?? null,
+            rightLoss: rec.rightLoss ?? null,
+            leftTotal: rec.leftTotal ?? null,
+            rightTotal: rec.rightTotal ?? null,
+            leftLossRate: rec.leftLossRate ?? null,
+            rightLossRate: rec.rightLossRate ?? null,
             result: rec.result || '',
-            // description 只存战报武将/战法信息（不含图片等大数据）
-            description: JSON.stringify({
-              leftGenerals: rec.leftGenerals || [],
-              rightGenerals: rec.rightGenerals || [],
-              leftTactics: rec.leftTactics || [],
-              rightTactics: rec.rightTactics || []
-            })
+            description: rec.description || ''
           };
           window.cloudSync.updateRecord(rec.id, cloudRec).catch(e => console.error('[Cloud] 更新失败:', e));
         }catch(e){console.error('[Cloud] 同步异常:', e);}

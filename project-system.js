@@ -122,8 +122,8 @@ async function renderProjectManage(){
   let html = projects.map(p=>{
     const isOwner = p.creator===currentUser.phone;
     const isPublic = p.visibility==='public';
-    const memberCount = (p.memberPhones||[]).length + 1;
-    const battleCount  = (p.battleRecordIds||[]).length;
+    const memberCount = p.memberCount !== undefined ? p.memberCount : (p.memberPhones||[]).length + 1;
+    const battleCount = p.battleCount !== undefined ? p.battleCount : (p.battleRecordIds||[]).length;
     const dateStr  = p.createdAt?new Date(p.createdAt).toLocaleDateString('zh-CN'):'-';
     const perm = userPerms[p.id] || {};
     const canEdit = isOwner || canManage || perm.canEdit;
@@ -218,7 +218,7 @@ async function saveProject(projectId){
       // 同步到云端
       if(window.cloudSync){
         try{
-          await window.cloudSync.updateProject(projectId, { name, desc, visibility });
+          await window.cloudSync.updateProject(projectId, { name, description: desc, visibility });
           console.log('[Cloud] 项目更新已同步到云端');
         }catch(e){console.error('[Cloud] 同步失败:', e);}
       }

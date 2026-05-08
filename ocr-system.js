@@ -514,20 +514,19 @@ async function startBatchProcess() {
                 rightAlliance: record.rightAlliance || '',
                 leftFormation: record.leftFormation || '',
                 rightFormation: record.rightFormation || '',
+                // 武将/战法独立字段（JSON 数组）
+                leftGenerals: record.leftGenerals || [],
+                rightGenerals: record.rightGenerals || [],
+                leftTactics: record.leftTactics || [],
+                rightTactics: record.rightTactics || [],
                 leftLoss: record.leftLoss ?? null,
                 leftTotal: record.leftTotal ?? null,
                 rightLoss: record.rightLoss ?? null,
                 rightTotal: record.rightTotal ?? null,
                 leftLossRate: record.leftLossRate ?? null,
                 rightLossRate: record.rightLossRate ?? null,
-                // 描述（含将领/战法 JSON）
                 result: record.result || '',
-                description: JSON.stringify({
-                  leftGenerals: record.leftGenerals || [],
-                  rightGenerals: record.rightGenerals || [],
-                  leftTactics: record.leftTactics || [],
-                  rightTactics: record.rightTactics || []
-                })
+                description: record.description || ''
               };
               const cloudResult = await window.cloudSync.createRecord(cloudRec);
               // 将云端ID写回本地记录，避免刷新后出现重复记录
