@@ -701,6 +701,10 @@ window.cloudSync = {
   getStorageStats: cloudGetStorageStats,
   // 积分同步
   updateUserPoints: cloudUpdateUserPoints,
+  // 数据库查看（仅超管）
+  getDBTables: cloudGetDBTables,
+  queryTable: cloudQueryTable,
+  describeTable: cloudDescribeTable,
 };
 
 // ========== 存储统计 API ==========
@@ -715,6 +719,42 @@ async function cloudGetStorageStats() {
     return null;
   } catch (e) {
     console.error('[cloudGetStorageStats] 失败:', e);
+    return null;
+  }
+}
+
+// ========== 数据库查看 API（仅超管） ==========
+
+async function cloudGetDBTables() {
+  try {
+    const data = await cloudRequest('/db/tables');
+    if (data && data.code === 200 && data.data) return data.data;
+    return null;
+  } catch (e) {
+    console.error('[cloudGetDBTables] 失败:', e);
+    return null;
+  }
+}
+
+async function cloudQueryTable(tableName, params) {
+  const qs = new URLSearchParams(params || {}).toString();
+  try {
+    const data = await cloudRequest(`/db/table/${tableName}?${qs}`);
+    if (data && data.code === 200 && data.data) return data.data;
+    return null;
+  } catch (e) {
+    console.error('[cloudQueryTable] 失败:', e);
+    return null;
+  }
+}
+
+async function cloudDescribeTable(tableName) {
+  try {
+    const data = await cloudRequest(`/db/table/${tableName}/desc`);
+    if (data && data.code === 200 && data.data) return data.data;
+    return null;
+  } catch (e) {
+    console.error('[cloudDescribeTable] 失败:', e);
     return null;
   }
 }

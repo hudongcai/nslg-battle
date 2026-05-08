@@ -650,7 +650,7 @@ async function switchTab(tabId, btn) {
       document.head.appendChild(s);
     }
   }
-  if (tabId === 'cloudservice') { if(typeof refreshDBUsage==='function') refreshDBUsage(); if(typeof refreshCloudStorageStats==='function') refreshCloudStorageStats(); }
+  if (tabId === 'cloudservice') { if(typeof refreshDBUsage==='function') refreshDBUsage(); if(typeof refreshCloudStorageStats==='function') refreshCloudStorageStats(); if(typeof initDBViewer==='function') initDBViewer(); }
   if (tabId === 'system') {
     // 系统配置：调用 showSystemConfig 切换第一个可见子菜单
     if(typeof showSystemConfig==='function') showSystemConfig();
@@ -1213,4 +1213,307 @@ async function dataInit() {
   renderDataTable();
   renderGallery();
   console.log('[DataSystem] 初始化完成，当前 allRecords:', allRecords.length);
+}
+
+// ============================================================
+// 🗃️ 数据库表查看功能（仅超管）
+// ============================================================
+
+let dbViewerCurrentTable = null;    // 当前选中的表名
+let dbViewerCurrentPage = 1;        // 当前页码
+let dbViewerCurrentSort = 'id';     // 当前排序字段
+let dbViewerCurrentOrder = 'ASC';   // 当前排序方向
+let dbViewerDescVisible = false;     // 表结构面板是否展开
+
+/** 初始化数据库查看器（超管才显示） */
+function initDBViewer() {
+  const section = document.getElementById('dbViewerSection');
+  if (!section) return;
+  // 仅超管可见
+  if (currentUser && currentUser.roleId === 'super_admin') {
+    section.style.display = 'block';
+    refreshDBViewer();
+  }
+}
+
+/** 刷新：重新加载表列表 */
+async function refreshDBViewer() {
+  const grid = document.getElementById('dbTableGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text3);grid-column:1/-1;">⏳ 正在加载表列表...</div>';
+
+  if (!window.cloudSync || !window.cloudSync.getDBTables) {
+    grid.innerHTML = '<div style="text-align:center;padding:16px;color:#ff5252;grid-column:1/-1;">❌ 云端同步不可用</div>';
+    return;
+  }
+
+  try {
+    const tables = await window.cloudSync.getDBTables();
+    if (!tables || !tables.length) {
+      grid.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text3);grid-column:1/-1;">暂无数据</div>';
+      return;
+    }
+
+    // 表名中文映射
+    const tableNames = {
+      users:'用户表', roles:'角色表', projects:'项目表',
+      project_members:'项目成员', battle_records:'战报记录',
+      battle_gallery:'战报图库', ocr_tasks:'OCR任务',
+      system_logs:'系统日志', team_plans:'配将方案',
+      yanwu_records:'演武记录', user_credits:'用户积分',
+      credit_logs:'积分日志'
+    };
+
+    grid.innerHTML = tables.map(t => `
+      <div class="db-table-card${dbViewerCurrentTable===t.name?' active':''}"
+           onclick="selectDBTable('${t.name}')"
+           style="cursor:pointer;padding:12px;border-radius:6px;text-align:center;border:2px solid ${dbViewerCurrentTable===t.name?'var(--accent)':'var(--border)'};background:${dbViewerCurrentTable===t.name?'rgba(var(--accent-rgb),0.08)':'var(--bg2)'};transition:all 0.15s;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">📋 ${tableNames[t.name]||t.name}</div>
+        <div style="font-size:18px;font-weight:700;color:${t.count>0?'var(--accent)':'var(--text3)'};">${t.count}</div>
+        <div style="font-size:10px;color:var(--text3);">条记录</div>
+      </div>
+    `).join('');
+
+    // 如果之前选中过某张表，自动加载
+    if (dbViewerCurrentTable) {
+      loadDBTableData();
+    } else if (tables.length > 0) {
+      // 默认选第一张有数据的表
+      const firstWithData = tables.find(t => t.count > 0);
+      if (firstWithData) selectDBTable(firstWithData.name);
+    }
+  } catch(e) {
+    console.error('[refreshDBViewer]', e);
+    grid.innerHTML = '<div style="text-align:center;padding:16px;color:#ff5252;grid-column:1/-1;">❌ 加载失败: '+e.message+'</div>';
+  }
+}
+
+/** 选择一张表 */
+function selectDBTable(tableName) {
+  dbViewerCurrentTable = tableName;
+  dbViewerCurrentPage = 1;
+  dbViewerCurrentSort = 'id';
+  dbViewerCurrentOrder = 'DESC';
+  document.getElementById('dbDescToggleBtn').style.display = '';
+  // 更新卡片激活状态
+  refreshDBViewer();
+}
+
+/** 加载当前表的数据 */
+async function loadDBTableData() {
+  if (!dbViewerCurrentTable) return;
+
+  const wrap = document.getElementById('dbDataTable');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text3);">⏳ 查询中...</div>';
+
+  // 更新信息栏
+  document.getElementById('dbTableNameLabel').textContent = '📋 表: ' + dbViewerCurrentTable;
+  document.getElementById('dbPaginationInfo').textContent = '';
+
+  const pageSize = parseInt(document.getElementById('dbPageSizeSelect')?.value || '20');
+  const search = document.getElementById('dbSearchInput')?.value?.trim() || '';
+
+  try {
+    const data = await window.cloudSync.queryTable(dbViewerCurrentTable, {
+      page: dbViewerCurrentPage,
+      pageSize,
+      sort: dbViewerCurrentSort,
+      order: dbViewerCurrentOrder,
+      search
+    });
+
+    if (!data || !data.columns) {
+      wrap.innerHTML = '<div style="text-align:center;padding:30px;color:#ff5252;">❌ 无返回数据</div>';
+      return;
+    }
+
+    renderDBDataTable(data);
+
+    // 分页信息
+    const { pagination } = data;
+    document.getElementById('dbPaginationInfo').textContent =
+      `共 ${pagination.total} 条 · 第 ${pagination.page}/${pagination.totalPages} 页`;
+
+    renderDBPagination(pagination);
+  } catch(e) {
+    console.error('[loadDBTableData]', e);
+    wrap.innerHTML = '<div style="text-align:center;padding:30px;color:#ff5252;">❌ 查询失败: '+e.message+'</div>';
+  }
+}
+
+/** 渲染数据表格 */
+function renderDBDataTable(data) {
+  const { columns, rows } = data;
+  const wrap = document.getElementById('dbDataTable');
+
+  if (!rows || rows.length === 0) {
+    wrap.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text3);">📭 该表暂无数据</div>';
+    return;
+  }
+
+  // 判断列类型辅助函数
+  function isJsonCol(name) {
+    const jsonCols = JSON_FIELDS[dbViewerCurrentTable] || [];
+    return jsonCols.includes(name) || columns.find(c=>c.field===name && c.type.startsWith('json'));
+  }
+
+  function isDateCol(name) {
+    return name.includes('_at') || name.includes('_time') || name.includes('_date');
+  }
+
+  // 构建表头（可点击排序）
+  let headerHtml = '<tr>' +
+    columns.map(col => {
+      const isActive = dbViewerCurrentSort === col.field;
+      const arrow = isActive ? (dbViewerCurrentOrder === 'DESC' ? ' ▼' : ' ▲') : '';
+      return `<th style="padding:7px 10px;text-align:left;font-size:11px;white-space:nowrap;background:var(--bg2);color:${isActive?'var(--accent)':'var(--text2)'};cursor:pointer;border-bottom:2px solid var(--border);user-select:none;" onclick="sortDBTable('${col.field}')" title="点击${isActive?'切换排序':'按此列排序'}">${col.field}${arrow}</th>`;
+    }).join('') + '</tr>';
+
+  // 构建数据行
+  let bodyHtml = rows.map(row => {
+    return '<tr style="border-bottom:1px solid var(--border);">' +
+      columns.map(col => {
+        let val = row[col.field];
+        if (val === null || val === undefined) {
+          return `<td style="padding:6px 10px;font-size:11px;color:var(--text3);max-width:250px;"><span style="color:var(--text3);font-style:italic;">NULL</span></td>`;
+        }
+        // 密码脱敏
+        if (col.field === 'password' && val === '****') {
+          return `<td style="padding:6px 10px;font-size:11px;color:var(--red);max-width:250px;"><span style="background:rgba(255,0,0,0.06);padding:1px 5px;border-radius:3px;">****</span></td>`;
+        }
+        // JSON 字段
+        if (typeof val === 'object') val = JSON.stringify(val);
+        if (isJsonCol(col.field)) {
+          let display = typeof val === 'string' ? val : String(val);
+          const isLong = display.length > 120;
+          if (isLong) display = display.substring(0, 120) + '...';
+          // 简单JSON格式化显示
+          try {
+            const parsed = JSON.parse(display.replace(/\.\.\.$/,''));
+            if (typeof parsed !== 'object') throw new Error('');
+            display = JSON.stringify(parsed, null, 0).replace(/,/g,', ');
+            if (display.length > 120) display = display.substring(0, 120)+'...';
+          } catch(e){}
+          return `<td style="padding:6px 10px;font-size:11px;max-width:300px;word-break:break-all;"><span style="color:var(--cyan);font-family:monospace;font-size:10px;background:rgba(0,200,200,0.04);padding:2px 4px;border-radius:3px;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(typeof val==='string'?val:val).replace(/"/g,'&quot;')}">${escHtml(display)}</span></td>`;
+        }
+        // 日期字段格式化
+        if (isDateCol(col.field) && typeof val === 'string' && /^\d{4}-\d{2}/.test(val)) {
+          try {
+            val = new Date(val).toLocaleString('zh-CN');
+          } catch(e) {}
+        }
+        // 长文本截断
+        const strVal = String(val);
+        const displayText = strVal.length > 80 ? strVal.substring(0, 80) + '...' : strVal;
+        return `<td style="padding:6px 10px;font-size:11px;max-width:250px;word-break:break-all;" title="${strVal.replace(/"/g,'&quot;')}">${escHtml(displayText)}</td>`;
+      }).join('') + '</tr>';
+  }).join('');
+
+  wrap.innerHTML =
+    `<table style="width:100%;border-collapse:collapse;">
+      <thead>${headerHtml}</thead>
+      <tbody style="background:var(--bg);">${bodyHtml}</tbody>
+    </table>`;
+}
+
+/** 排序切换 */
+function sortDBTable(field) {
+  if (dbViewerCurrentSort === field) {
+    dbViewerCurrentOrder = dbViewerCurrentOrder === 'DESC' ? 'ASC' : 'DESC';
+  } else {
+    dbViewerCurrentSort = field;
+    dbViewerCurrentOrder = 'ASC';
+  }
+  loadDBTableData();
+}
+
+/** 渲染分页控件 */
+function renderDBPagination(pag) {
+  const container = document.getElementById('dbPagination');
+  if (!container || pag.totalPages <= 1) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const maxButtons = 7;
+  let buttons = [];
+
+  if (pag.page > 1) buttons.push(`<button class="btn btn-sm" onclick="goDBPage(${pag.page-1})">‹</button>`);
+
+  let startPage = Math.max(1, pag.page - Math.floor(maxButtons / 2));
+  let endPage = Math.min(pag.totalPages, startPage + maxButtons - 1);
+  if (endPage - startPage < maxButtons - 1) startPage = Math.max(1, endPage - maxButtons + 1);
+
+  for (let i = startPage; i <= endPage; i++) {
+    const active = i === pag.page;
+    buttons.push(active ?
+      `<button class="btn btn-sm" style="background:var(--accent);color:#fff;border-color:var(--accent);" disabled>${i}</button>` :
+      `<button class="btn btn-sm" onclick="goDBPage(${i})">${i}</button>`);
+  }
+
+  if (pag.page < pag.totalPages) buttons.push(`<button class="btn btn-sm" onclick="goDBPage(${pag.page+1})">›</button>`);
+
+  container.innerHTML = buttons.join(' ');
+}
+
+/** 跳转页面 */
+function goDBPage(page) {
+  dbViewerCurrentPage = page;
+  loadDBTableData();
+}
+
+/** 展开/收起表结构 */
+async function toggleDBDesc() {
+  const panel = document.getElementById('dbDescPanel');
+  const content = document.getElementById('dbDescContent');
+
+  if (dbViewerDescVisible) {
+    panel.style.display = 'none';
+    document.getElementById('dbDescToggleBtn').style.display = '';
+    dbViewerDescVisible = false;
+    return;
+  }
+
+  if (!dbViewerCurrentTable) return;
+
+  content.innerHTML = '⏳ 加载中...';
+  panel.style.display = 'block';
+  document.getElementById('dbDescToggleBtn').style.display = 'none';
+  dbViewerDescVisible = true;
+
+  try {
+    const desc = await window.cloudSync.describeTable(dbViewerCurrentTable);
+    if (!desc) throw new Error('无返回数据');
+
+    content.innerHTML = `
+      <div style="margin-bottom:8px;">
+        <strong>注释:</strong> ${desc.comment || '-'}
+        <span style="color:var(--text3);margin-left:12px;">行数≈${desc.rows}</span>
+        <span style="color:var(--text3);margin-left:12px;">数据大小≈${(desc.dataSize/1024).toFixed(1)}KB</span>
+        <span style="color:var(--text3);margin-left:12px;">索引大小≈${(desc.indexSize/1024).toFixed(1)}KB</span>
+        ${desc.autoIncrement ? `<span style="color:var(--text3);margin-left:12px;">AUTO_INCREMENT=${desc.autoIncrement}</span>` : ''}
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;">
+        <thead><tr style="background:var(--bg2);">
+          <th style="padding:4px 8px;text-align:left;">字段</th><th style="padding:4px 8px;text-align:left;">类型</th>
+          <th style="padding:4px 8px;text-align:center;">可空</th><th style="padding:4px 8px;text-align:left;">键</th>
+          <th style="padding:4px 8px;text-align:left;">默认值</th><th style="padding:4px 8px;text-align:left;">Extra</th>
+        </tr></thead>
+        <tbody>${desc.columns.map(c => `<tr style="border-top:1px solid var(--border);">
+          <td style="padding:4px 8px;color:var(--accent);font-family:monospace;">${c.field}</td>
+          <td style="padding:4px 8px;color:var(--cyan);font-family:monospace;font-size:10px;">${c.type}</td>
+          <td style="padding:4px 8px;text-align:center;color:${c.nullable?'var(--text3)':'var(--green)'};">${c.nullable?'YES':'NO'}</td>
+          <td style="padding:4px 8px;">${c.key||'-'}</td>
+          <td style="padding:4px 8px;color:var(--text3);">${c.default??'-'}</td>
+          <td style="padding:4px 8px;color:var(--text3);font-size:10px;">${c.extra||''}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <div style="font-size:11px;color:var(--text3);">
+        <strong>索引:</strong> ${desc.indexes.length === 0 ? '无' :
+          desc.indexes.map(i => `<span style="background:var(--bg2);padding:1px 6px;border-radius:3px;margin-right:6px;">${i.name}${i.unique?'(唯一)':''}: [${i.columns.join(',')}]</span>`).join('')}
+      </div>`;
+  } catch(e) {
+    content.innerHTML = '<span style="color:#ff5252;">❌ ' + e.message + '</span>';
+  }
 }
