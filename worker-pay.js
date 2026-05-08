@@ -49,6 +49,16 @@ async function initD1Database(DB) {
       )
     `).run();
 
+    // 给已有表补充可能缺失的列（SQLite 不支持 ALTER IF NOT EXISTS，用 try-catch 忽略重复错误）
+    const alterStatements = [
+      `ALTER TABLE users ADD COLUMN name TEXT`,
+      `ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''`,
+    ];
+    for (const sql of alterStatements) {
+      try { await DB.prepare(sql).run(); } catch (e) { /* 列已存在则忽略 */ }
+    }
+
     // 自动初始化：如果 users 表为空，创建默认超管
     const userCount = await DB.prepare('SELECT COUNT(*) as cnt FROM users').first();
     if (!userCount || userCount.cnt === 0) {
