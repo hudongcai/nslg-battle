@@ -677,12 +677,16 @@ async function doRegPwd(){
 
     // 同步到云端（注册时创建云端用户）
     try {
+      console.log('[doRegPwd] window.cloudSync 存在?', !!window.cloudSync, '| createUser 类型:', typeof window?.cloudSync?.createUser);
       if (window.cloudSync && typeof window.cloudSync.createUser === 'function') {
-        await window.cloudSync.createUser(phone, name||`用户${phone.slice(-4)}`, pwd1, 'member');
-        console.log('[Register] 云端用户创建成功:', phone);
+        console.log('[doRegPwd] 准备调用 cloudSync.createUser:', phone, name||`用户${phone.slice(-4)}`, 'member');
+        const createResult = await window.cloudSync.createUser(phone, name||`用户${phone.slice(-4)}`, pwd1, 'member');
+        console.log('[doRegPwd] 云端用户创建结果:', createResult);
+      } else {
+        console.warn('[doRegPwd] cloudSync.createUser 不可用，跳过云端同步');
       }
     } catch (cloudErr) {
-      console.warn('[Register] 云端用户创建失败（本地已保存）:', cloudErr.message);
+      console.error('[doRegPwd] 云端用户创建失败（本地已保存）:', cloudErr);
       // 不阻塞注册流程，本地已保存
     }
 

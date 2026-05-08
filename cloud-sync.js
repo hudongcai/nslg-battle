@@ -1,3 +1,4 @@
+console.log('[cloud-sync.js] 脚本开始加载 v202605080620');
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
@@ -35,6 +36,7 @@ function setToken(token) {
 async function cloudRequest(path, options = {}) {
   const url = `${CLOUD_API_BASE}${path}`;
   const token = getToken();
+  console.log('[cloudRequest] 发起请求:', path, '| token存在:', !!token, '| options.method:', options.method || 'GET');
   const defaultOptions = {
     headers: {
       'Content-Type': 'application/json',
@@ -207,10 +209,12 @@ async function cloudUpdateUserPoints(phone, points) {
 
 // 创建项目（云端）
 async function cloudCreateProject(project) {
+  console.log('[cloudCreateProject] 被调用, project.id:', project.id, 'project.name:', project.name);
   const data = await cloudRequest('/projects', {
     method: 'POST',
     body: project
   });
+  console.log('[cloudCreateProject] 返回:', data);
   return data.success ? data.data : null;
 }
 
@@ -330,10 +334,12 @@ async function cloudCreateRecord(record) {
 // 更新战报（云端）
 // 注意：后端路由是 /battles，不是 /records
 async function cloudUpdateRecord(recordId, recordData) {
+  console.log('[cloudUpdateRecord] 被调用, recordId:', recordId, '| recordData keys:', Object.keys(recordData));
   const result = await cloudRequest(`/battles/${recordId}`, {
     method: 'PUT',
     body: recordData
   });
+  console.log('[cloudUpdateRecord] 返回:', result);
   return result.success || result.code === 200;
 }
 
@@ -366,6 +372,7 @@ async function cloudLogin(phone, password) {
 
 // 创建用户（注册）
 async function cloudCreateUser(phone, name, password, role = 'member', avatar = '') {
+  console.log('[cloudCreateUser] 被调用, phone:', phone, 'name:', name, 'role:', role);
   // 注意：此接口不需要 token，所以不能用 cloudRequest（会自动加 Authorization 头）
   const res = await fetch(`${CLOUD_API_BASE}/auth/register`, {
     method: 'POST',
@@ -373,6 +380,7 @@ async function cloudCreateUser(phone, name, password, role = 'member', avatar = 
     body: JSON.stringify({ phone, nickname: name, password, role, avatar })
   });
   const data = await res.json();
+  console.log('[cloudCreateUser] 返回:', data);
   return data.code === 200;
 }
 
@@ -649,6 +657,7 @@ async function cloudSaveRole(role) {
 }
 
 // 导出给全局使用
+console.log('[cloud-sync.js] 正在挂载 window.cloudSync, 当前 cloudSync 存在?', !!window.cloudSync, '| 版本: v202605080620');
 window.cloudSync = {
   getProjects: cloudGetProjects,
   createProject: cloudCreateProject,

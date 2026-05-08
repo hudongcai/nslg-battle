@@ -216,8 +216,10 @@ async function saveProject(projectId){
       await projDBPut(proj);
 
       // 同步到云端
+      console.log('[saveProject-edit] window.cloudSync 存在?', !!window.cloudSync, '| updateProject 类型:', typeof window?.cloudSync?.updateProject);
       if(window.cloudSync){
         try{
+          console.log('[Cloud] 准备更新项目到云端:', projectId, { name, description: desc, visibility });
           await window.cloudSync.updateProject(projectId, { name, description: desc, visibility });
           console.log('[Cloud] 项目更新已同步到云端');
         }catch(e){console.error('[Cloud] 同步失败:', e);}
@@ -238,11 +240,12 @@ async function saveProject(projectId){
       await projDBPut(newProj);
 
       // 同步到云端
+      console.log('[saveProject] window.cloudSync 存在?', !!window.cloudSync, '| createProject 类型:', typeof window?.cloudSync?.createProject);
       if(window.cloudSync){
         try{
-          console.log('[Cloud] 准备同步项目到云端:', newProj);
+          console.log('[Cloud] 准备同步项目到云端:', JSON.stringify(newProj, null, 2));
           const result = await window.cloudSync.createProject(newProj);
-          console.log('[Cloud] 云端创建项目返回:', result);
+          console.log('[Cloud] 云端创建项目返回:', JSON.stringify(result));
           if(result && result.id){
             // 如果云端返回了不同的 ID，更新本地
             if(result.id !== newProj.id){

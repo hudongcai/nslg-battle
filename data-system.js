@@ -210,6 +210,7 @@ async function dbAdd(rec) {
       renderDataTable();
       
       // 同步到云端
+      console.log('[dbAdd] window.cloudSync 存在?', !!window.cloudSync, '| createRecord 类型:', typeof window?.cloudSync?.createRecord);
       if(window.cloudSync){
         try{
           const cloudRec = {
@@ -234,12 +235,16 @@ async function dbAdd(rec) {
             result: rec.result || '',
             description: rec.description || ''
           };
+          console.log('[dbAdd] 准备调用 cloudSync.createRecord, cloudRec:', JSON.stringify(cloudRec).slice(0,200));
           window.cloudSync.createRecord(cloudRec).then(result => {
+            console.log('[dbAdd] 战报云端同步返回:', result);
             if(result && result.id){
               console.log('[Cloud] 战报已同步到云端:', result.id);
             }
           }).catch(e => console.error('[Cloud] 战报同步失败:', e));
         }catch(e){console.error('[Cloud] 战报同步异常:', e);}
+      } else {
+        console.warn('[dbAdd] window.cloudSync 不可用，跳过云端同步');
       }
 
       resolve(req.result);
@@ -254,6 +259,7 @@ function dbPut(rec) {
     const req = tx.objectStore('records').put(rec);
     req.onsuccess = () => {
       // 同步到云端
+      console.log('[dbPut] window.cloudSync 存在?', !!window.cloudSync, '| updateRecord 类型:', typeof window?.cloudSync?.updateRecord, '| rec.id:', rec.id);
       if(window.cloudSync && rec.id){
         try{
           const cloudRec = {
@@ -278,8 +284,13 @@ function dbPut(rec) {
             result: rec.result || '',
             description: rec.description || ''
           };
-          window.cloudSync.updateRecord(rec.id, cloudRec).catch(e => console.error('[Cloud] 更新失败:', e));
+          console.log('[dbPut] 准备调用 cloudSync.updateRecord, rec.id:', rec.id);
+          window.cloudSync.updateRecord(rec.id, cloudRec).then(r => {
+            console.log('[dbPut] 战报更新云端返回:', r);
+          }).catch(e => console.error('[Cloud] 更新失败:', e));
         }catch(e){console.error('[Cloud] 同步异常:', e);}
+      } else {
+        console.warn('[dbPut] 跳过云端同步: cloudSync=', !!window.cloudSync, 'rec.id=', rec.id);
       }
       resolve(rec.id);
     };
@@ -311,6 +322,7 @@ function dbDelete(id) {
     const req = tx.objectStore('records').delete(id);
     req.onsuccess = async () => {
       // 先从云端删除（用 cloudId 或尝试匹配）
+      console.log('[dbDelete] window.cloudSync 存在?', !!window.cloudSync, '| deleteRecord 类型:', typeof window?.cloudSync?.deleteRecord, '| id:', id);
       if(window.cloudSync){
         try{
           // 获取被删记录，看是否有 cloudId
@@ -342,12 +354,15 @@ function dbDelete(id) {
             }
           }
           if (cloudDelId) {
+            console.log('[dbDelete] 准备调用 cloudSync.deleteRecord:', cloudDelId);
             await window.cloudSync.deleteRecord(cloudDelId);
             console.log('[Cloud] 云端删除成功, id:', cloudDelId);
           } else {
             console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id, 'rec:', rec ? {date: rec.battleDate||rec.time, left: rec.leftPlayer||rec.attackerName, right: rec.rightPlayer||rec.enemyName} : 'null');
           }
         }catch(e){console.error('[Cloud] 删除异常:', e);}
+      } else {
+        console.warn('[dbDelete] window.cloudSync 不可用，跳过云端删除');
       }
 
       allRecords = allRecords.filter(r => r.id !== id);

@@ -21,12 +21,15 @@ async function cloudGetRoles() {
 
 // 保存角色到云端
 async function cloudSaveRole(role) {
+  console.log('[cloudSaveRole] 被调用, role.id:', role.id, '| window.cloudSync 存在?', !!window.cloudSync);
   if (!window.cloudSync) return false;
   try {
+    console.log('[cloudSaveRole] 准备调用 cloudSync.request POST /roles');
     const data = await window.cloudSync.request('/roles', {
       method: 'POST',
       body: role
     });
+    console.log('[cloudSaveRole] 返回:', data);
     return data.success === true;
   } catch (e) {
     console.error('[Cloud Role] 保存角色失败:', e);
@@ -36,9 +39,12 @@ async function cloudSaveRole(role) {
 
 // 从云端删除角色
 async function cloudDeleteRole(roleId) {
+  console.log('[cloudDeleteRole] 被调用, roleId:', roleId, '| window.cloudSync 存在?', !!window.cloudSync);
   if (!window.cloudSync) return false;
   try {
+    console.log('[cloudDeleteRole] 准备调用 cloudSync.request DELETE /roles/' + roleId);
     const data = await window.cloudSync.request(`/roles/${roleId}`, { method: 'DELETE' });
+    console.log('[cloudDeleteRole] 返回:', data);
     return data.success === true;
   } catch (e) {
     console.error('[Cloud Role] 删除角色失败:', e);
