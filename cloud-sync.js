@@ -1,8 +1,9 @@
-console.log('[cloud-sync.js] 脚本开始加载 v202605080620');
+console.log('[@@ cloud-sync.js 执行中 - 文件顶部 - 版本: v202605081410 @@]');
+console.log('[cloud-sync.js] 脚本开始加载 v202605081410');
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605080620
+ * 版本: v202605081410
  */
 
 // 环境切换：false=使用 FRP 内网穿透
@@ -657,7 +658,7 @@ async function cloudSaveRole(role) {
 }
 
 // 导出给全局使用
-console.log('[cloud-sync.js] 正在挂载 window.cloudSync, 当前 cloudSync 存在?', !!window.cloudSync, '| 版本: v202605080620');
+console.log('[cloud-sync.js] 正在挂载 window.cloudSync, 当前 cloudSync 存在?', !!window.cloudSync, '| 版本: v202605081410');
 window.cloudSync = {
   getProjects: cloudGetProjects,
   createProject: cloudCreateProject,
