@@ -663,9 +663,23 @@ async function canDoAction(actionKey, project) {
   }
 
   // 基础校验：用户必须在该项目内有身份（创建者 / 公开 / 成员）
-  const isCreator = project && project.creator === currentUser.id;
+  const isCreator = project && (project.creator === currentUser.id || project.creator === currentUser.phone);
   const isPublic  = project && project.visibility === 'public';
-  const isMember  = false; // TODO: 后续接 project_members / projAccess 后补充
+  // 成员判断：通过项目 memberPhones + projAccess 双重校验
+  let isMember = false;
+  if (project && currentUser) {
+    const inMemberList = (project.memberPhones || []).includes(currentUser.phone) || (project.memberPhones || []).includes(currentUser.id);
+    if (inMemberList) { isMember = true; }
+    // 再查 projAccess 授权表
+    if (!isMember && typeof getProjAccessForUser === 'function') {
+      try {
+        const access = await getProjAccessForUser(currentUser.phone || currentUser.id);
+        if (access && access.some(a => a.projectId == project.id || String(a.projectId) === String(project.id))) {
+          isMember = true;
+        }
+      } catch(e) {}
+    }
+  }
 
   if (!isCreator && !isPublic && !isMember) return false;
 

@@ -928,7 +928,7 @@ function renderDataTable() {
         <td style="color:var(--text2);">${escHtml(r.leftFormation || '')}</td>
         <td class="num">${fmtNum(r.leftLoss)}</td>
         <td class="num">${fmtNum(r.leftTotal)}</td>
-        <td class="num" style="font-weight:bold;color:${getLossColor(r.leftLossRate)}">${r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-'}</td>
+        <td class="num" style="font-weight:bold;color:${getLossColor(r.leftLossRate)}">${r.leftLossRate != null ? Number(r.leftLossRate).toFixed(1) + '%' : '-'}</td>
         <td style="white-space:nowrap;">${escHtml(r.rightPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.rightAlliance || '')}</td>
         <td style="white-space:nowrap;min-width:80px;">${getTeamDisplay(r.rightGenerals)}</td>
@@ -936,7 +936,7 @@ function renderDataTable() {
         <td style="color:var(--text2);">${escHtml(r.rightFormation || '')}</td>
         <td class="num">${fmtNum(r.rightLoss)}</td>
         <td class="num">${fmtNum(r.rightTotal)}</td>
-        <td class="num" style="font-weight:bold;color:${getLossColor(r.rightLossRate)}">${r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'}</td>
+        <td class="num" style="font-weight:bold;color:${getLossColor(r.rightLossRate)}">${r.rightLossRate != null ? Number(r.rightLossRate).toFixed(1) + '%' : '-'}</td>
         <td>${r.imageBase64 ? `<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;">🖼️ 原图</a>` : '<span style="color:var(--text3);font-size:11px;">无</span>'}</td>
         <td><button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button></td>
       </tr>`).join('');

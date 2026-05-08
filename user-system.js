@@ -708,39 +708,39 @@ async function doRegPwd(){
 
 // ========== 登录成功 ==========
 // ========== 导航权限控制 ==========
-function updateNavByRole(){
-  const navSystem    = document.getElementById('navSystemBtn');
-  const navProject   = document.getElementById('navProjectBtn');
-  const navLibrary   = document.getElementById('navLibraryBtn');
-  const navRanking   = document.getElementById('navRankingBtn');
-  const navPeijiang  = document.getElementById('navPeijiangBtn');
-  const navYanwu     = document.getElementById('navYanwuBtn');
-  if(!currentUser){
-    // 未登录：全部顶级导航隐藏
-    if(navProject)  navProject.style.display='none';
-    if(navSystem)   navSystem.style.display='none';
-    if(navLibrary)  navLibrary.style.display='none';
-    if(navRanking)  navRanking.style.display='none';
-    if(navPeijiang) navPeijiang.style.display='none';
-    if(navYanwu)    navYanwu.style.display='none';
-    document.getElementById('systemSubNav').style.display='none';
-    document.getElementById('pointsMallBtn').style.display='none';
-    return;
+// ⚠️ 注意：updateNavByRole 已统一在 role-system.js 中定义（基于 RBAC 权限的精确版本）
+// 此处不再重复定义，避免覆盖 role-system.js 的正确实现
+// 如果 role-system.js 未加载，此处提供一个最小化兜底
+if (typeof updateNavByRole === 'undefined') {
+  function updateNavByRole(){
+    const navSystem    = document.getElementById('navSystemBtn');
+    const navProject   = document.getElementById('navProjectBtn');
+    const navLibrary   = document.getElementById('navLibraryBtn');
+    const navRanking   = document.getElementById('navRankingBtn');
+    const navPeijiang  = document.getElementById('navPeijiangBtn');
+    const navYanwu     = document.getElementById('navYanwuBtn');
+    if(!currentUser){
+      if(navProject)  navProject.style.display='none';
+      if(navSystem)   navSystem.style.display='none';
+      if(navLibrary)  navLibrary.style.display='none';
+      if(navRanking)  navRanking.style.display='none';
+      if(navPeijiang) navPeijiang.style.display='none';
+      if(navYanwu)    navYanwu.style.display='none';
+      document.getElementById('systemSubNav').style.display='none';
+      document.getElementById('pointsMallBtn').style.display='none';
+      return;
+    }
+    // 基础兜底：登录后显示主要导航（精确权限控制以 role-system.js 为准）
+    if(navProject)  navProject.style.display='inline-block';
+    if(navLibrary)  navLibrary.style.display='inline-block';
+    if(navRanking)  navRanking.style.display='inline-block';
+    if(navPeijiang) navPeijiang.style.display='inline-block';
+    if(navYanwu)    navYanwu.style.display='inline-block';
+    if(navSystem) navSystem.style.display = currentUser.role==='super_admin' ? 'inline-block' : 'none';
+    const mallBtn = document.getElementById('pointsMallBtn');
+    if(mallBtn) mallBtn.style.display='inline-block';
+    updateUserNavPoints();
   }
-  // 项目管理：所有登录用户可见
-  if(navProject)  navProject.style.display='inline-block';
-  // 武将战法库/数值排行/配将助手/演武助手：所有登录用户可见
-  if(navLibrary)  navLibrary.style.display='inline-block';
-  if(navRanking)  navRanking.style.display='inline-block';
-  if(navPeijiang) navPeijiang.style.display='inline-block';
-  if(navYanwu)    navYanwu.style.display='inline-block';
-  // 系统配置：仅超级管理员可见
-  if(navSystem) navSystem.style.display = currentUser.role==='super_admin' ? 'inline-block' : 'none';
-  // 积分商城：所有登录用户可见
-  const mallBtn = document.getElementById('pointsMallBtn');
-  if(mallBtn) mallBtn.style.display='inline-block';
-  // 更新积分数显示
-  updateUserNavPoints();
 }
 
 // 更新右上角积分显示
@@ -916,7 +916,7 @@ async function renderUserManage(){
     '</tr>';
   }).join('');
 }
-// ========== 修改用户角色 ==========
+// ========== 修改用户角色（旧版保留兼容） ==========
 async function changeUserRole(phone, newRoleId){
   if(!confirm('确认修改该用户的角色？')) return;
   try{
@@ -924,6 +924,17 @@ async function changeUserRole(phone, newRoleId){
     if(!u){alert('用户不存在');return;}
     u.role = newRoleId;
     await userDBPut(u);
+    // 同步到云端
+    try {
+      if (typeof cloudRequest === 'function') {
+        const userData = await cloudRequest('/users');
+        const list = (userData.data && userData.data.list) || [];
+        const cloudUser = list.find(x => x.phone === phone);
+        if (cloudUser && cloudUser.id) {
+          await cloudRequest(`/users/${cloudUser.id}`, { method: 'PUT', body: { role_id: newRoleId } });
+        }
+      }
+    } catch(syncErr) { console.warn('[changeUserRole] 云端同步失败:', syncErr.message); }
     addSysLog('operation','修改用户角色: '+phone+' → '+newRoleId);
     await renderUserManage();
   }catch(e){alert('修改失败：'+e.message);}
@@ -937,6 +948,23 @@ async function resetUserPwd(phone){
     if(!user){alert('用户不存在');return;}
     user.password = newPwd;
     await userDBPut(user);
+    // 同步到云端：通过 POST /api/users/:id/reset-password 重置密码
+    try {
+      if (typeof cloudRequest === 'function') {
+        const userData = await cloudRequest('/users');
+        const list = (userData.data && userData.data.list) || [];
+        const cloudUser = list.find(u => u.phone === phone);
+        if (cloudUser && cloudUser.id) {
+          await cloudRequest(`/users/${cloudUser.id}/reset-password`, {
+            method: 'POST',
+            body: { newPassword: newPwd }
+          });
+          console.log('[resetUserPwd] 云端重置成功:', phone);
+        }
+      }
+    } catch(syncErr) {
+      console.warn('[resetUserPwd] 云端同步失败（本地已更新）:', syncErr.message);
+    }
     alert(`密码已重置为：${newPwd}`);
     addSysLog('action', '重置用户密码: '+phone);
   }catch(e){alert('操作失败：'+e.message);}
@@ -1012,6 +1040,21 @@ async function doAdjustPoints() {
 async function deleteUser(phone){
   if(!confirm('确定删除该用户？删除后该用户将无法登录。'))return;
   try{
+    // 先同步到云端：通过 DELETE /api/users/:id 删除
+    try {
+      if (typeof cloudRequest === 'function') {
+        const userData = await cloudRequest('/users');
+        const list = (userData.data && userData.data.list) || [];
+        const cloudUser = list.find(u => u.phone === phone);
+        if (cloudUser && cloudUser.id) {
+          await cloudRequest(`/users/${cloudUser.id}`, { method: 'DELETE' });
+          console.log('[deleteUser] 云端删除成功:', phone);
+        }
+      }
+    } catch(syncErr) {
+      console.warn('[deleteUser] 云端同步失败（继续本地删除）:', syncErr.message);
+    }
+    // 再删本地
     await userDBDelete(phone);
     renderUserManage();
     addSysLog('delete', '删除用户: '+phone);
@@ -1119,6 +1162,23 @@ async function changeUserRole(phone, newRoleId){
     if(!user){alert('用户不存在');return;}
     user.role = newRoleId;
     await userDBPut(user);
+    // 同步到云端：通过 PUT /api/users/:id 更新 role_id
+    try {
+      if (typeof cloudRequest === 'function') {
+        const userData = await cloudRequest('/users');
+        const list = (userData.data && userData.data.list) || [];
+        const cloudUser = list.find(u => u.phone === phone);
+        if (cloudUser && cloudUser.id) {
+          await cloudRequest(`/users/${cloudUser.id}`, {
+            method: 'PUT',
+            body: { role_id: newRoleId }
+          });
+          console.log('[changeUserRole] 云端同步成功:', phone, '→', newRoleId);
+        }
+      }
+    } catch(syncErr) {
+      console.warn('[changeUserRole] 云端同步失败（本地已更新）:', syncErr.message);
+    }
     addSysLog('action', '修改用户角色: '+phone+' → '+newRoleId);
     // 如果修改的是当前登录用户，更新 currentUser 并刷新导航
     if(currentUser && currentUser.phone===phone){

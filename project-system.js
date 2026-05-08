@@ -47,10 +47,16 @@ async function getVisibleProjects(){
   const all = Array.from(merged.values());
 
   if(currentUser.role==='super_admin') return all;
+  // 合并 data-perm 的 projAccess 授权
+  let grantedIds = new Set();
+  if(typeof getGrantedProjectIds === 'function'){
+    try{ grantedIds = await getGrantedProjectIds(currentUser.phone); }catch(e){}
+  }
   return all.filter(p=>
     p.visibility==='public' ||
     p.creator === currentUser.phone ||
-      (p.memberPhones||[]).includes(currentUser.phone)
+      (p.memberPhones||[]).includes(currentUser.phone) ||
+      grantedIds.has(p.id)
   );
 }
 

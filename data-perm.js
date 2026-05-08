@@ -384,7 +384,31 @@ async function saveProjectPermissions(projectId) {
   }
   proj.memberPhones = [...new Set(memberPhones)];
   await projDBPut(proj);
-  await projDBPut(proj);
+
+  // 同步成员变更到云端（通过项目成员 API）
+  if (window.cloudSync) {
+    try {
+      console.log('[DataPerm] 同步权限变更到云端成员API:', projectId, memberPhones);
+      const cloudMembers = await window.cloudSync.getProjectMembers(projectId);
+      const cloudPhones = (cloudMembers || []).map(m => m.phone);
+
+      // 添加新成员到云端
+      for (const phone of memberPhones) {
+        if (phone !== proj.creator && !cloudPhones.includes(phone)) {
+          await window.cloudSync.addProjectMember(projectId, phone, 'viewer');
+        }
+      }
+      // 从云端删除移除的成员
+      for (const cm of cloudMembers || []) {
+        if (!memberPhones.includes(cm.phone)) {
+          await window.cloudSync.removeProjectMember(projectId, cm.phone);
+        }
+      }
+      console.log('[DataPerm] 云端成员同步完成');
+    } catch (e) {
+      console.error('[DataPerm] 云端同步失败（本地已保存）:', e);
+    }
+  }
 
   // 先删除本项目所有旧权限（projAccess）
   const oldAccess = await permDBGetByProject(projectId);

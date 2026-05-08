@@ -9,7 +9,7 @@ const OCR_CONFIG = {
   enabled: true,
   model: 'ep-m-20260426183050-krmx7',
   maxTokens: 2000,
-  timeout: 60000,
+  timeout: 120000,    // 视觉模型识别大图可能较久，从60s提升到120s
   batchConcurrency: 2,
   batchInterval: 1500,
 };
@@ -68,7 +68,13 @@ function setupOCRListeners() {
 
 // ========== OCR API ==========
 async function callOCRAPI(base64Data) {
+  const startTime = Date.now();
   updateOCRStatus('work', 'OCR 识别中...');
+  // 定时更新状态文字，显示已等待时间，让用户知道没卡死
+  const statusTimer = setInterval(() => {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    updateOCRStatus('work', `OCR 识别中...(${elapsed}s)`);
+  }, 3000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OCR_CONFIG.timeout);
 
@@ -127,6 +133,7 @@ async function callOCRAPI(base64Data) {
     });
 
     clearTimeout(timeout);
+    clearInterval(statusTimer);
 
     if (!resp.ok) {
       const errBody = await resp.text();
@@ -138,11 +145,13 @@ async function callOCRAPI(base64Data) {
     if (!content) throw new Error('API 返回空内容');
 
     updateOCRStatus('ok', 'OCR 就绪');
+    clearInterval(statusTimer);
     return content;
   } catch (e) {
     clearTimeout(timeout);
+    clearInterval(statusTimer);
     console.error('[OCR] 异常:', e.name, e.message);
-    if (e.name === 'AbortError') e.message = 'OCR 请求超时(60秒)，图片可能太大';
+    if (e.name === 'AbortError') e.message = 'OCR 请求超时(120秒)，图片可能太大，请尝试压缩后重试';
     else if (e.name === 'TypeError' && e.message.includes('Failed to fetch')) {
       e.message = '网络请求失败（可能是 CORS 跨域拦截或网络不通）。请按 F12 打开控制台 → Network 标签，查看 /api/ocr 请求的状态和响应头';
     }
@@ -423,12 +432,42 @@ function clearQueue() {
 }
 
 // ========== 文件读取 ==========
+// 读取文件并压缩为 base64（最大宽度 1920px，质量 0.85），避免大图导致 OCR 超时
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = reject;
-    r.readAsDataURL(file);
+    // 小于 800KB 的图片直接读取，不压缩
+    if (file.size < 800 * 1024) {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+      return;
+    }
+    // 大图先压缩再转 base64
+    const img = new Image();
+    img.onload = () => {
+      const MAX_W = 1920, MAX_H = 1920;
+      let w = img.width, h = img.height;
+      if (w > MAX_W || h > MAX_H) {
+        if (w / h > MAX_W / MAX_H) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+        else { w = Math.round(w * MAX_H / h); h = MAX_H; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const quality = file.size > 3 * 1024 * 1024 ? 0.75 : 0.85;
+      resolve(canvas.toDataURL('image/jpeg', quality));
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => {
+      // 压缩失败时 fallback 到原始读取
+      console.warn('[OCR] 图片压缩失败，使用原始大小');
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    };
+    img.src = URL.createObjectURL(file);
   });
 }
 
