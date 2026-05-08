@@ -196,6 +196,7 @@ function userDBDelete(phone){
 
 // ========== 积分管理 ==========
 function userDBGet(phone){
+  if(!phone){return Promise.resolve(null);}
   return new Promise((resolve,reject)=>{
     openUserDB().then(db=>{
       const tx = db.transaction(['users'],'readonly');
@@ -339,14 +340,19 @@ function projDBGet(id){
       const req = store.get(id);
       req.onsuccess = (e)=>{
         let result = e.target.result;
-        if(!result){
-          // 类型不匹配时尝试转换后查找（数字↔字符串）
+        if(!result && id != null && id !== ''){
+          // 类型不匹配时尝试转换后查找（数字↔字符串），但排除无效 key
           const altId = typeof id === 'string' ? Number(id) : String(id);
-          const req2 = store.get(altId);
-          req2.onsuccess = (e2)=>resolve(e2.target.result||null);
-          req2.onerror   = ()=>resolve(null);
+          // 排除 NaN 和 "undefined"/"null" 字符串
+          if(altId !== '' && altId !== 'undefined' && altId !== 'null' && !isNaN(altId)){
+            const req2 = store.get(altId);
+            req2.onsuccess = (e2)=>resolve(e2.target.result||null);
+            req2.onerror   = ()=>resolve(null);
+          } else {
+            resolve(null);
+          }
         } else {
-          resolve(result);
+          resolve(result||null);
         }
       };
       req.onerror = ()=>resolve(null);

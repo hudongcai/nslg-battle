@@ -127,8 +127,9 @@ function roleDBOpen(){
 }
 
 function roleDBGet(id){
+  if(!id){resolve(null);return Promise.resolve(null);}
   return new Promise((resolve,reject)=>{
-    if(!roleDB){resolve(null);return;}
+    if(!roleDB || roleDB.closed){console.warn('[roleDBGet] 连接已关闭，返回null');resolve(null);return;}
     const tx = roleDB.transaction(ROLE_STORE,'readonly');
     const req = tx.objectStore(ROLE_STORE).get(id);
     req.onsuccess = e => resolve(e.target.result||null);
@@ -138,7 +139,7 @@ function roleDBGet(id){
 
 function roleDBGetAll(){
   return new Promise((resolve,reject)=>{
-    if(!roleDB){console.warn('[roleDBGetAll] roleDB未初始化，返回[]');resolve([]);return;}
+    if(!roleDB || roleDB.closed){console.warn('[roleDBGetAll] 连接已关闭，返回[]');resolve([]);return;}
     console.log('[roleDBGetAll] 读取所有角色...');
     const tx = roleDB.transaction(ROLE_STORE,'readonly');
     const req = tx.objectStore(ROLE_STORE).getAll();
