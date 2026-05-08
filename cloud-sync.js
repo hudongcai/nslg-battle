@@ -92,29 +92,29 @@ async function cloudRequest(path, options = {}) {
               console.error('[Cloud Sync] 自动重新登录失败:', loginErr.message);
             }
           }
-          
+
           throw new Error('登录已过期，请重新登录');
         }
         throw new Error(data.message || data.error || `请求失败(${resp.status})`);
       }
-    // 标准化：后端返回 { success:true, data } 或 { code:200, data }，统一字段
-    if (data.code === 200 && !data.success) {
-      data.success = true;
-    } else if (data.success === true && !data.code) {
-      data.code = 200;
+      // 标准化：后端返回 { success:true, data } 或 { code:200, data }，统一字段
+      if (data.code === 200 && !data.success) {
+        data.success = true;
+      } else if (data.success === true && !data.code) {
+        data.code = 200;
+      }
+      return data;
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        const isOCR = path.includes('/ocr');
+        const isBatch = path.includes('/records') || path.includes('/battles');
+        const timeoutLabel = isOCR ? '90秒' : (isBatch ? '60秒' : '30秒');
+        console.error('[Cloud Sync] 请求超时:', path, `(${timeoutLabel})`);
+      } else {
+        console.error('[Cloud Sync] 请求失败:', path, e.message || e);
+      }
+      throw e;
     }
-    return data;
-  } catch (e) {
-    if (e.name === 'AbortError') {
-      const isOCR = path.includes('/ocr');
-      const isBatch = path.includes('/records') || path.includes('/battles');
-      const timeoutLabel = isOCR ? '90秒' : (isBatch ? '60秒' : '30秒');
-      console.error('[Cloud Sync] 请求超时:', path, `(${timeoutLabel})`);
-    } else {
-      console.error('[Cloud Sync] 请求失败:', path, e.message || e);
-    }
-    throw e;
-  }
 }
 
 // ========== 通用 API 请求函数 ==========
@@ -264,48 +264,58 @@ async function cloudRemoveProjectMember(projectId, phone) {
 
 // 获取战报列表（从云端）
 // 后端路由是 /battles，不是 /records
-async function cloudGetRecords(projectId = null) {
-  const url = projectId ? `/battles?projectId=${encodeURIComponent(projectId)}` : '/battles';
-  const data = await cloudRequest(url);
-  // 兼容两种响应格式：{ code, data:{list} } 或 { code, data:[...] }
-  const list = data.code === 200 ? (Array.isArray(data.data) ? data.data : (data.data?.list || [])) : [];
-  // 字段映射：云端驼峰 → 前端 IndexedDB 字段名
-  // 注意：必须同时返回 battleDate（用于 dbDelete 匹配）和 time（用于本地显示）
-  return list.map(r => {
-    const battleDate = r.battleDate || r.battle_date || r.battleTime || '';
-    return {
-    id: r.id,
-    projectId: (r.projectId !== undefined && r.projectId !== null) ? r.projectId : (r.project_id || null),
-    battleDate: battleDate,  // 必须保留，供 dbDelete 业务字段匹配使用
-    time: battleDate,
-    result: r.result || '',
-    leftPlayer: r.attackerName || r.attacker_name || '',
-    rightPlayer: r.enemyName || r.enemy_name || '',
-    leftAlliance: r.leftAlliance || r.left_alliance || '',
-    rightAlliance: r.rightAlliance || r.right_alliance || '',
-    leftGenerals: r.leftGenerals || [],
-    rightGenerals: r.rightGenerals || [],
-    leftTactics: r.leftTactics || [],
-    rightTactics: r.rightTactics || [],
-    leftFormation: r.leftFormation || r.left_formation || '',
-    rightFormation: r.rightFormation || r.right_formation || '',
-    leftLoss: r.leftLoss ?? r.left_loss ?? null,
-    leftTotal: r.leftTotal ?? r.left_total ?? null,
-    rightLoss: r.rightLoss ?? r.right_loss ?? null,
-    rightTotal: r.rightTotal ?? r.right_total ?? null,
-    leftLossRate: r.leftLossRate ?? r.left_loss_rate ?? null,
-    rightLossRate: r.rightLossRate ?? r.right_loss_rate ?? null,
-    description: r.description || '',
-    imageBase64: r.imageBase64 || r.image_base64 || '',
-    // 额外字段（云端有返回，本地可能需要）
-    createdBy: r.createdBy ?? r.created_by ?? null,
-    createdAt: r.createdAt || r.created_at || null,
-    updatedAt: r.updatedAt || r.updated_at || null,
-    status: r.status ?? 1,
-    projectName: r.project_name || r.projectName || '',
-    _synced: true,
-    _syncTime: Date.now()
-  }));
+async function cloudGetRecords(projectId) {
+  var url = '/battles';
+  if (projectId) {
+    url = '/battles?projectId=' + encodeURIComponent(projectId);
+  }
+  var resp = await cloudRequest(url);
+  var list = [];
+  if (resp && resp.code === 200) {
+    if (Array.isArray(resp.data)) {
+      list = resp.data;
+    } else if (resp.data && Array.isArray(resp.data.list)) {
+      list = resp.data.list;
+    }
+  }
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i];
+    var bd = r.battleDate || r.battle_date || r.battleTime || '';
+    out.push({
+      id: r.id,
+      projectId: (r.projectId !== undefined && r.projectId !== null) ? r.projectId : (r.project_id || null),
+      battleDate: bd,
+      time: bd,
+      result: r.result || '',
+      leftPlayer: r.attackerName || r.attacker_name || '',
+      rightPlayer: r.enemyName || r.enemy_name || '',
+      leftAlliance: r.leftAlliance || r.left_alliance || '',
+      rightAlliance: r.rightAlliance || r.right_alliance || '',
+      leftGenerals: r.leftGenerals || [],
+      rightGenerals: r.rightGenerals || [],
+      leftTactics: r.leftTactics || [],
+      rightTactics: r.rightTactics || [],
+      leftFormation: r.leftFormation || r.left_formation || '',
+      rightFormation: r.rightFormation || r.right_formation || '',
+      leftLoss: (r.leftLoss !== undefined) ? r.leftLoss : ((r.left_loss !== undefined) ? r.left_loss : null),
+      leftTotal: (r.leftTotal !== undefined) ? r.leftTotal : ((r.left_total !== undefined) ? r.left_total : null),
+      rightLoss: (r.rightLoss !== undefined) ? r.rightLoss : ((r.right_loss !== undefined) ? r.right_loss : null),
+      rightTotal: (r.rightTotal !== undefined) ? r.rightTotal : ((r.right_total !== undefined) ? r.right_total : null),
+      leftLossRate: (r.leftLossRate !== undefined) ? r.leftLossRate : ((r.left_loss_rate !== undefined) ? r.left_loss_rate : null),
+      rightLossRate: (r.rightLossRate !== undefined) ? r.rightLossRate : ((r.right_loss_rate !== undefined) ? r.right_loss_rate : null),
+      description: r.description || '',
+      imageBase64: r.imageBase64 || r.image_base64 || '',
+      createdBy: (r.createdBy !== undefined) ? r.createdBy : ((r.created_by !== undefined) ? r.created_by : null),
+      createdAt: r.createdAt || r.created_at || null,
+      updatedAt: r.updatedAt || r.updated_at || null,
+      status: (r.status !== undefined) ? r.status : 1,
+      projectName: r.project_name || r.projectName || '',
+      _synced: true,
+      _syncTime: Date.now()
+    });
+  }
+  return out;
 }
 
 // 创建战报（云端）- 排除大字段（图片等）
