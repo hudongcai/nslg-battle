@@ -169,7 +169,7 @@ async function cloudGetProject(projectId) {
 async function cloudGetUsers() {
   try {
     const data = await cloudRequest('/users');
-    const list = (data.data && data.data.list) || [];
+    const list = Array.isArray(data.data) ? data.data : ((data.data && data.data.list) || []);
     return list.map(u => ({
       phone: u.phone,
       name: u.nickname || u.name || '',
@@ -191,7 +191,7 @@ async function cloudUpdateUserPoints(phone, points) {
   try {
     // 需要通过手机号找到用户的云端ID
     const data = await cloudRequest('/users');
-    const list = (data.data && data.data.list) || [];
+    const list = Array.isArray(data.data) ? data.data : ((data.data && data.data.list) || []);
     const user = list.find(u => u.phone === phone);
     if (!user || !user.id) {
       console.warn('[cloudUpdateUserPoints] 未找到用户:', phone);

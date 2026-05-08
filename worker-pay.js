@@ -64,10 +64,15 @@ async function initD1Database(DB) {
     if (!userCount || userCount.cnt === 0) {
       await DB.prepare(`
         INSERT INTO users (phone, password, nickname, role, status)
-        VALUES ('13651810449', 'hu6956521', '管理员', 'admin', 'active')
+        VALUES ('13651810449', 'hu6956521', '管理员', 'super_admin', 'active')
       `).run();
       console.log('[init] 已创建默认管理员账号');
     }
+
+    // 修复：将已有的 admin role 升级为 super_admin（兼容旧数据）
+    try {
+      await DB.prepare("UPDATE users SET role = 'super_admin' WHERE phone = '13651810449' AND role = 'admin'").run();
+    } catch (e) { /* 忽略 */ }
 
     // 创建项目权限表
     await DB.prepare(`
