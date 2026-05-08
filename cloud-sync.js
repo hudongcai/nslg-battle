@@ -9,7 +9,7 @@ console.log('[cloud-sync.js] 脚本开始加载 v202605081410');
 // 环境切换：false=使用 FRP 内网穿透
 const CLOUD_LOCAL_DEV = false;
 
-const CLOUD_API_BASE = 'https://api.zhenwu.fun/api';
+const CLOUD_API_BASE = 'https://www.zhenwu.fun/api';
 
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
