@@ -895,6 +895,72 @@ async function handleGetUsers(request, env) {
   }
 }
 
+// 获取当前用户 Profile（含积分）
+async function handleGetProfile(request, env) {
+  try {
+    // 从 token/Authorization 中提取手机号
+    const authHeader = request.headers.get('Authorization') || '';
+    let phone = null;
+    if (authHeader.startsWith('Bearer ')) {
+      try {
+        const tokenPayload = JSON.parse(atob(authHeader.split(' ')[1]));
+        phone = tokenPayload.phone;
+      } catch (e) { /* token 解析失败，尝试从查询参数获取 */ }
+    }
+    if (!phone) {
+      const url = new URL(request.url);
+      phone = url.searchParams.get('phone');
+    }
+    if (!phone) {
+      return jsonResponse({ error: '未登录' }, 401);
+    }
+
+    const stmt = env.DB.prepare('SELECT phone, nickname, name, role, points, avatar, status FROM users WHERE phone = ?');
+    const user = await stmt.bind(phone).first();
+    if (!user) {
+      return jsonResponse({ error: '用户不存在' }, 404);
+    }
+
+    return jsonResponse({
+      code: 200,
+      data: {
+        phone: user.phone,
+        nickname: user.nickname || user.name,
+        name: user.name || user.nickname,
+        role: user.role,
+        points: user.points || 0,
+        avatar: user.avatar || '',
+        status: user.status
+      }
+    });
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500);
+  }
+}
+
+// 更新用户信息（调积分等）— :userId 实际是 phone
+async function handleUpdateUser(request, env, userId) {
+  try {
+    const body = await request.json();
+    const { points } = body;
+
+    // D1 users 表主键是 phone（无自增 id 列）
+    const existing = await env.DB.prepare('SELECT phone FROM users WHERE phone = ?').bind(userId).first();
+    if (!existing) {
+      return jsonResponse({ error: '用户不存在' }, 404);
+    }
+
+    if (typeof points === 'number') {
+      await env.DB.prepare('UPDATE users SET points = ? WHERE phone = ?').bind(points, userId).run();
+      return jsonResponse({ code: 200, message: '更新成功' });
+    }
+
+    return jsonResponse({ error: '没有需要更新的字段' }, 400);
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500);
+  }
+}
+
 // 创建用户（注册）
 async function handleCreateUser(request, env) {
   try {
@@ -1323,7 +1389,16 @@ export default {
       const phone = path.split('/')[3];
       return handleGetUserPermissions(request, env, phone);
     }
-    
+    // 获取当前登录用户信息（含积分）— 前端 getUserPoints 调用
+    if (path === '/api/auth/profile' && request.method === 'GET') {
+      return handleGetProfile(request, env);
+    }
+    // 更新用户信息（调积分等）— 前端 cloudUpdateUserPoints 调用
+    if (path.match(/^\/api\/users\/[^/]+$/) && request.method === 'PUT') {
+      const userId = path.split('/')[3];
+      return handleUpdateUser(request, env, userId);
+    }
+
     // ========== 支付相关 API ==========
     if (path === '/api/pay/create' && request.method === 'POST') {
       return createWxOrder(request, env);

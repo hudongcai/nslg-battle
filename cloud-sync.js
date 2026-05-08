@@ -189,15 +189,8 @@ async function cloudGetUsers() {
 // 更新用户积分（云端）
 async function cloudUpdateUserPoints(phone, points) {
   try {
-    // 需要通过手机号找到用户的云端ID
-    const data = await cloudRequest('/users');
-    const list = Array.isArray(data.data) ? data.data : ((data.data && data.data.list) || []);
-    const user = list.find(u => u.phone === phone);
-    if (!user || !user.id) {
-      console.warn('[cloudUpdateUserPoints] 未找到用户:', phone);
-      return false;
-    }
-    const res = await cloudRequest(`/users/${user.id}`, {
+    // D1 users 表主键是 phone，直接用 phone 作为路由参数
+    const res = await cloudRequest(`/users/${phone}`, {
       method: 'PUT',
       body: { points: points }
     });
