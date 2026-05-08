@@ -39,12 +39,25 @@ async function initD1Database(DB) {
         phone TEXT PRIMARY KEY,
         password TEXT NOT NULL,
         nickname TEXT,
+        name TEXT,
         role TEXT DEFAULT 'member',
         status TEXT DEFAULT 'active',
+        points INTEGER DEFAULT 0,
+        avatar TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
       )
     `).run();
+
+    // 自动初始化：如果 users 表为空，创建默认超管
+    const userCount = await DB.prepare('SELECT COUNT(*) as cnt FROM users').first();
+    if (!userCount || userCount.cnt === 0) {
+      await DB.prepare(`
+        INSERT INTO users (phone, password, nickname, role, status)
+        VALUES ('13651810449', 'hu6956521', '管理员', 'admin', 'active')
+      `).run();
+      console.log('[init] 已创建默认管理员账号');
+    }
 
     // 创建项目权限表
     await DB.prepare(`
@@ -475,13 +488,13 @@ async function handleOcrProxy(request, env) {
 
 // ========== 认证辅助函数 ==========
 async function verifyUser(db, phone, password) {
-  const stmt = db.prepare('SELECT * FROM cloud_users WHERE phone = ? AND password = ?');
+  const stmt = db.prepare('SELECT * FROM users WHERE phone = ? AND password = ?');
   const result = await stmt.bind(phone, password).first();
   return result;
 }
 
 async function getUserByPhone(db, phone) {
-  const stmt = db.prepare('SELECT phone, name, role, points FROM cloud_users WHERE phone = ?');
+  const stmt = db.prepare('SELECT phone, name, nickname, role, points, avatar FROM users WHERE phone = ?');
   return await stmt.bind(phone).first();
 }
 
@@ -622,8 +635,8 @@ async function handleDeleteProject(request, env, projectId) {
 async function handleGetProjectMembers(request, env, projectId) {
   try {
     const stmt = env.DB.prepare(`
-      SELECT pp.*, cu.name FROM project_permissions pp
-      LEFT JOIN cloud_users cu ON pp.phone = cu.phone
+      SELECT pp.*, u.name FROM project_permissions pp
+      LEFT JOIN users u ON pp.phone = u.phone
       WHERE pp.project_id = ?
     `);
     const result = await stmt.bind(projectId).all();
@@ -857,7 +870,7 @@ async function handleDeleteRecord(request, env, recordId) {
 // 获取用户列表（超管）
 async function handleGetUsers(request, env) {
   try {
-    const stmt = env.DB.prepare('SELECT phone, name, role, points, created_at FROM cloud_users ORDER BY created_at DESC');
+    const stmt = env.DB.prepare('SELECT phone, name, nickname, role, points, avatar, created_at FROM users ORDER BY created_at DESC');
     const result = await stmt.all();
     const users = result.results || [];
 
@@ -871,22 +884,26 @@ async function handleGetUsers(request, env) {
 async function handleCreateUser(request, env) {
   try {
     const body = await request.json();
-    const { phone, name, password, role } = body;
+    // 兼容两种参数名：前端 cloud-sync.js 传 nickname，其他可能传 name
+    const { phone, name, nickname, password, role, avatar } = body;
+    const displayName = nickname || name || phone;
 
-    if (!phone || !name || !password) {
+    if (!phone || !password) {
       return jsonResponse({ error: '缺少必要参数' }, 400);
     }
 
     const now = Date.now();
 
+    // 统一写入 users 表（与 handleLogin 查询一致）
     const stmt = env.DB.prepare(`
-      INSERT OR IGNORE INTO cloud_users (phone, name, password, role, points, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 0, ?, ?)
+      INSERT OR IGNORE INTO users (phone, password, nickname, name, role, points, avatar, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
     `);
 
-    await stmt.bind(phone, name, password, role || 'member', now, now).run();
+    await stmt.bind(phone, password, displayName, displayName, role || 'member', avatar || '', now, now).run();
 
-    return jsonResponse({ success: true });
+    // 前端期望 { code: 200 } 格式
+    return jsonResponse({ code: 200, message: '注册成功' });
   } catch (e) {
     return jsonResponse({ error: e.message }, 500);
   }
@@ -902,14 +919,153 @@ async function handleLogin(request, env) {
       return jsonResponse({ error: '缺少必要参数' }, 400);
     }
 
-    const stmt = env.DB.prepare('SELECT phone, name, role, points FROM cloud_users WHERE phone = ? AND password = ?');
+    // 查询完整用户信息
+    const stmt = env.DB.prepare('SELECT phone, nickname, name, role, status, points, avatar FROM users WHERE phone = ? AND password = ?');
     const user = await stmt.bind(phone, password).first();
 
     if (!user) {
       return jsonResponse({ error: '手机号或密码错误' }, 401);
     }
 
-    return jsonResponse({ success: true, data: user });
+    // 生成简单 token（本地模式用 base64 编码即可）
+    const token = btoa(JSON.stringify({ phone, exp: Date.now() + 86400000 * 7 }));
+
+    // 返回统一格式，字段名兼容前端期望
+    return jsonResponse({
+      code: 200,
+      data: {
+        token,
+        user: {
+          phone: user.phone,
+          nickname: user.nickname || user.name || user.phone,
+          name: user.name || user.nickname || user.phone,
+          role: user.role || 'member',
+          points: user.points || 0,
+          avatar: user.avatar || '',
+          status: user.status || 'active'
+        }
+      }
+    });
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500);
+  }
+}
+
+// ========== 数据库管理 API 处理函数 ==========
+// 获取所有表名列表
+async function handleDbTables(request, env) {
+  try {
+    const tables = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
+    // 过滤掉内部表，返回对象数组 {name, count}
+    const rawNames = (tables.results || [])
+      .map(r => r.name)
+      .filter(n => !n.startsWith('_cf_') && n !== 'sqlite_sequence');
+
+    // 查询每张表的行数
+    const tableList = [];
+    for (const name of rawNames) {
+      try {
+        const r = await env.DB.prepare(`SELECT COUNT(*) as cnt FROM \`${name}\``).first();
+        tableList.push({ name, count: r?.cnt || 0 });
+      } catch(e) {
+        tableList.push({ name, count: -1 });
+      }
+    }
+
+    return jsonResponse({ code: 200, data: tableList });
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500);
+  }
+}
+
+// 获取某表数据（分页/排序/搜索）
+async function handleDbTableData(request, env, tableName) {
+  try {
+    const url = new URL(request.url);
+    const page = parseInt(url.searchParams.get('page') || '1');
+    const pageSize = parseInt(url.searchParams.get('pageSize') || '50');
+    const sortField = url.searchParams.get('sort') || url.searchParams.get('sortField'); // 前端用 sort
+    const sortOrder = url.searchParams.get('order') || url.searchParams.get('sortOrder') || 'ASC'; // 前端用 order
+    const search = url.searchParams.get('search') || '';
+
+    // 安全检查表名
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
+      return jsonResponse({ error: '非法表名' }, 400);
+    }
+
+    // 获取列信息
+    const colInfo = await env.DB.prepare(`PRAGMA table_info(\`${tableName}\`)`).all();
+    const columns = (colInfo.results || []).map(c => ({
+      field: c.name,
+      type: c.type || 'TEXT',
+      nullable: c.notnull === 0,
+      pk: c.pk > 0
+    }));
+
+    let countSql = `SELECT COUNT(*) as total FROM \`${tableName}\``;
+    let dataSql = `SELECT * FROM \`${tableName}\``;
+
+    // 搜索条件
+    let bindParams = [];
+    if (search && columns.length > 0) {
+      const conditions = columns.map(c => `\`${c.field}\` LIKE ?`).join(' OR ');
+      const searchPattern = `%${search}%`;
+      countSql += ` WHERE ${conditions}`;
+      dataSql += ` WHERE ${conditions}`;
+      bindParams = columns.map(() => searchPattern);
+    }
+
+    // 排序
+    if (sortField && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sortField)) {
+      const order = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+      dataSql += ` ORDER BY \`${sortField}\` ${order}`;
+    } else {
+      dataSql += ` ORDER BY rowid DESC`;
+    }
+
+    // 分页
+    const offset = (page - 1) * pageSize;
+    dataSql += ` LIMIT ${pageSize} OFFSET ${offset}`;
+
+    // 执行查询
+    let totalResult, dataResult;
+    if (bindParams.length > 0) {
+      totalResult = await env.DB.prepare(countSql).bind(...bindParams).first();
+      dataResult = await env.DB.prepare(dataSql).bind(...bindParams).all();
+    } else {
+      totalResult = await env.DB.prepare(countSql).first();
+      dataResult = await env.DB.prepare(dataSql).all();
+    }
+
+    const total = totalResult?.total || 0;
+    const rows = dataResult.results || [];
+
+    return jsonResponse({
+      code: 200,
+      data: {
+        columns,       // 前端需要: 列定义数组 [{field,type,...}]
+        rows,          // 前端需要: 数据行数组（不是 list）
+        pagination: {   // 前端需要: 分页对象
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize)
+        }
+      }
+    });
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500);
+  }
+}
+
+// 获取某表结构描述
+async function handleDbTableDesc(request, env, tableName) {
+  try {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
+      return jsonResponse({ error: '非法表名' }, 400);
+    }
+    const result = await env.DB.prepare(`PRAGMA table_info(\`${tableName}\`)`).all();
+    return jsonResponse({ code: 200, data: result.results || [] });
   } catch (e) {
     return jsonResponse({ error: e.message }, 500);
   }
@@ -1050,11 +1206,11 @@ export default {
     // CORS 头
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400',
     };
-    
+
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
@@ -1139,6 +1295,14 @@ export default {
     if (path === '/api/users/login' && request.method === 'POST') {
       return handleLogin(request, env);
     }
+    // 兼容前端 cloud-sync.js 的 /auth/login 路径
+    if (path === '/api/auth/login' && request.method === 'POST') {
+      return handleLogin(request, env);
+    }
+    // 兼容前端 cloud-sync.js 的 /auth/register 路径
+    if (path === '/api/auth/register' && request.method === 'POST') {
+      return handleCreateUser(request, env);
+    }
     // 获取某用户在所有项目中的权限
     if (path.match(/^\/api\/users\/[^/]+\/permissions$/) && request.method === 'GET') {
       const phone = path.split('/')[3];
@@ -1173,6 +1337,22 @@ export default {
       return handleDeleteRole(request, env, roleId);
     }
     
+    // ========== 数据库管理 API (db-viewer) ==========
+    // 获取所有表名列表
+    if (path === '/api/db/tables' && request.method === 'GET') {
+      return handleDbTables(request, env);
+    }
+    // 获取某表数据（支持分页/排序/搜索）
+    if (path.match(/^\/api\/db\/table\/[^/]+$/) && request.method === 'GET') {
+      const tableName = path.split('/')[4];
+      return handleDbTableData(request, env, tableName);
+    }
+    // 获取某表结构
+    if (path.match(/^\/api\/db\/table\/[^/]+\/desc$/) && request.method === 'GET') {
+      const tableName = path.split('/')[4];
+      return handleDbTableDesc(request, env, tableName);
+    }
+
     return new Response('Not Found', { status: 404 });
   }
 };

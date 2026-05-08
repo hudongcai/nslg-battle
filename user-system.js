@@ -606,50 +606,73 @@ async function doLoginPwd(){
   msgEl.className='msg-err';msgEl.textContent='';
   if(!phone||!pwd){msgEl.textContent='请填写手机号和密码';return;}
   try{
-    const user = await userDBGet(phone);
-    if(!user){msgEl.textContent='该手机号未注册';return;}
-    if(user.password!=pwd){msgEl.textContent='密码错误';return;}
+    // 先查本地 IndexedDB
+    let user = await userDBGet(phone);
+
+    if(user){
+      // 本地有记录，验证本地密码
+      if(user.password!=pwd){msgEl.textContent='密码错误';return;}
+    } else {
+      // 本地无记录 → 尝试云端登录（支持后台直接创建的账号 / 跨设备登录）
+      console.log('[Login] 本地无此用户，尝试云端验证:', phone);
+      if(typeof cloudLogin === 'function'){
+        const cloudUser = await cloudLogin(phone, pwd);
+        if(!cloudUser){
+          msgEl.textContent='该手机号未注册或密码错误';
+          return;
+        }
+        // 云端验证通过，构建本地用户对象并写入 IndexedDB
+        user = {
+          phone: cloudUser.phone || phone,
+          name: cloudUser.nickname || cloudUser.name || phone,
+          password: pwd,
+          role: cloudUser.role || 'member',
+          points: cloudUser.points || 0,
+          avatar: cloudUser.avatar || '',
+          status: cloudUser.status !== undefined ? cloudUser.status : 1,
+          createdAt: cloudUser.createdAt || Date.now()
+        };
+        await userDBPut(user);
+        console.log('[Login] 云端用户已同步到本地 IndexedDB');
+        addSysLog('login','云端登录成功（本地自动注册）');
+      } else {
+        msgEl.textContent='该手机号未注册';
+        return;
+      }
+    }
+
     // 登录成功（本地）
     currentUser = user;
     saveSession(user);
     saveRememberedUser(phone, pwd, user.name, user.role);
-    addSysLog('login','密码登录成功');
-    // 同时尝试云端登录，获取 JWT token
-    try {
-      if (typeof cloudLogin === 'function') {
-        const cloudUser = await cloudLogin(phone, pwd);
-        if (cloudUser) {
-          console.log('[Login] 云端登录成功，JWT token 已保存');
-          // 同步云端用户信息到本地
-          let updated = false;
-          // 同步积分（云端积分 > 0 时才同步，避免0覆盖本地积分）
-          if (cloudUser.points !== undefined && cloudUser.points > 0 && cloudUser.points !== user.points) {
-            user.points = cloudUser.points;
-            currentUser.points = cloudUser.points;
-            updated = true;
-            console.log('[Login] 已同步云端积分:', cloudUser.points);
-          }
-          // 同步头像
-          if (cloudUser.avatar !== undefined && cloudUser.avatar !== user.avatar) {
-            user.avatar = cloudUser.avatar;
-            currentUser.avatar = cloudUser.avatar;
-            updated = true;
-            console.log('[Login] 已同步云端头像:', cloudUser.avatar);
-          }
-          // 同步状态
-          if (cloudUser.status !== undefined && cloudUser.status !== user.status) {
-            user.status = cloudUser.status;
-            currentUser.status = cloudUser.status;
-            updated = true;
-            console.log('[Login] 已同步云端状态:', cloudUser.status);
-          }
-          if (updated) {
-            await userDBPut(user);
+    if(!user._cloudSynced) addSysLog('login','密码登录成功');
+
+    // 如果本地已有记录，补充尝试云端登录获取最新信息和 JWT token
+    if(user._cloudSynced !== true){
+      try {
+        if (typeof cloudLogin === 'function') {
+          const cloudUser = await cloudLogin(phone, pwd);
+          if (cloudUser) {
+            console.log('[Login] 云端登录成功，JWT token 已保存');
+            let updated = false;
+            if (cloudUser.points !== undefined && cloudUser.points > 0 && cloudUser.points !== user.points) {
+              user.points = cloudUser.points; currentUser.points = cloudUser.points; updated = true;
+              console.log('[Login] 已同步云端积分:', cloudUser.points);
+            }
+            if (cloudUser.avatar !== undefined && cloudUser.avatar !== user.avatar) {
+              user.avatar = cloudUser.avatar; currentUser.avatar = cloudUser.avatar; updated = true;
+              console.log('[Login] 已同步云端头像:', cloudUser.avatar);
+            }
+            if (cloudUser.status !== undefined && cloudUser.status !== user.status) {
+              user.status = cloudUser.status; currentUser.status = cloudUser.status; updated = true;
+              console.log('[Login] 已同步云端状态:', cloudUser.status);
+            }
+            if (updated) { await userDBPut(user); }
           }
         }
+      } catch (cloudErr) {
+        console.warn('[Login] 云端登录失败，继续使用本地模式:', cloudErr.message);
       }
-    } catch (cloudErr) {
-      console.warn('[Login] 云端登录失败，继续使用本地模式:', cloudErr.message);
     }
     onLoginSuccess();
   }catch(e){msgEl.textContent='登录失败：'+e.message;}
