@@ -6,8 +6,9 @@ console.log('[cloud-sync.js] 脚本开始加载 v202605081410');
  * 版本: v202605081410
  */
 
-// 使用本地 MySQL 后端作为唯一数据源
-const CLOUD_API_BASE = 'http://localhost:3000/api';
+// 根据当前页面域名自动确定 API 地址
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const CLOUD_API_BASE = isLocal ? 'http://localhost:3000/api' : 'https://www.zhenwu.fun/api';
 
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
