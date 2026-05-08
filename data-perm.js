@@ -99,7 +99,8 @@ window.getVisibleProjects = async function () {
   for (const p of localProjects) { merged.set(p.id, p); }
 
   // 再从云端获取，合并到本地
-  if (window.cloudSync && window.cloudSync.getToken && window.cloudSync.getToken()) {
+  // 注意：不再检查 token，直接调用 getProjects()，它内部会自动处理无 token 的情况（尝试自动登录）
+  if (window.cloudSync && window.cloudSync.getProjects) {
     try {
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] data-perm 获取云端项目:', cloudProjects.length, '个');
@@ -122,8 +123,6 @@ window.getVisibleProjects = async function () {
     } catch (e) {
       console.error('[Cloud] 获取云端项目失败，使用本地数据:', e.message || e);
     }
-  } else {
-    console.log('[Cloud] 无有效 token，跳过云端获取，使用本地数据');
   }
 
   let all = Array.from(merged.values());
