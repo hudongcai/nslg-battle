@@ -450,7 +450,7 @@
   }
   if (typeof getTeamDisplay !== 'function') {
     window.getTeamDisplay = function(generals) {
-      if (!generals || generators.length === 0) return '-';
+      if (!generals || generals.length === 0) return '-';
       return generals.slice(0, 3).map(g => escHtml(g)).join('<br>');
     };
   }

@@ -1167,6 +1167,28 @@ async function doAddUser(){
       createdAt: Date.now()
     };
     await userDBPut(user);
+    // 同步到云端 MySQL + D1
+    try {
+      if (window.cloudSync && typeof window.cloudSync.createUser === 'function') {
+        console.log('[doAddUser] 同步用户到云端:', phone, name||`用户${phone.slice(-4)}`, roleId);
+        const cloudResult = await window.cloudSync.createUser(phone, name||`用户${phone.slice(-4)}`, pwd, roleId);
+        console.log('[doAddUser] 云端同步结果:', cloudResult);
+        user._cloudSynced = true;
+        await userDBPut(user);
+      } else if (typeof cloudRequest === 'function') {
+        // 备用：直接通过 API 注册到 MySQL
+        console.log('[doAddUser] 通过 cloudRequest 注册到云端');
+        const regResult = await cloudRequest('/auth/register', {
+          method: 'POST',
+          body: { phone, password: pwd, name: name||`用户${phone.slice(-4)}`, role: roleId }
+        });
+        console.log('[doAddUser] cloudRequest 注册结果:', regResult);
+        user._cloudSynced = true;
+        await userDBPut(user);
+      }
+    } catch(cloudErr) {
+      console.warn('[doAddUser] 云端同步失败（本地已保存）:', cloudErr);
+    }
     errEl.className = 'msg-suc';
     errEl.textContent = '新增成功！（默认赠送18积分）';
     addSysLog('action', '新增用户: '+phone+' ('+(name||phone)+')');

@@ -191,13 +191,19 @@ async function cloudGetUsers() {
   }
 }
 
-// 更新用户积分（云端）
+// 更新用户积分（云端）- 使用 user_credits 表
 async function cloudUpdateUserPoints(phone, points) {
   try {
-    // D1 users 表主键是 phone，直接用 phone 作为路由参数
-    const res = await cloudRequest(`/users/${phone}`, {
+    const users = await cloudGetUsers();
+    const user = users.find(u => u.phone === phone);
+    if (!user) {
+      console.warn('[cloudUpdateUserPoints] 用户不存在:', phone);
+      return false;
+    }
+    
+    const res = await cloudRequest(`/user_credits/${user.id}`, {
       method: 'PUT',
-      body: { points: points }
+      body: { balance: points }
     });
     return res.code === 200;
   } catch (e) {
