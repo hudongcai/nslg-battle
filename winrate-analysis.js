@@ -67,7 +67,7 @@
    * 从 allRecords 中提取武将阵容数据并计算胜率
    */
   function computeWinRateData(records) {
-    if (!records || records.length === 0) return [];
+    if (!records || !Array.isArray(records) || records.length === 0) return [];
 
     // 收集每个"我方阵容"(武将组合)的战绩
     const teamStats = {};  // key=teamKey → {wins, losses, draws, total, generals[], tactics[], avgLeftLoss, avgRightLoss}

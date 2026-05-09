@@ -249,6 +249,35 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
+app.get('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.query('SELECT * FROM projects WHERE id = ?', [id]);
+    
+    if (rows.length === 0) {
+      return res.json({ code: 404, message: '项目不存在' });
+    }
+    
+    const p = rows[0];
+    res.json({
+      code: 200,
+      data: {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        creator_id: p.creator_id,
+        is_public: p.is_public,
+        member_count: p.member_count,
+        battle_count: p.battle_count,
+        created_at: p.created_at,
+        updated_at: p.updated_at
+      }
+    });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 app.post('/api/projects', async (req, res) => {
   try {
     const { id, name, description, creator_id, is_public } = req.body;
