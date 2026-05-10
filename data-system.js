@@ -241,7 +241,8 @@ async function dbAdd(rec) {
               console.log('[Cloud] 战报已同步到云端:', result.id);
               rec.cloudId = result.id;
               rec._cloudSynced = true;
-              dbPut(rec);
+              // 只写回本地 IndexedDB，不再触发云端 updateRecord
+              dbPutLocal(rec);
             }
           }).catch(e => console.error('[Cloud] 战报同步失败:', e));
         }catch(e){console.error('[Cloud] 战报同步异常:', e);}
@@ -251,6 +252,16 @@ async function dbAdd(rec) {
 
       resolve(req.result);
     };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// 仅写 IndexedDB，不同步云端（用于写回 cloudId 等元信息）
+function dbPutLocal(rec) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['records'], 'readwrite');
+    const req = tx.objectStore('records').put(rec);
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }

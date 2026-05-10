@@ -50,10 +50,10 @@ app.post('/api/auth/login', async (req, res) => {
     
     const user = rows[0];
     if (user.password === password) {
-      const [creditRows] = await pool.query('SELECT balance FROM user_credits WHERE user_id = ?', [user.id]);
-      const points = creditRows.length > 0 ? creditRows[0].balance : 18;
-      
-      await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
+      const points = user.credit_balance != null ? user.credit_balance : 18;
+
+      const loginIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.connection?.remoteAddress || '';
+      await pool.query('UPDATE users SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?', [loginIp, user.id]);
       
       res.json({ 
         code: 200, 
@@ -84,17 +84,9 @@ app.post('/api/auth/register', async (req, res) => {
     
     const now = new Date();
     const [userResult] = await pool.query(
-      'INSERT INTO users (phone, password, nickname, role_id, status, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [phone, password, name || `用户${phone.slice(-4)}`, role || 'member', 1, now, now]
-    );
-    
-    const userId = userResult.insertId;
-    
-    await pool.query(
-      'INSERT INTO user_credits (user_id, balance, total_earned, total_consumed, last_updated) ' +
-      'VALUES (?, ?, ?, ?, ?)',
-      [userId, 18, 0, 0, now]
+      'INSERT INTO users (phone, password, nickname, role_id, status, credit_balance, credit_total_earned, credit_total_consumed, created_at, updated_at) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [phone, password, name || `用户${phone.slice(-4)}`, role || 'member', 1, 18, 0, 0, now, now]
     );
     
     res.json({ 
@@ -122,16 +114,13 @@ app.get('/api/auth/profile', async (req, res) => {
     }
     
     const user = userRows[0];
-    const [creditRows] = await pool.query('SELECT balance FROM user_credits WHERE user_id = ?', [user.id]);
-    const points = creditRows.length > 0 ? creditRows[0].balance : 18;
-    
     res.json({
       code: 200,
       data: {
         phone: user.phone,
         nickname: user.nickname,
         role: user.role_id,
-        points: points,
+        points: user.credit_balance != null ? user.credit_balance : 18,
         avatar: user.avatar || '',
         status: user.status
       }
@@ -143,11 +132,7 @@ app.get('/api/auth/profile', async (req, res) => {
 
 app.get('/api/users', async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT u.*, uc.balance as points 
-      FROM users u 
-      LEFT JOIN user_credits uc ON u.id = uc.user_id
-    `);
+    const [rows] = await pool.query('SELECT * FROM users ORDER BY id');
     res.json({
       code: 200,
       data: rows.map(u => ({
@@ -156,7 +141,7 @@ app.get('/api/users', async (req, res) => {
         nickname: u.nickname,
         role_id: u.role_id,
         status: u.status,
-        points: u.points || 0,
+        points: u.credit_balance || 0,
         created_at: u.created_at
       }))
     });
@@ -174,7 +159,6 @@ app.delete('/api/users/:id', async (req, res) => {
       return res.json({ code: 404, message: '用户不存在' });
     }
     
-    await pool.query('DELETE FROM user_credits WHERE user_id = ?', [id]);
     await pool.query('DELETE FROM project_members WHERE user_id = ?', [id]);
     await pool.query('DELETE FROM users WHERE id = ?', [id]);
     
@@ -242,14 +226,14 @@ app.get('/api/projects', async (req, res) => {
     
     const user = userRows[0];
     
-    let query = 'SELECT * FROM projects';
+    let query = 'SELECT DISTINCT p.*, u.phone as creator_phone FROM projects p LEFT JOIN users u ON p.creator_id = u.id';
     let params = [];
-    
+
     if (user.role_id !== 'super_admin') {
-      query = 'SELECT p.* FROM projects p LEFT JOIN project_members pm ON p.id = pm.project_id WHERE p.creator_id = ? OR pm.phone = ?';
-      params = [phone, phone];
+      query = 'SELECT DISTINCT p.*, u.phone as creator_phone FROM projects p LEFT JOIN users u ON p.creator_id = u.id LEFT JOIN project_members pm ON p.id = pm.project_id WHERE p.creator_id = ? OR pm.user_id = ? OR p.is_public = 1';
+      params = [user.id, user.id];
     }
-    
+
     const [rows] = await pool.query(query, params);
     res.json({
       code: 200,
@@ -258,6 +242,7 @@ app.get('/api/projects', async (req, res) => {
         name: p.name,
         description: p.description,
         creator_id: p.creator_id,
+        creator_phone: p.creator_phone || '',
         is_public: p.is_public,
         member_count: p.member_count,
         battle_count: p.battle_count,
@@ -539,12 +524,16 @@ app.get('/api/battles', async (req, res) => {
         right_loss: r.right_loss,
         left_total: r.left_total,
         right_total: r.right_total,
+        left_loss_rate: r.left_loss_rate,
+        right_loss_rate: r.right_loss_rate,
         left_generals: r.left_generals,
         right_generals: r.right_generals,
         left_tactics: r.left_tactics,
         right_tactics: r.right_tactics,
         left_formation: r.left_formation,
         right_formation: r.right_formation,
+        left_alliance: r.left_alliance,
+        right_alliance: r.right_alliance,
         created_at: r.created_at,
         updated_at: r.updated_at
       }))
@@ -605,18 +594,27 @@ app.put('/api/battles/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { attacker_name, enemy_name, result, battle_date, description,
-            left_loss, right_loss, left_total, right_total, left_generals, right_generals,
+            left_alliance, right_alliance,
+            left_loss, right_loss, left_total, right_total,
+            left_loss_rate, right_loss_rate,
+            left_generals, right_generals,
             left_tactics, right_tactics, left_formation, right_formation } = req.body;
-    
+
     const now = new Date();
-    
+
     await pool.query(
       'UPDATE battle_records SET attacker_name = ?, enemy_name = ?, result = ?, battle_date = ?, description = ?, ' +
-      'left_loss = ?, right_loss = ?, left_total = ?, right_total = ?, left_generals = ?, right_generals = ?, ' +
+      'left_alliance = ?, right_alliance = ?, ' +
+      'left_loss = ?, right_loss = ?, left_total = ?, right_total = ?, ' +
+      'left_loss_rate = ?, right_loss_rate = ?, ' +
+      'left_generals = ?, right_generals = ?, ' +
       'left_tactics = ?, right_tactics = ?, left_formation = ?, right_formation = ?, updated_at = ? ' +
       'WHERE id = ?',
       [attacker_name, enemy_name, result, battle_date, description,
-       left_loss, right_loss, left_total, right_total, left_generals, right_generals,
+       left_alliance || '', right_alliance || '',
+       left_loss, right_loss, left_total, right_total,
+       left_loss_rate ?? null, right_loss_rate ?? null,
+       left_generals, right_generals,
        left_tactics, right_tactics, left_formation, right_formation, now, id]
     );
     
@@ -641,23 +639,16 @@ app.delete('/api/battles/:id', async (req, res) => {
 // ========== 积分管理 API ==========
 app.get('/api/user_credits', async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT uc.*, u.phone, u.nickname 
-      FROM user_credits uc 
-      LEFT JOIN users u ON uc.user_id = u.id 
-      ORDER BY uc.id
-    `);
+    const [rows] = await pool.query('SELECT * FROM users ORDER BY id');
     res.json({
       code: 200,
       data: rows.map(u => ({
-        id: u.id,
-        user_id: u.user_id,
-        phone: u.phone || '',
+        user_id: u.id,
+        phone: u.phone,
         nickname: u.nickname || '',
-        balance: u.balance || 0,
-        total_earned: u.total_earned || 0,
-        total_consumed: u.total_consumed || 0,
-        last_updated: u.last_updated
+        balance: u.credit_balance || 0,
+        total_earned: u.credit_total_earned || 0,
+        total_consumed: u.credit_total_consumed || 0
       }))
     });
   } catch (err) {
@@ -668,29 +659,18 @@ app.get('/api/user_credits', async (req, res) => {
 app.get('/api/user_credits/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const [rows] = await pool.query(`
-      SELECT uc.*, u.phone, u.nickname 
-      FROM user_credits uc 
-      LEFT JOIN users u ON uc.user_id = u.id 
-      WHERE uc.user_id = ?
-    `, [userId]);
-    
-    if (rows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
-    
+    const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
+    if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
     const u = rows[0];
     res.json({
       code: 200,
       data: {
-        id: u.id,
-        user_id: u.user_id,
-        phone: u.phone || '',
+        user_id: u.id,
+        phone: u.phone,
         nickname: u.nickname || '',
-        balance: u.balance || 0,
-        total_earned: u.total_earned || 0,
-        total_consumed: u.total_consumed || 0,
-        last_updated: u.last_updated
+        balance: u.credit_balance || 0,
+        total_earned: u.credit_total_earned || 0,
+        total_consumed: u.credit_total_consumed || 0
       }
     });
   } catch (err) {
@@ -702,38 +682,18 @@ app.put('/api/user_credits/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { balance, total_earned, total_consumed } = req.body;
-    
-    const [rows] = await pool.query('SELECT * FROM user_credits WHERE user_id = ?', [userId]);
-    
-    if (rows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
-    
+    const [rows] = await pool.query('SELECT id FROM users WHERE id = ?', [userId]);
+    if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
+
     const updates = [];
     const params = [];
-    
-    if (balance !== undefined) {
-      updates.push('balance = ?');
-      params.push(balance);
-    }
-    if (total_earned !== undefined) {
-      updates.push('total_earned = ?');
-      params.push(total_earned);
-    }
-    if (total_consumed !== undefined) {
-      updates.push('total_consumed = ?');
-      params.push(total_consumed);
-    }
-    
-    if (updates.length === 0) {
-      return res.json({ code: 400, message: '没有需要更新的字段' });
-    }
-    
-    updates.push('last_updated = NOW()');
+    if (balance !== undefined)        { updates.push('credit_balance = ?');          params.push(balance); }
+    if (total_earned !== undefined)   { updates.push('credit_total_earned = ?');     params.push(total_earned); }
+    if (total_consumed !== undefined) { updates.push('credit_total_consumed = ?');   params.push(total_consumed); }
+    if (updates.length === 0) return res.json({ code: 400, message: '没有需要更新的字段' });
+
     params.push(userId);
-    
-    await pool.query(`UPDATE user_credits SET ${updates.join(', ')} WHERE user_id = ?`, params);
-    
+    await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
     res.json({ code: 200, message: '更新成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -744,20 +704,10 @@ app.put('/api/user_credits/:userId', async (req, res) => {
 app.put('/api/user_credits', async (req, res) => {
   try {
     const { phone, balance } = req.body;
-    
-    if (!phone || balance === undefined) {
-      return res.json({ code: 400, message: '缺少参数' });
-    }
-    
-    const [userRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
-    if (userRows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
-    
-    const userId = userRows[0].id;
-    
-    await pool.query('UPDATE user_credits SET balance = ?, last_updated = NOW() WHERE user_id = ?', [balance, userId]);
-    
+    if (!phone || balance === undefined) return res.json({ code: 400, message: '缺少参数' });
+    const [rows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
+    await pool.query('UPDATE users SET credit_balance = ? WHERE id = ?', [balance, rows[0].id]);
     res.json({ code: 200, message: '更新成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -907,6 +857,96 @@ app.get('/api/db/table/:tableName/desc', async (req, res) => {
         }))
       }
     });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// ========== OCR 代理（豆包视觉模型）==========
+const DOUBAO_API_KEY = 'ark-74b37e3f-3407-4070-b918-71d6a455bc5a-19ae6';
+const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+
+app.post('/api/ocr', async (req, res) => {
+  try {
+    const response = await fetch(DOUBAO_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DOUBAO_API_KEY}`
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.error || data, code: response.status });
+    }
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== 战报图片（battle_gallery）==========
+// 上传图片（与战报绑定）
+app.post('/api/gallery', async (req, res) => {
+  try {
+    const { battle_id, project_id, image_data, original_name, file_size } = req.body;
+    if (!image_data || !project_id) return res.json({ code: 400, message: '缺少参数' });
+
+    // 如果 battle_id 已有图片则更新，否则插入
+    if (battle_id) {
+      const [exist] = await pool.query('SELECT id FROM battle_gallery WHERE battle_id = ?', [battle_id]);
+      if (exist.length > 0) {
+        await pool.query(
+          'UPDATE battle_gallery SET image_data=?, original_name=?, file_size=?, updated_at=NOW() WHERE battle_id=?',
+          [image_data, original_name || '', file_size || 0, battle_id]
+        );
+        return res.json({ code: 200, data: { id: exist[0].id } });
+      }
+    }
+    const [result] = await pool.query(
+      'INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, created_at, updated_at) VALUES (?,?,?,?,?,NOW(),NOW())',
+      [project_id, battle_id || null, image_data, original_name || '', file_size || 0]
+    );
+    res.json({ code: 200, data: { id: result.insertId } });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 获取项目图片列表（不返回大字段，仅用于判断是否有图）
+app.get('/api/gallery', async (req, res) => {
+  try {
+    const { projectId, battleId } = req.query;
+    let query = 'SELECT id, project_id, battle_id, original_name, file_size, created_at FROM battle_gallery WHERE status=1';
+    const params = [];
+    if (battleId) { query += ' AND battle_id=?'; params.push(battleId); }
+    else if (projectId) { query += ' AND project_id=?'; params.push(projectId); }
+    query += ' ORDER BY created_at DESC';
+    const [rows] = await pool.query(query, params);
+    res.json({ code: 200, data: rows });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 获取单张图片数据
+app.get('/api/gallery/:id', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, battle_id, image_data FROM battle_gallery WHERE id=? AND status=1', [req.params.id]);
+    if (rows.length === 0) return res.json({ code: 404, message: '图片不存在' });
+    res.json({ code: 200, data: rows[0] });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 通过 battle_id 获取图片数据
+app.get('/api/gallery/by-battle/:battleId', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, battle_id, image_data FROM battle_gallery WHERE battle_id=? AND status=1 LIMIT 1', [req.params.battleId]);
+    if (rows.length === 0) return res.json({ code: 404, message: '无图片' });
+    res.json({ code: 200, data: rows[0] });
   } catch (err) {
     res.json({ code: 500, message: err.message });
   }

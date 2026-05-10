@@ -160,7 +160,22 @@ async function cloudGetProjects() {
     }
   }
   console.log('[cloudGetProjects] 获取到', list.length, '个项目');
-  return list;
+  // 将云端字段映射为本地格式，保持与本地项目数据结构兼容
+  return list.map(p => ({
+    id: p.id,
+    name: p.name,
+    desc: p.description || p.desc || '',
+    creator: p.creator_phone || p.creator || '',
+    creator_id: p.creator_id,
+    visibility: p.is_public == 1 ? 'public' : 'private',
+    is_public: p.is_public,
+    memberPhones: p.memberPhones || [],
+    member_count: p.member_count || 0,
+    battle_count: p.battle_count || 0,
+    battleRecordIds: p.battleRecordIds || [],
+    created_at: p.created_at,
+    updated_at: p.updated_at
+  }));
 }
 
 // 获取单个项目详情（从云端）
@@ -318,11 +333,11 @@ async function cloudGetRecords(projectId) {
 // 创建战报（云端）- 排除大字段（图片等）
 // 接收字段：projectId, battleDate, attackerName, enemyName, result, description
 async function cloudCreateRecord(record) {
-  // 创建记录的副本，排除大字段
+  const imageBase64 = record.imageBase64 || record.imageData || record.ocrImage || '';
+
+  // 创建记录副本，排除大字段
   const recordForCloud = { ...record };
-  // 移除前端生成的 id（让 MySQL 自动生成自增 ID）
   delete recordForCloud.id;
-  // 移除 base64 图片（太大，D1 限制 1MB）
   delete recordForCloud.imageBase64;
   delete recordForCloud.imageData;
   delete recordForCloud.ocrImage;
@@ -338,16 +353,58 @@ async function cloudCreateRecord(record) {
     method: 'POST',
     body: recordForCloud
   });
-  return data.code === 200 ? data.data : null;
+  const result = data.code === 200 ? data.data : null;
+
+  // 有图片则同步存入 battle_gallery
+  if (imageBase64 && result && result.id) {
+    try {
+      await cloudRequest('/gallery', {
+        method: 'POST',
+        body: {
+          battle_id: result.id,
+          project_id: record.projectId || record.project_id,
+          image_data: imageBase64,
+          original_name: record.imageName || '',
+          file_size: Math.round(imageBase64.length * 0.75)
+        }
+      });
+      console.log('[Cloud] 图片已同步到 battle_gallery, battle_id:', result.id);
+    } catch (e) {
+      console.warn('[Cloud] 图片同步失败（不影响战报）:', e.message);
+    }
+  }
+  return result;
 }
 
 // 更新战报（云端）
 // 注意：后端路由是 /battles，不是 /records
 async function cloudUpdateRecord(recordId, recordData) {
   console.log('[cloudUpdateRecord] 被调用, recordId:', recordId, '| recordData keys:', Object.keys(recordData));
+  // 后端 PUT 接收 snake_case，前端存 camelCase，此处统一转换
+  const body = {
+    battle_date:    recordData.battleDate || new Date().toISOString().split('T')[0],
+    attacker_name:  recordData.attackerName  || recordData.attacker_name  || '',
+    enemy_name:     recordData.enemyName     || recordData.enemy_name     || '',
+    left_alliance:  recordData.leftAlliance  || recordData.left_alliance  || '',
+    right_alliance: recordData.rightAlliance || recordData.right_alliance || '',
+    left_formation: recordData.leftFormation || recordData.left_formation || '',
+    right_formation:recordData.rightFormation|| recordData.right_formation|| '',
+    left_generals:  JSON.stringify(recordData.leftGenerals  || recordData.left_generals  || []),
+    right_generals: JSON.stringify(recordData.rightGenerals || recordData.right_generals || []),
+    left_tactics:   JSON.stringify(recordData.leftTactics   || recordData.left_tactics   || []),
+    right_tactics:  JSON.stringify(recordData.rightTactics  || recordData.right_tactics  || []),
+    left_loss:      recordData.leftLoss      ?? recordData.left_loss      ?? null,
+    right_loss:     recordData.rightLoss     ?? recordData.right_loss     ?? null,
+    left_total:     recordData.leftTotal     ?? recordData.left_total     ?? null,
+    right_total:    recordData.rightTotal    ?? recordData.right_total    ?? null,
+    left_loss_rate: recordData.leftLossRate  ?? recordData.left_loss_rate ?? null,
+    right_loss_rate:recordData.rightLossRate ?? recordData.right_loss_rate?? null,
+    result:         recordData.result        || '',
+    description:    recordData.description   || '',
+  };
   const result = await cloudRequest(`/battles/${recordId}`, {
     method: 'PUT',
-    body: recordData
+    body
   });
   console.log('[cloudUpdateRecord] 返回:', result);
   return result.success || result.code === 200;
@@ -571,20 +628,30 @@ async function syncCloudToLocal() {
                   }
                 }
               }
+              // 本地无图片时从云端图库补拉
+              if (!localRec.imageBase64 && localRec.cloudId) {
+                try {
+                  const galleryData = await cloudRequest(`/gallery/by-battle/${localRec.cloudId}`);
+                  if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
+                    localRec.imageBase64 = galleryData.data.image_data;
+                  }
+                } catch (e) { /* 无图片不影响同步 */ }
+              }
               // 保留本地 ID（IndexedDB 主键不变），只更新 cloudId
               localRec._synced = true;
               localRec._syncTime = Date.now();
               await dbPut(localRec);
               // 不再写入重复记录（cloudId 已关联，无需再用云端 ID 写入）
             } else {
-              // 3.3 本地完全没有 → 直接写入云端记录（补全本地图片）
-              let imgSrc = null;
-              // 找本地是否有相同图片的记录
-              const imgMatch = allLocal.find(r => r.imageBase64 && r.imageBase64.length > 100);
-              if (imgMatch) imgSrc = imgMatch;
-
-              if (!rec.imageBase64 && imgSrc) {
-                rec.imageBase64 = imgSrc.imageBase64;
+              // 3.3 本地完全没有 → 直接写入云端记录，并从 gallery 拉图片
+              if (!rec.imageBase64 && rec.cloudId) {
+                try {
+                  const galleryData = await cloudRequest(`/gallery/by-battle/${rec.cloudId}`);
+                  if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
+                    rec.imageBase64 = galleryData.data.image_data;
+                    console.log('[Sync] 从云端图库拉取图片, battle_id:', rec.cloudId);
+                  }
+                } catch (e) { /* 无图片不影响同步 */ }
               }
               rec._synced = true;
               rec._syncTime = Date.now();
