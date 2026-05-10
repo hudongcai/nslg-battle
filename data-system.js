@@ -604,7 +604,7 @@ async function switchTab(tabId, btn) {
     if (tp) tp.style.display = 'none';
   }
   if (tabId === 'data') { renderDataTable(); renderGallery(); }
-  if (tabId === 'winrate') { updateWinRateFilters(); renderWinRateTable(); renderEnemyFreq(); }
+  if (tabId === 'winrate') { const el = document.getElementById('tab-winrate'); if (el && typeof createCounterAnalysisUI === 'function') createCounterAnalysisUI(el); }
   if (tabId === 'library') { renderHeroes(); renderTactics(); }
   if (tabId === 'ranking') renderRanking();
   if (tabId === 'peijiang') onPeijiangChange();

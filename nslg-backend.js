@@ -345,6 +345,76 @@ app.delete('/api/projects/:id', async (req, res) => {
   }
 });
 
+// ========== 项目成员管理 API ==========
+app.get('/api/projects/:id/members', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.query(
+      'SELECT pm.*, u.phone, u.nickname, u.role_id as user_role FROM project_members pm LEFT JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ?',
+      [id]
+    );
+    res.json({
+      code: 200,
+      data: rows.map(r => ({
+        id: r.id,
+        project_id: r.project_id,
+        user_id: r.user_id,
+        phone: r.phone || '',
+        role: r.role || 'viewer',
+        nickname: r.nickname || '',
+        joined_at: r.joined_at
+      }))
+    });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+app.post('/api/projects/:id/members', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { phone, role } = req.body;
+    
+    if (!phone) {
+      return res.json({ code: 400, message: '缺少 phone 参数' });
+    }
+    
+    const [userRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (userRows.length === 0) {
+      return res.json({ code: 404, message: '用户不存在' });
+    }
+    
+    const userId = userRows[0].id;
+    const now = new Date();
+    await pool.query(
+      'INSERT INTO project_members (project_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)',
+      [id, userId, role || 'viewer', now]
+    );
+    
+    res.json({ code: 200, message: '添加成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+app.delete('/api/projects/:id/members/:phone', async (req, res) => {
+  try {
+    const { id, phone } = req.params;
+    
+    const [userRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (userRows.length === 0) {
+      return res.json({ code: 404, message: '用户不存在' });
+    }
+    const userId = userRows[0].id;
+    
+    await pool.query('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [id, userId]);
+    
+    res.json({ code: 200, message: '删除成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 app.get('/api/roles', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM roles');
@@ -465,24 +535,46 @@ app.get('/api/battles', async (req, res) => {
 
 app.post('/api/battles', async (req, res) => {
   try {
-    const { id, projectId, attacker_name, enemy_name, result, battle_date, description, 
-            left_loss, right_loss, left_total, right_total, left_generals, right_generals,
-            left_tactics, right_tactics, left_formation, right_formation } = req.body;
+    const body = req.body;
+    const projectId = body.projectId;
+    const attacker_name = body.attacker_name || body.attackerName;
+    const enemy_name = body.enemy_name || body.enemyName;
+    const result = body.result;
+    const battle_date = body.battle_date || body.battleDate;
+    const description = body.description;
+    const left_loss = body.left_loss || body.leftLoss;
+    const right_loss = body.right_loss || body.rightLoss;
+    const left_total = body.left_total || body.leftTotal;
+    const right_total = body.right_total || body.rightTotal;
+    const left_generals = body.left_generals || body.leftGenerals;
+    const right_generals = body.right_generals || body.rightGenerals;
+    const left_tactics = body.left_tactics || body.leftTactics;
+    const right_tactics = body.right_tactics || body.rightTactics;
+    const left_formation = body.left_formation || body.leftFormation;
+    const right_formation = body.right_formation || body.rightFormation;
+    const left_alliance = body.left_alliance || body.leftAlliance;
+    const right_alliance = body.right_alliance || body.rightAlliance;
     
-    const recordId = id || 'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const now = new Date();
     
+    const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
+    const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
+    const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
+    const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
+    
     const [resultRow] = await pool.query(
-      'INSERT INTO battle_records (id, project_id, attacker_name, enemy_name, result, battle_date, description, ' +
+      'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, ' +
       'left_loss, right_loss, left_total, right_total, left_generals, right_generals, ' +
-      'left_tactics, right_tactics, left_formation, right_formation, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [recordId, projectId, attacker_name, enemy_name, result, battle_date, description,
-       left_loss, right_loss, left_total, right_total, left_generals, right_generals,
-       left_tactics, right_tactics, left_formation, right_formation, now, now]
+      'left_tactics, right_tactics, left_formation, right_formation, left_alliance, right_alliance, ' +
+      'created_by, status, created_at, updated_at) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [projectId, attacker_name, enemy_name, result, battle_date, description,
+       left_loss, right_loss, left_total, right_total, left_generals_str, right_generals_str,
+       left_tactics_str, right_tactics_str, left_formation, right_formation, left_alliance, right_alliance,
+       1, 1, now, now]
     );
     
-    res.json({ code: 200, data: { id: recordId } });
+    res.json({ code: 200, data: { id: resultRow.insertId } });
   } catch (err) {
     res.json({ code: 500, message: err.message });
   }
@@ -620,6 +712,30 @@ app.put('/api/user_credits/:userId', async (req, res) => {
     params.push(userId);
     
     await pool.query(`UPDATE user_credits SET ${updates.join(', ')} WHERE user_id = ?`, params);
+    
+    res.json({ code: 200, message: '更新成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 按手机号更新积分（前端调用）
+app.put('/api/user_credits', async (req, res) => {
+  try {
+    const { phone, balance } = req.body;
+    
+    if (!phone || balance === undefined) {
+      return res.json({ code: 400, message: '缺少参数' });
+    }
+    
+    const [userRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (userRows.length === 0) {
+      return res.json({ code: 404, message: '用户不存在' });
+    }
+    
+    const userId = userRows[0].id;
+    
+    await pool.query('UPDATE user_credits SET balance = ?, last_updated = NOW() WHERE user_id = ?', [balance, userId]);
     
     res.json({ code: 200, message: '更新成功' });
   } catch (err) {

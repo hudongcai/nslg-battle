@@ -194,16 +194,9 @@ async function cloudGetUsers() {
 // 更新用户积分（云端）- 使用 user_credits 表
 async function cloudUpdateUserPoints(phone, points) {
   try {
-    const users = await cloudGetUsers();
-    const user = users.find(u => u.phone === phone);
-    if (!user) {
-      console.warn('[cloudUpdateUserPoints] 用户不存在:', phone);
-      return false;
-    }
-    
-    const res = await cloudRequest(`/user_credits/${user.id}`, {
+    const res = await cloudRequest(`/user_credits`, {
       method: 'PUT',
-      body: { balance: points }
+      body: { phone, balance: points }
     });
     return res.code === 200;
   } catch (e) {
@@ -327,6 +320,8 @@ async function cloudGetRecords(projectId) {
 async function cloudCreateRecord(record) {
   // 创建记录的副本，排除大字段
   const recordForCloud = { ...record };
+  // 移除前端生成的 id（让 MySQL 自动生成自增 ID）
+  delete recordForCloud.id;
   // 移除 base64 图片（太大，D1 限制 1MB）
   delete recordForCloud.imageBase64;
   delete recordForCloud.imageData;
