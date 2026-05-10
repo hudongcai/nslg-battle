@@ -215,7 +215,7 @@ async function dbAdd(rec) {
         try{
           const cloudRec = {
             projectId: rec.projectId || window.currentProjectId || null,
-            battleDate: rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            battleDate: (rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString() : new Date().toISOString())).split('T')[0],
             attackerName: rec.leftPlayer || rec.attackerName || '',
             enemyName: rec.rightPlayer || rec.enemyName || '',
             leftAlliance: rec.leftAlliance || '',
@@ -277,7 +277,7 @@ function dbPut(rec) {
         try{
           const cloudRec = {
             projectId: rec.projectId || window.currentProjectId || null,
-            battleDate: rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            battleDate: (rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString() : new Date().toISOString())).split('T')[0],
             attackerName: rec.leftPlayer || rec.attackerName || '',
             enemyName: rec.rightPlayer || rec.enemyName || '',
             leftAlliance: rec.leftAlliance || '',

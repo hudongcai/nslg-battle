@@ -382,7 +382,7 @@ async function cloudUpdateRecord(recordId, recordData) {
   console.log('[cloudUpdateRecord] 被调用, recordId:', recordId, '| recordData keys:', Object.keys(recordData));
   // 后端 PUT 接收 snake_case，前端存 camelCase，此处统一转换
   const body = {
-    battle_date:    recordData.battleDate || new Date().toISOString().split('T')[0],
+    battle_date:    (recordData.battleDate || new Date().toISOString()).split('T')[0],
     attacker_name:  recordData.attackerName  || recordData.attacker_name  || '',
     enemy_name:     recordData.enemyName     || recordData.enemy_name     || '',
     left_alliance:  recordData.leftAlliance  || recordData.left_alliance  || '',
