@@ -1059,6 +1059,8 @@ async function doAdjustPoints() {
 }
 
 window.deleteUser = async function(phone){
+  console.log('[deleteUser] 函数被调用，手机号:', phone);
+  console.log('[deleteUser] confirmDialog是否存在:', typeof window.confirmDialog);
   const confirmed = await window.confirmDialog({
     title: '删除用户',
     message: '确定要删除该用户吗？',
