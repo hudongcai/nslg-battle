@@ -512,7 +512,7 @@ function hideAccountDropdown(){
 
 // ========== 登录/注册 UI 逻辑 ==========
 // ========== 登录页面显示/隐藏 ==========
-function showLogin(){
+window.showLogin = function showLogin(){
   // 显示登录页，隐藏主应用
   const loginPage = document.getElementById('loginPage');
   if(loginPage) loginPage.style.display = 'flex';
@@ -597,9 +597,7 @@ function logout(){
 
 
 // ========== 密码登录 ==========
-
-// ========== 密码登录 ==========
-async function doLoginPwd(){
+window.doLoginPwd = async function doLoginPwd(){
   const phone = document.getElementById('loginPhone').value.trim();
   const pwd   = document.getElementById('loginPwd').value;
   const msgEl = document.getElementById('loginError');
