@@ -1061,7 +1061,17 @@ async function doAdjustPoints() {
 }
 
 window.deleteUser = async function(phone){
-  if(!confirm('确定删除该用户？删除后该用户将无法登录。'))return;
+  const confirmed = await confirmDialog({
+    title: '删除用户',
+    message: '确定要删除该用户吗？',
+    detail: `删除后，手机号 ${phone} 将无法登录系统，且相关数据将被清除。此操作不可撤销。`,
+    type: 'danger',
+    confirmText: '删除',
+    cancelText: '取消',
+    confirmClass: 'danger'
+  });
+  if(!confirmed) return;
+
   try{
     let cloudDeleted = false;
     // 先同步到云端：通过 DELETE /api/users/:id 删除
@@ -1079,7 +1089,14 @@ window.deleteUser = async function(phone){
         }
       } catch(syncErr) {
         console.warn('[deleteUser] 云端同步失败:', syncErr.message);
-        alert('云端删除失败，请检查网络或稍后重试');
+        await confirmDialog({
+          title: '删除失败',
+          message: '云端删除失败，请检查网络或稍后重试',
+          type: 'danger',
+          confirmText: '确定',
+          cancelText: '',
+          confirmClass: 'confirm'
+        });
         return;
       }
     }
@@ -1087,10 +1104,27 @@ window.deleteUser = async function(phone){
     await userDBDelete(phone);
     renderUserManage();
     addSysLog('delete', '删除用户: '+phone);
+    
     if (cloudDeleted) {
-      alert('删除成功');
+      await confirmDialog({
+        title: '删除成功',
+        message: '用户已成功删除',
+        type: 'success',
+        confirmText: '确定',
+        cancelText: '',
+        confirmClass: 'confirm'
+      });
     }
-  }catch(e){alert('删除失败：'+e.message);}
+  }catch(e){
+    await confirmDialog({
+      title: '删除失败',
+      message: '删除失败：' + e.message,
+      type: 'danger',
+      confirmText: '确定',
+      cancelText: '',
+      confirmClass: 'confirm'
+    });
+  }
 }
 
 // ========== 新增用户弹窗 ==========
