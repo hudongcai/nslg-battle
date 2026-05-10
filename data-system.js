@@ -237,9 +237,11 @@ async function dbAdd(rec) {
           };
           console.log('[dbAdd] 准备调用 cloudSync.createRecord, cloudRec:', JSON.stringify(cloudRec).slice(0,200));
           window.cloudSync.createRecord(cloudRec).then(result => {
-            console.log('[dbAdd] 战报云端同步返回:', result);
             if(result && result.id){
               console.log('[Cloud] 战报已同步到云端:', result.id);
+              rec.cloudId = result.id;
+              rec._cloudSynced = true;
+              dbPut(rec);
             }
           }).catch(e => console.error('[Cloud] 战报同步失败:', e));
         }catch(e){console.error('[Cloud] 战报同步异常:', e);}

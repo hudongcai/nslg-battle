@@ -16,16 +16,12 @@ const OCR_CONFIG = {
 
 // 动态获取 OCR 请求地址
 function getOcrEndpoint() {
-  // 如果配置了 CLOUD_API_BASE 且不是本地环境，优先用云端地址
-  if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-    // OCR Worker 部署在 www.zhenwu.fun，和页面同域时直接用相对路径
-    if (location.hostname === 'www.zhenwu.fun' || location.hostname === 'zhenwu.fun') {
-      return '/api/ocr';
-    }
-    return 'https://www.zhenwu.fun/api/ocr';
+  // 统一用 CLOUD_API_BASE（已区分本地3000/生产api.zhenwu.fun），避免打到静态服务器
+  if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) {
+    return CLOUD_API_BASE + '/ocr';
   }
-  // 本地开发环境
-  return '/api/ocr';
+  // 兜底：本地后端地址
+  return 'http://localhost:3000/api/ocr';
 }
 
 // ========== 状态 ==========
@@ -540,46 +536,6 @@ async function startBatchProcess() {
           if (window.currentProjectId && typeof addBattleToProject === 'function' && newId) {
             await addBattleToProject(window.currentProjectId, newId);
           }
-          // 同步到云端（如果云同步可用）
-          if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
-            try {
-              const cloudRec = {
-                projectId: window.currentProjectId,
-                battleDate: record.battleDate || new Date().toISOString().split('T')[0],
-                attackerName: record.leftPlayer || '',
-                enemyName: record.rightPlayer || '',
-                // 新增字段：联盟/阵型/伤亡
-                leftAlliance: record.leftAlliance || '',
-                rightAlliance: record.rightAlliance || '',
-                leftFormation: record.leftFormation || '',
-                rightFormation: record.rightFormation || '',
-                // 武将/战法独立字段（JSON 数组）
-                leftGenerals: record.leftGenerals || [],
-                rightGenerals: record.rightGenerals || [],
-                leftTactics: record.leftTactics || [],
-                rightTactics: record.rightTactics || [],
-                leftLoss: record.leftLoss ?? null,
-                leftTotal: record.leftTotal ?? null,
-                rightLoss: record.rightLoss ?? null,
-                rightTotal: record.rightTotal ?? null,
-                leftLossRate: record.leftLossRate ?? null,
-                rightLossRate: record.rightLossRate ?? null,
-                result: record.result || '',
-                description: record.description || ''
-              };
-              const cloudResult = await window.cloudSync.createRecord(cloudRec);
-              // 将云端ID写回本地记录，避免刷新后出现重复记录
-              if (cloudResult && cloudResult.id) {
-                record.cloudId = cloudResult.id;
-                await dbPut(record);
-                console.log('[OCR] 战报已同步到云端，cloudId:', cloudResult.id);
-              } else {
-                console.log('[OCR] 战报已同步到云端');
-              }
-            } catch(e) {
-              console.error('[OCR] 云端同步失败:', e);
-            }
-          }
         }
         item.status = 'done';
       } catch (e) {
@@ -598,22 +554,6 @@ async function startBatchProcess() {
             // 同步更新项目的 battleRecordIds
             if (window.currentProjectId && typeof addBattleToProject === 'function' && newId) {
               await addBattleToProject(window.currentProjectId, newId);
-            }
-            // 同步到云端（如果云同步可用）
-            if (window.cloudSync && typeof window.cloudSync.createRecord === 'function' && window.currentProjectId) {
-              try {
-                const cloudRec = {
-                  projectId: window.currentProjectId,
-                  battleDate: new Date().toISOString().split('T')[0],
-                  attackerName: errRec.imageName || '',
-                  enemyName: '',
-                  result: '',
-                  description: '解析失败: ' + (errRec._errorMsg || '未知错误')
-                };
-                await window.cloudSync.createRecord(cloudRec);
-              } catch(e) {
-                console.error('[OCR] 云端同步失败:', e);
-              }
             }
           }
         } catch (e2) { console.error('保存失败图片出错:', e2); }

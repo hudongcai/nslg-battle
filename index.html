@@ -283,6 +283,18 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .pkg-tool { border-color: rgba(81,207,102,.3); }
 .pkg-tool .pkg-label { color: var(--green); font-size: 11px; }
 .pkg-tool .pkg-note { color: var(--accent); font-size: 10px; }
+/* ===== 自定义角色下拉组件 ===== */
+.rd-wrap{position:relative;display:inline-block;width:100%;}
+.rd-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;cursor:pointer;user-select:none;transition:border-color .2s,background .2s;}
+.rd-trigger:hover,.rd-trigger.open{border-color:var(--accent);background:var(--bg3);}
+.rd-arrow{color:var(--text3);font-size:10px;transition:transform .2s;flex-shrink:0;}
+.rd-trigger.open .rd-arrow{transform:rotate(180deg);}
+.rd-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;}
+.rd-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;z-index:10200;box-shadow:0 8px 32px rgba(0,0,0,.55);display:none;}
+.rd-menu.open{display:block;animation:fadeUp .15s ease;}
+.rd-item{padding:10px 14px;cursor:pointer;font-size:13px;color:var(--text);transition:background .15s,color .15s;display:flex;align-items:center;gap:8px;}
+.rd-item:hover{background:var(--bg3);color:var(--accent);}
+.rd-item.selected{background:var(--accent-dim);color:var(--accent);font-weight:bold;}
 </style>
 
 <style>
@@ -354,6 +366,59 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .log-badge-delete{background:rgba(255,82,82,.1);color:#ff5252;padding:1px 6px;border-radius:3px;font-size:11px;}
 #navProject,#navUser{display:none;}
 </style>
+<script>
+// ===== 自定义角色下拉组件工具函数 =====
+const ROLE_ICONS = { super_admin: '👑', admin: '🛡️', member: '👤' };
+function rdToggle(wrapId) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const menu = wrap.querySelector('.rd-menu');
+  const trigger = wrap.querySelector('.rd-trigger');
+  const isOpen = menu.classList.contains('open');
+  document.querySelectorAll('.rd-menu.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.rd-trigger.open').forEach(t => t.classList.remove('open'));
+  if (!isOpen) { menu.classList.add('open'); trigger.classList.add('open'); }
+}
+function rdPick(wrapId, item) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  wrap.querySelectorAll('.rd-item').forEach(i => i.classList.remove('selected'));
+  item.classList.add('selected');
+  const label = wrap.querySelector('.rd-label');
+  if (label) label.innerHTML = item.innerHTML;
+  wrap.dataset.value = item.dataset.value;
+  wrap.querySelector('.rd-menu').classList.remove('open');
+  wrap.querySelector('.rd-trigger').classList.remove('open');
+}
+function rdGetValue(wrapId) {
+  const w = document.getElementById(wrapId);
+  return w ? (w.dataset.value || '') : '';
+}
+function rdBuild(wrapId, roles, selectedValue, extraOnclick) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const sel = roles.find(r => r.id === selectedValue) || roles[0] || { id: '', name: '请选择' };
+  wrap.dataset.value = sel.id;
+  wrap.innerHTML = `
+    <div class="rd-trigger" onclick="rdToggle('${wrapId}')">
+      <span class="rd-label">${ROLE_ICONS[sel.id] || '👤'} ${sel.name}</span>
+      <span class="rd-arrow">▾</span>
+    </div>
+    <div class="rd-menu">
+      ${roles.map(r => `
+        <div class="rd-item ${r.id === sel.id ? 'selected' : ''}" data-value="${r.id}"
+          onclick="rdPick('${wrapId}',this)${extraOnclick ? ';' + extraOnclick.replace('__VALUE__', r.id) : ''}">
+          ${ROLE_ICONS[r.id] || '👤'} ${r.name}
+        </div>`).join('')}
+    </div>`;
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.rd-wrap')) {
+    document.querySelectorAll('.rd-menu.open').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.rd-trigger.open').forEach(t => t.classList.remove('open'));
+  }
+});
+</script>
 
 </head>
 <body>
@@ -1175,18 +1240,37 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 
 <!-- 新增用户弹窗 -->
 <div id="addUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10001;justify-content:center;align-items:center;">
-  <div class="login-box" style="margin:0;">
-    <span class="close-btn" onclick="closeAddUserModal()">&times;</span>
-    <h2>新增用户</h2>
-    <input id="addUserName" placeholder="姓名（选填）">
-    <input id="addUserPhone" placeholder="手机号" maxlength="11">
-    <input id="addUserPwd" type="password" placeholder="密码（至少6位）">
-    <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">角色：
-      <select id="addUserRole" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;"></select>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:90%;max-width:400px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+    <!-- 标题栏 -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
+      <h3 style="margin:0;color:var(--accent);font-size:15px;">👤 新增用户</h3>
+      <button onclick="closeAddUserModal()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">&times;</button>
     </div>
-    <div class="error-msg" id="addUserError"></div>
-    <button onclick="doAddUser()">确认新增</button>
-    <div class="switch-link" onclick="closeAddUserModal()">取消</div>
+    <!-- 表单内容 -->
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">姓名 <span style="color:var(--text3);">（选填）</span></label>
+        <input id="addUserName" placeholder="请输入姓名" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:14px;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">手机号 <span style="color:var(--red);font-size:11px;">*</span></label>
+        <input id="addUserPhone" placeholder="请输入11位手机号" maxlength="11" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:14px;box-sizing:border-box;font-family:monospace;letter-spacing:1px;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">登录密码 <span style="color:var(--red);font-size:11px;">*</span></label>
+        <input id="addUserPwd" type="password" placeholder="至少6位字符" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:14px;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">角色权限</label>
+        <div class="rd-wrap" id="addUserRoleWrap" data-value="member"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);background:var(--bg3);padding:8px 12px;border-radius:6px;">💡 新用户默认赠送 18 积分，请将登录密码告知用户</div>
+      <div id="addUserError" class="msg-err" style="font-size:13px;min-height:18px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-secondary" onclick="closeAddUserModal()" style="flex:1;padding:10px;">取消</button>
+        <button class="btn btn-primary" onclick="doAddUser()" style="flex:2;padding:10px;">确认新增</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1303,15 +1387,15 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   </div>
 </div>
 
-  <script src="cloud-sync.js?v=202605110001"></script>
-  <script src="data-system.js?v=202605081912"></script>
+  <script src="cloud-sync.js?v=202605110003"></script>
+  <script src="data-system.js?v=202605110002"></script>
   <script src="data_heroes.js?v=202605081430"></script>
   <script src="data_tactics.js?v=202605081430"></script>
   <script src="counter-analysis.js?v=202605100001"></script>
-  <script src="user-system.js?v=202605081430"></script>
-  <script src="project-system.js?v=202605081430"></script>
-  <script src="role-system.js?v=202605081430"></script>
-  <script src="ocr-system.js?v=202605081815"></script>
+  <script src="user-system.js?v=202605110006"></script>
+  <script src="project-system.js?v=202605110001"></script>
+  <script src="role-system.js?v=202605110001"></script>
+  <script src="ocr-system.js?v=202605110001"></script>
   <script src="data-perm.js?v=202605081430"></script>
   <script src="points-mall.js?v=202605081430"></script>
 <script>
