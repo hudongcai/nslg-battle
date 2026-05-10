@@ -1,4 +1,4 @@
-﻿/* ==========================================================
+/* ==========================================================
    USER SYSTEM - 用户登录、注册、用户管理
    ========================================================== */
 
@@ -1063,24 +1063,33 @@ async function doAdjustPoints() {
 async function deleteUser(phone){
   if(!confirm('确定删除该用户？删除后该用户将无法登录。'))return;
   try{
+    let cloudDeleted = false;
     // 先同步到云端：通过 DELETE /api/users/:id 删除
-    try {
-      if (typeof cloudRequest === 'function') {
+    if (typeof cloudRequest === 'function') {
+      try {
         const userData = await cloudRequest('/users');
-        const list = (userData.data && userData.data.list) || [];
+        const list = userData.data || [];
         const cloudUser = list.find(u => u.phone === phone);
         if (cloudUser && cloudUser.id) {
-          await cloudRequest(`/users/${cloudUser.id}`, { method: 'DELETE' });
-          console.log('[deleteUser] 云端删除成功:', phone);
+          const delResult = await cloudRequest(`/users/${cloudUser.id}`, { method: 'DELETE' });
+          if (delResult.code === 200) {
+            console.log('[deleteUser] 云端删除成功:', phone);
+            cloudDeleted = true;
+          }
         }
+      } catch(syncErr) {
+        console.warn('[deleteUser] 云端同步失败:', syncErr.message);
+        alert('云端删除失败，请检查网络或稍后重试');
+        return;
       }
-    } catch(syncErr) {
-      console.warn('[deleteUser] 云端同步失败（继续本地删除）:', syncErr.message);
     }
     // 再删本地
     await userDBDelete(phone);
     renderUserManage();
     addSysLog('delete', '删除用户: '+phone);
+    if (cloudDeleted) {
+      alert('删除成功');
+    }
   }catch(e){alert('删除失败：'+e.message);}
 }
 

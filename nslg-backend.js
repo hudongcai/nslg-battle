@@ -163,6 +163,25 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
+    if (userRows.length === 0) {
+      return res.json({ code: 404, message: '用户不存在' });
+    }
+    
+    await pool.query('DELETE FROM user_credits WHERE user_id = ?', [id]);
+    await pool.query('DELETE FROM project_members WHERE user_id = ?', [id]);
+    await pool.query('DELETE FROM users WHERE id = ?', [id]);
+    
+    res.json({ code: 200, message: '删除成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 app.put('/api/users/:phone', async (req, res) => {
   try {
     const { phone } = req.params;
