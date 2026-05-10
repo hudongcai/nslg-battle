@@ -493,7 +493,7 @@ async function clearProjectFilter(){
   }
   if(tabWin && tabWin.classList.contains('active')){
     const el = document.getElementById('tab-winrate');
-    if(el && typeof createCounterAnalysisUI === 'function') createCounterAnalysisUI(el);
+    if(el && typeof createCounterAnalysisUI === 'function') createCounterAnalysisUI(el).catch(e => console.error('[createCounterAnalysisUI] 失败:', e));
   }
 }
 

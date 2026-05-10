@@ -76,17 +76,31 @@
 
     // 按对战组合分组：key = 左队key + "VS" + 右队key
     const battleGroups = {};
+    let skippedCount = 0;
+    let processedCount = 0;
 
     for (const rec of records) {
-      const leftGens = normalizeGenerals(rec.leftGenerals || rec.left_generals || []);
-      const leftTacs = normalizeTactics(rec.leftTactics || rec.left_tactics || []);
-      const leftForm = rec.leftFormation || rec.left_formation || '';
-      
-      const rightGens = normalizeGenerals(rec.rightGenerals || rec.right_generals || []);
-      const rightTacs = normalizeTactics(rec.rightTactics || rec.right_tactics || []);
-      const rightForm = rec.rightFormation || rec.right_formation || '';
+      // 调试：打印第一条记录的结构
+      if (processedCount === 0) {
+        console.log('[analyzeCounterRelationship] 第一条记录结构:', Object.keys(rec));
+        console.log('[analyzeCounterRelationship] 武将字段:', rec.leftGenerals, rec.left_generals, rec.rightGenerals, rec.right_generals);
+        console.log('[analyzeCounterRelationship] 战法字段:', rec.leftTactics, rec.left_tactics, rec.rightTactics, rec.right_tactics);
+        console.log('[analyzeCounterRelationship] 阵型字段:', rec.leftFormation, rec.left_formation, rec.rightFormation, rec.right_formation);
+      }
 
-      if (leftGens.length < 1 || rightGens.length < 1) continue;
+      const leftGens = normalizeGenerals(rec.leftGenerals || rec.left_generals || rec.left_general || rec.leftGeneral || []);
+      const leftTacs = normalizeTactics(rec.leftTactics || rec.left_tactics || rec.left_tactic || []);
+      const leftForm = rec.leftFormation || rec.left_formation || rec.left_form || '';
+      
+      const rightGens = normalizeGenerals(rec.rightGenerals || rec.right_generals || rec.right_general || rec.rightGeneral || []);
+      const rightTacs = normalizeTactics(rec.rightTactics || rec.right_tactics || rec.right_tactic || []);
+      const rightForm = rec.rightFormation || rec.right_formation || rec.right_form || '';
+
+      processedCount++;
+      if (leftGens.length < 1 || rightGens.length < 1) {
+        skippedCount++;
+        continue;
+      }
 
       const leftKey = getTeamKey(leftGens, leftTacs, leftForm);
       const rightKey = getTeamKey(rightGens, rightTacs, rightForm);
@@ -181,12 +195,32 @@
   /**
    * 渲染克制关系分析表格
    */
-  window.renderCounterAnalysis = function() {
+  window.renderCounterAnalysis = async function() {
     const container = document.getElementById('counterAnalysisBody');
-    if (!container) return;
+    if (!container) {
+      console.warn('[renderCounterAnalysis] 找不到容器元素 #counterAnalysisBody');
+      return;
+    }
 
-    const records = typeof loadAllRecords === 'function' ? loadAllRecords() : (window.allRecords || []);
+    let records = [];
+    if (typeof loadAllRecords === 'function') {
+      try {
+        await loadAllRecords();
+        records = window.allRecords || [];
+        console.log('[renderCounterAnalysis] 通过 loadAllRecords() 获取到', records.length, '条记录');
+      } catch (e) {
+        console.error('[renderCounterAnalysis] 加载记录失败:', e);
+        records = window.allRecords || [];
+      }
+    } else if (window.allRecords) {
+      records = window.allRecords;
+      console.log('[renderCounterAnalysis] 通过 window.allRecords 获取到', records.length, '条记录');
+    } else {
+      console.warn('[renderCounterAnalysis] 无法获取记录数据');
+    }
+
     const data = analyzeCounterRelationship(records);
+    console.log('[renderCounterAnalysis] 分析出', data.length, '组克制关系');
 
     if (data.length === 0) {
       container.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#999;padding:40px 0;">暂无克制关系数据<br><small style="color:#bbb">需要至少两条相同对战组合的战报</small></td></tr>';
@@ -307,11 +341,22 @@
   /**
    * 渲染敌方高频队伍列表
    */
-  window.renderEnemyHighFreq = function() {
+  window.renderEnemyHighFreq = async function() {
     const container = document.getElementById('enemyHighFreqBody');
     if (!container) return;
 
-    const records = typeof loadAllRecords === 'function' ? loadAllRecords() : (window.allRecords || []);
+    let records = [];
+    if (typeof loadAllRecords === 'function') {
+      try {
+        await loadAllRecords();
+        records = window.allRecords || [];
+      } catch (e) {
+        records = window.allRecords || [];
+      }
+    } else {
+      records = window.allRecords || [];
+    }
+
     const data = analyzeEnemyHighFreq(records);
 
     if (data.length === 0) {
@@ -440,11 +485,22 @@
   /**
    * 渲染高频克制推荐
    */
-  window.renderCounterRecommendations = function() {
+  window.renderCounterRecommendations = async function() {
     const container = document.getElementById('counterRecommendations');
     if (!container) return;
 
-    const records = typeof loadAllRecords === 'function' ? loadAllRecords() : (window.allRecords || []);
+    let records = [];
+    if (typeof loadAllRecords === 'function') {
+      try {
+        await loadAllRecords();
+        records = window.allRecords || [];
+      } catch (e) {
+        records = window.allRecords || [];
+      }
+    } else {
+      records = window.allRecords || [];
+    }
+
     const data = analyzeCounterRecommendations(records);
 
     if (data.length === 0) {
@@ -514,7 +570,7 @@
   /**
    * 创建克制分析页面 UI
    */
-  window.createCounterAnalysisUI = function(parent) {
+  window.createCounterAnalysisUI = async function(parent) {
     parent.innerHTML = `
       <div style="padding:16px;">
         <!-- 标签页切换 -->
@@ -589,7 +645,7 @@
   /**
    * 切换标签页
    */
-  window.switchCounterTab = function(tabName) {
+  window.switchCounterTab = async function(tabName) {
     const tabs = ['relationship', 'enemy', 'recommend'];
     
     tabs.forEach(tab => {
@@ -608,10 +664,10 @@
       }
     });
 
-    // 渲染对应内容
-    if (tabName === 'relationship') renderCounterAnalysis();
-    else if (tabName === 'enemy') renderEnemyHighFreq();
-    else if (tabName === 'recommend') renderCounterRecommendations();
+    // 渲染对应内容（异步）
+    if (tabName === 'relationship') await renderCounterAnalysis();
+    else if (tabName === 'enemy') await renderEnemyHighFreq();
+    else if (tabName === 'recommend') await renderCounterRecommendations();
   };
 
   /**
