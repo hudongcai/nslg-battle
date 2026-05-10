@@ -1060,7 +1060,7 @@ async function doAdjustPoints() {
   }
 }
 
-async function deleteUser(phone){
+window.deleteUser = async function(phone){
   if(!confirm('确定删除该用户？删除后该用户将无法登录。'))return;
   try{
     let cloudDeleted = false;
