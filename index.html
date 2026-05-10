@@ -648,6 +648,8 @@ window.confirmDialog = function(options){
       </div>
     `;
 
+    document.body.appendChild(overlay);
+
     document.getElementById('confirmCancelBtn').onclick = function(){
       resolve(false);
       overlay.remove();
@@ -656,8 +658,6 @@ window.confirmDialog = function(options){
       resolve(true);
       overlay.remove();
     };
-
-    document.body.appendChild(overlay);
   });
 }
 
