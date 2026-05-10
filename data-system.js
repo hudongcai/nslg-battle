@@ -471,6 +471,7 @@ async function loadAllRecords() {
       } catch (e) { }
     }
   }
+  window.allRecords = allRecords;
   updateGlobalStats();
 }
 
