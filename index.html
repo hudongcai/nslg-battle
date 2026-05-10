@@ -605,7 +605,7 @@ const TACTIC_MAP={};ALL_TACTICS.forEach(t=>TACTIC_MAP[t.name]=t);
 // (updateOcrStatus 由 data-system.js 定义，此处不重复)
 
 // ========== 自定义确认对话框 ==========
-function confirmDialog(options){
+window.confirmDialog = function(options){
   return new Promise((resolve)=>{
     const {
       title='确认操作',
