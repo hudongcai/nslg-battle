@@ -77,14 +77,15 @@ async function callOCRAPI(base64Data) {
   const promptText = `请识别这张三国谋定天下游戏的战报截图，严格按照格式输出：
 
 规则：
-- 玩家名称区域格式为"同盟名|玩家名"（如"真武|憨憨牛"），同盟名在"|"前，玩家名在"|"后
-- 若没有"|"，说明该玩家没有同盟，同盟填"无"，玩家填完整名称
-- 同盟和玩家必须分开填写，不要合并
+- 玩家名称区域格式为"同盟名丨玩家名"，分隔符是游戏内的竖线"丨"（也可能显示为"|"或"｜"）
+- 同盟名在竖线之前，玩家名在竖线之后，如"真武丨憨憨牛"则同盟=真武、玩家=憨憨牛
+- 若没有竖线分隔符，说明该玩家没有同盟，同盟填"无"，玩家填完整名称
+- 同盟和玩家必须分开填写，不要把两者合并写在一行
 - 无法识别的字段填"未知"，数字字段无法识别填0
 
 【左侧】
-同盟：（"|"前的同盟名，无同盟填"无"）
-玩家：（"|"后的玩家名，无"|"则填完整名称）
+同盟：（竖线前的同盟名，无同盟填"无"）
+玩家：（竖线后的玩家名，无竖线则填完整名称）
 阵型：（如雁形阵、箕形阵、鱼鳞阵，无法识别填"未知"）
 战损：（纯数字，如 8152）
 总兵：（纯数字，如 30000）
@@ -95,8 +96,8 @@ async function callOCRAPI(base64Data) {
 武将3：武将名
 战法3：战法G,战法H,战法I
 【右侧】
-同盟：（"|"前的同盟名，无同盟填"无"）
-玩家：（"|"后的玩家名，无"|"则填完整名称）
+同盟：（竖线前的同盟名，无同盟填"无"）
+玩家：（竖线后的玩家名，无竖线则填完整名称）
 阵型：（如雁形阵、箕形阵、鱼鳞阵，无法识别填"未知"）
 战损：（纯数字）
 总兵：（纯数字）
@@ -249,21 +250,26 @@ function parseOCRResponse(text) {
     if (key.includes('玩家') || key.includes('玩家名')) {
       let alliance = '';
       let name = val;
-      // AI 有时把"同盟|玩家"整体放在玩家字段，需要在此兜底拆分
-      if (name.includes('|')) {
-        const parts = name.split('|');
+      // 兼容游戏内竖线 丨(U+4E28)、ASCII |、全角 ｜(U+FF5C)
+      const pipeRe = /[|｜丨]/;
+      if (pipeRe.test(name)) {
+        const parts = name.split(pipeRe);
         alliance = parts[0].trim();
         name = parts[parts.length - 1].trim();
       }
       if (side === 'left') {
         record.leftPlayer = name;
-        if (alliance && alliance !== '无' && !record.leftAlliance) record.leftAlliance = alliance;
+        if (alliance && alliance !== '无' && alliance !== '未知' && !record.leftAlliance) record.leftAlliance = alliance;
       } else if (side === 'right') {
         record.rightPlayer = name;
-        if (alliance && alliance !== '无' && !record.rightAlliance) record.rightAlliance = alliance;
+        if (alliance && alliance !== '无' && alliance !== '未知' && !record.rightAlliance) record.rightAlliance = alliance;
       }
     } else if (key.includes('同盟')) {
-      const allianceVal = val === '无' ? '' : val;
+      // 防止 AI 把"同盟丨玩家"写在同盟字段：只取竖线前面部分
+      let allianceVal = val;
+      const pipeRe2 = /[|｜丨]/;
+      if (pipeRe2.test(allianceVal)) allianceVal = allianceVal.split(pipeRe2)[0].trim();
+      if (allianceVal === '无' || allianceVal === '未知') allianceVal = '';
       if (side === 'left') record.leftAlliance = allianceVal;
       else if (side === 'right') record.rightAlliance = allianceVal;
     } else if (key.includes('阵型')) {
