@@ -2,16 +2,25 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const axios = require('axios');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 const PORT = 3000;
 
-app.use(cors({
-  origin: ['https://www.zhenwu.fun', 'http://localhost:8080', 'http://127.0.0.1:8080'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'token']
-}));
+app.use(express.static(path.join(__dirname, '.')));
+
+app.use(function(req, res, next) {
+  const origin = req.headers.origin;
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, token');
+  res.header('Access-Control-Allow-Credentials', origin ? 'true' : 'false');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
 app.use(express.json());
 
 const dbConfig = {
@@ -54,8 +63,15 @@ app.post('/api/auth/login', async (req, res) => {
       const [creditRows] = await pool.query('SELECT balance FROM user_credits WHERE user_id = ?', [user.id]);
       const points = creditRows.length > 0 ? creditRows[0].balance : 18;
       
-      const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || (req.connection.socket ? req.connection.socket.remoteAddress : null);
-      const ip = clientIP === '::1' || clientIP === '::ffff:127.0.0.1' ? '127.0.0.1' : clientIP;
+      const forwardedFor = req.headers['x-forwarded-for'];
+      const realIP = req.headers['x-real-ip'];
+      const clientIP = forwardedFor ? forwardedFor.split(',')[0].trim() : 
+                       realIP || 
+                       req.ip || 
+                       req.connection.remoteAddress || 
+                       req.socket.remoteAddress || 
+                       (req.connection.socket ? req.connection.socket.remoteAddress : null);
+      const ip = (clientIP === '::1' || clientIP === '::ffff:127.0.0.1' || clientIP === '::ffff:0:1') ? '127.0.0.1' : clientIP;
       
       await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ? WHERE id = ?', [ip, user.id]);
       
