@@ -53,6 +53,8 @@ app.post('/api/auth/login', async (req, res) => {
       const [creditRows] = await pool.query('SELECT balance FROM user_credits WHERE user_id = ?', [user.id]);
       const points = creditRows.length > 0 ? creditRows[0].balance : 18;
       
+      await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
+      
       res.json({ 
         code: 200, 
         data: { 
