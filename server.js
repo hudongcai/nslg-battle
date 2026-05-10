@@ -49,7 +49,10 @@ app.post('/api/auth/login', async (req, res) => {
       const [creditRows] = await pool.query('SELECT balance FROM user_credits WHERE user_id = ?', [user.id]);
       const points = creditRows.length > 0 ? creditRows[0].balance : 18;
       
-      await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
+      const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || (req.connection.socket ? req.connection.socket.remoteAddress : null);
+      const ip = clientIP === '::1' || clientIP === '::ffff:127.0.0.1' ? '127.0.0.1' : clientIP;
+      
+      await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ? WHERE id = ?', [ip, user.id]);
       
       res.json({ 
         code: 200, 
