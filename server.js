@@ -6,7 +6,12 @@ const cors = require('cors');
 const app = express();
 const PORT = 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: ['https://www.zhenwu.fun', 'http://localhost:8080', 'http://127.0.0.1:8080'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'token']
+}));
 app.use(express.json());
 
 const dbConfig = {
