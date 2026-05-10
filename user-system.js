@@ -1061,7 +1061,7 @@ async function doAdjustPoints() {
 }
 
 window.deleteUser = async function(phone){
-  const confirmed = await confirmDialog({
+  const confirmed = await window.confirmDialog({
     title: '删除用户',
     message: '确定要删除该用户吗？',
     detail: `删除后，手机号 ${phone} 将无法登录系统，且相关数据将被清除。此操作不可撤销。`,
@@ -1089,7 +1089,7 @@ window.deleteUser = async function(phone){
         }
       } catch(syncErr) {
         console.warn('[deleteUser] 云端同步失败:', syncErr.message);
-        await confirmDialog({
+        await window.confirmDialog({
           title: '删除失败',
           message: '云端删除失败，请检查网络或稍后重试',
           type: 'danger',
@@ -1106,7 +1106,7 @@ window.deleteUser = async function(phone){
     addSysLog('delete', '删除用户: '+phone);
     
     if (cloudDeleted) {
-      await confirmDialog({
+      await window.confirmDialog({
         title: '删除成功',
         message: '用户已成功删除',
         type: 'success',
@@ -1116,7 +1116,7 @@ window.deleteUser = async function(phone){
       });
     }
   }catch(e){
-    await confirmDialog({
+    await window.confirmDialog({
       title: '删除失败',
       message: '删除失败：' + e.message,
       type: 'danger',
