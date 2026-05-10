@@ -255,7 +255,11 @@
     const el = document.getElementById('counterAnalysisBody');
     if (!el) return;
     await ensureRecords();
-    const data = analyzeCounter(records());
+    const recs = records();
+    console.log('[CA] 克制关系分析 records:', recs.length,
+      recs[0] ? '第一条keys:' + Object.keys(recs[0]).join(',') : '(空)');
+    const data = analyzeCounter(recs);
+    console.log('[CA] 克制关系分析 结果组数:', data.length);
     window._caCounterData = data;
 
     if (!data.length) {
@@ -292,7 +296,17 @@
     const el = document.getElementById('enemyHighFreqBody');
     if (!el) return;
     await ensureRecords();
-    const data = analyzeEnemyFreq(records());
+    const recs = records();
+    const first = recs[0];
+    if (first) {
+      console.log('[CA] 敌方高频 第一条记录:', {
+        rightGenerals: first.rightGenerals || first.right_generals,
+        leftGenerals:  first.leftGenerals  || first.left_generals,
+        result:        first.result
+      });
+    }
+    const data = analyzeEnemyFreq(recs);
+    console.log('[CA] 敌方高频 records:', recs.length, '分析结果:', data.length);
 
     if (!data.length) {
       el.innerHTML = `<tr><td colspan="4" class="ca-empty">暂无敌方队伍数据</td></tr>`;
