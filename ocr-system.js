@@ -75,12 +75,19 @@ async function callOCRAPI(base64Data) {
   const timeout = setTimeout(() => controller.abort(), OCR_CONFIG.timeout);
 
   const promptText = `请识别这张三国谋定天下游戏的战报截图，严格按照格式输出：
+
+规则：
+- 玩家名称区域格式为"同盟名|玩家名"（如"真武|憨憨牛"），同盟名在"|"前，玩家名在"|"后
+- 若没有"|"，说明该玩家没有同盟，同盟填"无"，玩家填完整名称
+- 同盟和玩家必须分开填写，不要合并
+- 无法识别的字段填"未知"，数字字段无法识别填0
+
 【左侧】
-同盟：xxx（头像上方"|"前面的部分，如"真武|憨憨牛"则同盟=真武）
-玩家：xxx（头像上方"|"后面的部分，如"真武|憨憨牛"则玩家=憨憨牛）
-阵型：xxx（如雁形阵、箕形阵、鱼鳞阵）
-战损：数字（如 8152）
-总兵：数字（如 30000）
+同盟：（"|"前的同盟名，无同盟填"无"）
+玩家：（"|"后的玩家名，无"|"则填完整名称）
+阵型：（如雁形阵、箕形阵、鱼鳞阵，无法识别填"未知"）
+战损：（纯数字，如 8152）
+总兵：（纯数字，如 30000）
 武将1：武将名
 战法1：战法A,战法B,战法C
 武将2：武将名
@@ -88,11 +95,11 @@ async function callOCRAPI(base64Data) {
 武将3：武将名
 战法3：战法G,战法H,战法I
 【右侧】
-同盟：xxx
-玩家：xxx
-阵型：xxx
-战损：数字
-总兵：数字
+同盟：（"|"前的同盟名，无同盟填"无"）
+玩家：（"|"后的玩家名，无"|"则填完整名称）
+阵型：（如雁形阵、箕形阵、鱼鳞阵，无法识别填"未知"）
+战损：（纯数字）
+总兵：（纯数字）
 武将1：武将名
 战法1：战法A,战法B,战法C
 武将2：武将名
@@ -103,7 +110,7 @@ async function callOCRAPI(base64Data) {
 胜负：胜 或 败 或 平
 【日期】
 战斗日期：YYYY-MM-DD，如 2026-05-07，无法识别则留空
-注意：每个武将对应3个战法，用英文逗号分隔；无法识别填"未知"`;
+注意：每个武将对应3个战法，用英文逗号分隔`;
 
   try {
     const reqBody = {
@@ -240,14 +247,25 @@ function parseOCRResponse(text) {
       continue;
     }
     if (key.includes('玩家') || key.includes('玩家名')) {
-      // 支持 "真武|憨憨牛" 格式，取 | 后面部分作为玩家名
+      let alliance = '';
       let name = val;
-      if (name.includes('|')) name = name.split('|').pop().trim();
-      if (side === 'left') record.leftPlayer = name;
-      else if (side === 'right') record.rightPlayer = name;
+      // AI 有时把"同盟|玩家"整体放在玩家字段，需要在此兜底拆分
+      if (name.includes('|')) {
+        const parts = name.split('|');
+        alliance = parts[0].trim();
+        name = parts[parts.length - 1].trim();
+      }
+      if (side === 'left') {
+        record.leftPlayer = name;
+        if (alliance && alliance !== '无' && !record.leftAlliance) record.leftAlliance = alliance;
+      } else if (side === 'right') {
+        record.rightPlayer = name;
+        if (alliance && alliance !== '无' && !record.rightAlliance) record.rightAlliance = alliance;
+      }
     } else if (key.includes('同盟')) {
-      if (side === 'left') record.leftAlliance = val;
-      else if (side === 'right') record.rightAlliance = val;
+      const allianceVal = val === '无' ? '' : val;
+      if (side === 'left') record.leftAlliance = allianceVal;
+      else if (side === 'right') record.rightAlliance = allianceVal;
     } else if (key.includes('阵型')) {
       if (side === 'left') record.leftFormation = val;
       else if (side === 'right') record.rightFormation = val;
