@@ -607,6 +607,12 @@ const TACTIC_MAP={};ALL_TACTICS.forEach(t=>TACTIC_MAP[t.name]=t);
 // ========== 自定义确认对话框 ==========
 window.confirmDialog = function(options){
   return new Promise((resolve)=>{
+    function escHtml(s){
+      if(!s)return'';
+      const d=document.createElement('div');
+      d.textContent=s;
+      return d.innerHTML;
+    }
     const {
       title='确认操作',
       message='确定要执行此操作吗？',
