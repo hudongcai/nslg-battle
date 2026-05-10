@@ -629,9 +629,6 @@ window.confirmDialog = function(options){
     overlay.innerHTML = `
       <div class="confirm-panel">
         <div class="confirm-header">
-          <div class="confirm-icon ${type}">
-            ${type==='danger'?'⚠️':type==='success'?'✅':'⚠️'}
-          </div>
           <h3 class="confirm-title">${escHtml(title)}</h3>
         </div>
         <div class="confirm-body">
@@ -639,11 +636,20 @@ window.confirmDialog = function(options){
           ${detail?'<p>'+escHtml(detail)+'</p>':''}
         </div>
         <div class="confirm-footer">
-          <button class="confirm-btn cancel" onclick="(()=>{resolve(false);overlay.remove();})()">${escHtml(cancelText)}</button>
-          <button class="confirm-btn ${confirmClass}" onclick="(()=>{resolve(true);overlay.remove();})()">${escHtml(confirmText)}</button>
+          <button class="confirm-btn cancel" id="confirmCancelBtn">${escHtml(cancelText)}</button>
+          <button class="confirm-btn ${confirmClass}" id="confirmConfirmBtn">${escHtml(confirmText)}</button>
         </div>
       </div>
     `;
+
+    document.getElementById('confirmCancelBtn').onclick = function(){
+      resolve(false);
+      overlay.remove();
+    };
+    document.getElementById('confirmConfirmBtn').onclick = function(){
+      resolve(true);
+      overlay.remove();
+    };
 
     document.body.appendChild(overlay);
   });
