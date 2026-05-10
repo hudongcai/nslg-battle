@@ -932,7 +932,7 @@ async function renderUserManage(){
       '<td style="white-space:nowrap;"><div style="display:flex;gap:6px;align-items:center;">'+
         '<button class="btn-sm" onclick="openAdjustPointsModal(\''+u.phone+'\', '+(u.points||0)+')" title="调整积分">💎调分</button>'+
         '<button class="btn-sm" onclick="resetUserPwd(\''+u.phone+'\')">重置密码</button>'+
-        (!isSuper?'<button class="btn-sm danger" onclick="deleteUser(\''+u.phone+'\')">删除</button>':'<span style="color:var(--text3);font-size:11px;">不可操作</span>')+
+        (!isSuper?'<button class="btn-sm danger" onclick="window.deleteUser(\''+u.phone+'\')">删除</button>':'<span style="color:var(--text3);font-size:11px;">不可操作</span>')+
       '</div></td>'+
     '</tr>';
   }).join('');
