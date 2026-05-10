@@ -165,6 +165,7 @@ async function callOCRAPI(base64Data) {
 
 // ========== 解析 OCR 返回 ==========
 function parseOCRResponse(text) {
+  console.log('[OCR 原始返回]\n' + text);
   const record = {
     time: new Date().toLocaleString('zh-CN'),
     result: '',
