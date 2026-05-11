@@ -1,5 +1,5 @@
 /**
- * 克制分析模块 v202605120001
+ * 克制分析模块 v202605120002
  * 1. 克制关系分析  2. 敌方高频队伍  3. 高频克制推荐
  */
 (function () {
@@ -82,7 +82,7 @@
     return f ? `<span class="ca-form-badge">${escHtml(f)}</span>` : '<span class="ca-dim">—</span>';
   }
 
-  // 两行队伍芯片：第一行武将+阵型，第二行战法
+  // 两行队伍芯片：第一行武将+阵型，第二行战法，整体加盒子强关联
   function teamChip(generals, tactics, formation, isWinner) {
     const gens = normGens(generals);
     const tacs = normTacs(tactics);
@@ -93,7 +93,7 @@
             .join('<span class="ca-dot">·</span>')
       : '<span class="ca-dim">—</span>';
 
-    const line2 = tacs.length
+    const tacRow = tacs.length
       ? `<div class="ca-tacs">${tacs.map(t => `<span class="ca-tac">${escHtml(t)}</span>`).join('')}</div>`
       : '';
 
@@ -101,7 +101,7 @@
 
     return `<div class="ca-chip${isWinner ? ' ca-chip-winner' : ''}">
       <div class="ca-chip-row1">${line1}${formTag ? `<span class="ca-chip-sep"></span>${formTag}` : ''}</div>
-      ${line2}
+      ${tacRow}
     </div>`;
   }
 
@@ -300,9 +300,7 @@
     el.innerHTML = data.map((d, i) => `
       <tr class="ca-row${i < 3 ? ' ca-top3' : ''}">
         <td class="ca-idx ca-rank${i < 3 ? ' ca-rank-top' : ''}">${i + 1}</td>
-        <td class="ca-gen-cell"><div class="ca-gens-nowrap">${gensHtml(d.generals)}</div></td>
-        <td class="ca-form-cell">${formHtml(d.formation)}</td>
-        <td class="ca-tac-cell"><div class="ca-tacs">${tacsHtml(d.tactics) || '<span class="ca-dim">—</span>'}</div></td>
+        <td>${teamChip(d.generals, d.tactics, d.formation, false)}</td>
         <td class="ca-num-cell ca-freq-num">×${d.count}</td>
       </tr>`).join('');
   };
@@ -388,9 +386,7 @@
             <table class="ca-tbl">
               <thead><tr>
                 <th class="ca-th-idx">#</th>
-                <th class="ca-th-gen">武将</th>
-                <th class="ca-th-form">阵型</th>
-                <th class="ca-th-tac">战法</th>
+                <th>队伍（武将 · 阵型 · 战法）</th>
                 <th class="ca-th-num">出场</th>
               </tr></thead>
               <tbody id="enemyHighFreqBody"></tbody>
@@ -469,27 +465,35 @@
       .ca-num-cell{text-align:center;white-space:nowrap;color:#aaa;font-size:12px;}
       .ca-green{color:#2ecc71 !important;font-weight:600;}
 
-      /* ---- 队伍芯片 ---- */
+      /* ---- 队伍芯片（盒子样式，强关联武将+战法） ---- */
       .ca-team-cell{max-width:220px;}
-      .ca-chip{min-width:0;}
-      .ca-chip-winner .ca-chip-row1{border-left:2px solid var(--accent,#5b4fff);padding-left:6px;}
+      .ca-chip{
+        display:inline-block;min-width:0;width:100%;
+        background:rgba(255,255,255,.03);
+        border:1px solid rgba(255,255,255,.07);
+        border-radius:6px;
+        padding:6px 9px;
+        box-sizing:border-box;
+      }
+      .ca-chip-winner{
+        background:rgba(91,79,255,.06);
+        border-color:rgba(91,79,255,.25);
+        border-left:3px solid var(--accent,#5b4fff);
+      }
       .ca-chip-row1{display:flex;align-items:center;gap:4px;white-space:nowrap;
         overflow:hidden;line-height:1.6;font-size:12px;}
-      .ca-chip-sep{display:inline-block;width:1px;height:11px;background:#2a2a3e;flex-shrink:0;}
-      .ca-tacs{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;}
+      .ca-chip-sep{display:inline-block;width:1px;height:11px;background:#333;flex-shrink:0;}
+      .ca-tacs{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;padding-top:5px;
+        border-top:1px solid rgba(255,255,255,.05);}
       .ca-tac{font-size:10px;padding:1px 5px;border-radius:3px;white-space:nowrap;
         background:rgba(91,79,255,.12);color:#9d8fff;border:1px solid rgba(91,79,255,.2);}
       .ca-form-badge{font-size:10px;padding:1px 6px;border-radius:3px;white-space:nowrap;flex-shrink:0;
         background:rgba(245,197,66,.1);color:#f5c542;border:1px solid rgba(245,197,66,.2);}
-      .ca-dot{color:#2a2a3e;margin:0 1px;font-size:10px;}
+      .ca-dot{color:#333;margin:0 1px;font-size:10px;}
       .ca-dim{color:#444;font-size:11px;}
 
       /* ---- Tab2 专用 ---- */
-      .ca-gen-cell{max-width:200px;}
-      .ca-form-cell{text-align:center;white-space:nowrap;}
-      .ca-tac-cell{}
       .ca-freq-num{color:#f39c12;font-weight:700;font-size:13px;text-align:center;}
-      .ca-gens-nowrap{white-space:nowrap;overflow:hidden;font-size:12px;}
       .ca-rank-top{color:#f5c542;}
       .ca-top3 td{background:rgba(245,197,66,.03);}
 
@@ -515,22 +519,21 @@
       .ca-rec-group{display:flex;align-items:stretch;
         background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);
         border-radius:8px;margin-bottom:8px;overflow:hidden;}
-      .ca-rec-enemy{flex:0 0 210px;min-width:160px;padding:12px 14px;
+      .ca-rec-enemy{flex:1 1 0;min-width:0;padding:12px 14px;
         border-right:1px solid var(--border,#2a2a3e);
         display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.01);}
       .ca-rec-lbl{font-size:10px;color:#555;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}
       .ca-rec-cnt{margin-top:2px;}
-      .ca-rec-arrow{flex:0 0 28px;display:flex;align-items:center;justify-content:center;
+      .ca-rec-arrow{flex:0 0 26px;display:flex;align-items:center;justify-content:center;
         color:#333;font-size:11px;}
-      .ca-rec-counters{flex:1;display:flex;flex-direction:column;}
+      .ca-rec-counters{flex:1 1 0;min-width:0;display:flex;flex-direction:column;}
       .ca-rec-counter{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);
-        display:flex;align-items:center;gap:12px;}
+        display:flex;flex-direction:column;gap:6px;}
       .ca-rec-counter:last-child{border-bottom:none;}
-      .ca-rec-counter .ca-chip{flex:1;min-width:0;}
-      .ca-rec-stats{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:flex-end;}
+      .ca-rec-stats{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
     `;
     document.head.appendChild(s);
   }
 
-  console.log('[counter-analysis] 已加载 v202605120001 ✅');
+  console.log('[counter-analysis] 已加载 v202605120002 ✅');
 })();
