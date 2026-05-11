@@ -279,23 +279,30 @@ function addUserPoints(phone, amount){
 }
 
 // 扣减用户积分（OCR 上传时调用），返回是否成功
-function deductUserPoints(phone, amount){
-  return userDBGet(phone).then(u=>{
-    if(!u) throw new Error('用户不存在: '+phone);
-    if((u.points || 0) < amount) return false; // 积分不足
-    u.points = u.points - amount;
-    if(currentUser && currentUser.phone === phone){
-      currentUser.points = u.points;
-      saveSession(currentUser);
-    }
-    return userDBPut(u).then(()=>{
-      // 同步到云端
-      if (window.cloudSync && typeof window.cloudSync.updateUserPoints === 'function') {
-        window.cloudSync.updateUserPoints(phone, u.points, { type: 'consume', description: '用户消费' }).catch(e => console.error('[积分同步] 云端更新失败:', e));
-      }
-      return true;
-    });
-  });
+// 始终先从云端获取最新积分，确保使用管理员最新调整后的值
+async function deductUserPoints(phone, amount){
+  // 1. 从云端拉最新积分（getUserPoints 会自动同步到 IndexedDB 和 currentUser）
+  const freshPoints = await getUserPoints(phone);
+  console.log('[deductUserPoints] 云端最新积分:', freshPoints, '需扣减:', amount);
+  if(freshPoints < amount) return false; // 积分不足
+
+  // 2. 扣减并保存
+  const u = await userDBGet(phone);
+  if(!u) throw new Error('用户不存在: '+phone);
+  u.points = freshPoints - amount;
+  if(currentUser && currentUser.phone === phone){
+    currentUser.points = u.points;
+    saveSession(currentUser);
+    if(typeof updateUserNavPoints === 'function') updateUserNavPoints(); // 立即更新右上角显示
+  }
+  await userDBPut(u);
+
+  // 3. 异步同步到云端
+  if(window.cloudSync && typeof window.cloudSync.updateUserPoints === 'function'){
+    window.cloudSync.updateUserPoints(phone, u.points, {type:'consume', description:'用户消费'})
+      .catch(e => console.error('[积分同步] 云端更新失败:', e));
+  }
+  return true;
 }
 
 // ========== 项目 DB 操作 ==========
@@ -813,6 +820,12 @@ async function onLoginSuccess(){
   renderUserBar();
   // 更新导航权限显示
   updateNavByRole();
+  // 异步从云端拉最新积分（管理员可能已调整），完成后刷新右上角显示
+  if(currentUser && currentUser.phone && typeof getUserPoints === 'function'){
+    getUserPoints(currentUser.phone).then(() => {
+      if(typeof updateUserNavPoints === 'function') updateUserNavPoints();
+    }).catch(e => console.warn('[onLoginSuccess] 积分刷新失败:', e.message));
+  }
   // 登录成功后加载战报数据（带上正确的 currentUser）
   if(typeof dataInit==='function'){
     dataInit();
