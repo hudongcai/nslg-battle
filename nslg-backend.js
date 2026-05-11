@@ -32,24 +32,25 @@ function extractPhoneFromToken(token) {
 }
 
 // 敏感操作中间件：验证 token 对应用户仍存在且未被禁用
+// 注意：必须返回 HTTP 401 状态码，前端 cloudRequest 才能正确捕获并触发强制退出
 async function requireActiveUser(req, res, next) {
   const rawToken = req.headers['authorization'] || '';
   // 没有携带任何 token，直接拒绝（敏感接口必须登录）
   if (!rawToken) {
-    return res.json({ code: 401, message: '未登录，请先登录' });
+    return res.status(401).json({ code: 401, message: '未登录，请先登录' });
   }
   const phone = extractPhoneFromToken(rawToken);
   if (!phone) {
     // token 存在但格式无法解析（旧格式 token），要求重新登录
-    return res.json({ code: 401, message: '登录状态已过期，请重新登录' });
+    return res.status(401).json({ code: 401, message: '登录状态已过期，请重新登录' });
   }
   try {
     const [rows] = await pool.query('SELECT id, status FROM users WHERE phone = ? LIMIT 1', [phone]);
     if (rows.length === 0) {
-      return res.json({ code: 401, message: '账号不存在，请重新登录' });
+      return res.status(401).json({ code: 401, message: '账号不存在，请重新登录' });
     }
     if (rows[0].status === 0) {
-      return res.json({ code: 401, message: '账号已被禁用，请联系管理员' });
+      return res.status(401).json({ code: 401, message: '账号已被禁用，请联系管理员' });
     }
     req.authPhone = phone;
     req.authUserId = rows[0].id;

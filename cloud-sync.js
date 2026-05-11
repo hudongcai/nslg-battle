@@ -1,9 +1,9 @@
-console.log('[@@ cloud-sync.js 执行中 - 文件顶部 - 版本: v202605110001 @@]');
-console.log('[cloud-sync.js] 脚本开始加载 v202605110001');
+console.log('[@@ cloud-sync.js 执行中 - 文件顶部 - 版本: v202605110101 @@]');
+console.log('[cloud-sync.js] 脚本开始加载 v202605110101');
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605110001
+ * 版本: v202605110101
  */
 
 // 根据当前页面域名自动确定 API 地址 - 直接调用 MySQL API，绕过 Cloudflare Worker
@@ -61,29 +61,44 @@ async function cloudRequest(path, options = {}) {
       clearTimeout(timeoutId);
       const data = await resp.json();
       if (!resp.ok) {
-        // 401: Token 无效或过期，尝试自动重新登录
+        // 401: 需要区分"账号已删/禁"和"token 过期"
         if (resp.status === 401) {
+          const errMsg = data.message || '';
+          // 账号被删除或禁用：不重试，直接强制退出
+          const isFatal = errMsg.includes('账号不存在') || errMsg.includes('已被禁用') || errMsg.includes('已被删除');
+          if (isFatal) {
+            console.warn('[Cloud Sync] 账号已删除或禁用，强制退出:', errMsg);
+            setToken(null);
+            // 清理本地会话并强制退出
+            if (typeof clearSession === 'function') clearSession();
+            if (typeof userDBDelete === 'function' && currentUser && currentUser.phone) {
+              try { await userDBDelete(currentUser.phone); } catch(e) {}
+            }
+            currentUser = null;
+            const msg = errMsg || '您的账号已被删除或禁用';
+            setTimeout(() => {
+              alert(msg + '，即将退出登录');
+              if (typeof showLogin === 'function') showLogin();
+              else location.reload();
+            }, 0);
+            throw new Error(msg);
+          }
+
+          // token 过期：尝试自动重新登录
           console.warn('[Cloud Sync] Token 无效或过期，尝试自动重新登录...');
-          setToken(null);  // 先清除无效 token
-          
-          // 尝试重新登录
+          setToken(null);
           if (currentUser && currentUser.phone) {
             try {
               await cloudLogin(currentUser.phone, currentUser.password || '');
               console.log('[Cloud Sync] 自动重新登录成功，重试请求...');
-              // 重新发送请求
               const newToken = getToken();
               if (newToken) {
                 finalOptions.headers['Authorization'] = 'Bearer ' + newToken;
                 const retryResp = await fetch(url, { ...finalOptions, signal: controller.signal });
                 const retryData = await retryResp.json();
                 if (retryResp.ok) {
-                  // 标准化返回格式
-                  if (retryData.code === 200 && !retryData.success) {
-                    retryData.success = true;
-                  } else if (retryData.success === true && !retryData.code) {
-                    retryData.code = 200;
-                  }
+                  if (retryData.code === 200 && !retryData.success) retryData.success = true;
+                  else if (retryData.success === true && !retryData.code) retryData.code = 200;
                   return retryData;
                 }
               }
@@ -91,7 +106,6 @@ async function cloudRequest(path, options = {}) {
               console.error('[Cloud Sync] 自动重新登录失败:', loginErr.message);
             }
           }
-
           throw new Error('登录已过期，请重新登录');
         }
         throw new Error(data.message || data.error || `请求失败(${resp.status})`);
@@ -165,8 +179,11 @@ async function cloudGetProjects() {
     id: p.id,
     name: p.name,
     desc: p.description || p.desc || '',
+    description: p.description || p.desc || '',
     creator: p.creator_phone || p.creator || '',
+    creator_phone: p.creator_phone || p.creator || '',
     creator_id: p.creator_id,
+    status: p.status,
     visibility: p.is_public == 1 ? 'public' : 'private',
     is_public: p.is_public,
     memberPhones: p.memberPhones || [],
@@ -178,11 +195,29 @@ async function cloudGetProjects() {
   }));
 }
 
-// 获取单个项目详情（从云端）
+// 获取单个项目详情（从云端），并做与 cloudGetProjects 一致的字段映射
 async function cloudGetProject(projectId) {
   const data = await cloudRequest(`/projects/${projectId}`);
-  const project = data.code === 200 ? data.data : (data.success ? data.data : null);
-  return project || null;
+  const p = data.code === 200 ? data.data : (data.success ? data.data : null);
+  if (!p) return null;
+  return {
+    id: p.id,
+    name: p.name,
+    desc: p.description || p.desc || '',
+    description: p.description || p.desc || '',
+    creator: p.creator_phone || p.creator || '',
+    creator_phone: p.creator_phone || p.creator || '',
+    creator_id: p.creator_id,
+    status: p.status,
+    visibility: p.is_public == 1 ? 'public' : 'private',
+    is_public: p.is_public,
+    memberPhones: p.memberPhones || [],
+    member_count: p.member_count || 0,
+    battle_count: p.battle_count || 0,
+    battleRecordIds: p.battleRecordIds || [],
+    created_at: p.created_at,
+    updated_at: p.updated_at
+  };
 }
 
 // ========== 用户管理 API ==========
@@ -207,12 +242,10 @@ async function cloudGetUsers() {
 }
 
 // 更新用户积分（云端）- 使用 user_credits 表
-async function cloudUpdateUserPoints(phone, points) {
+async function cloudUpdateUserPoints(phone, points, options = {}) {
   try {
-    const res = await cloudRequest(`/user_credits`, {
-      method: 'PUT',
-      body: { phone, balance: points }
-    });
+    const body = { phone, balance: points, ...options };
+    const res = await cloudRequest(`/user_credits`, { method: 'PUT', body });
     return res.code === 200;
   } catch (e) {
     console.error('[cloudUpdateUserPoints] 失败:', e);
@@ -256,7 +289,7 @@ async function cloudDeleteProject(projectId) {
 // 获取项目成员（云端）
 async function cloudGetProjectMembers(projectId) {
   const data = await cloudRequest(`/projects/${projectId}/members`);
-  return data.success ? data.data : [];
+  return data.code === 200 ? (data.data || []) : [];
 }
 
 // 添加项目成员（云端）
@@ -370,7 +403,8 @@ async function cloudCreateRecord(record) {
           project_id: record.projectId || record.project_id,
           image_data: imageBase64,
           original_name: record.imageName || '',
-          file_size: Math.round(imageBase64.length * 0.75)
+          file_size: Math.round(imageBase64.length * 0.75),
+          uploader_phone: record.uploaderPhone || record.user_phone || ''
         }
       });
       console.log('[Cloud] 图片已同步到 battle_gallery, battle_id:', result.id);
