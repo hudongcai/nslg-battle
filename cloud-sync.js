@@ -223,10 +223,15 @@ async function cloudUpdateUserPoints(phone, points) {
 // 创建项目（云端）
 async function cloudCreateProject(project) {
   console.log('[cloudCreateProject] 被调用, project.id:', project.id, 'project.name:', project.name);
-  const data = await cloudRequest('/projects', {
-    method: 'POST',
-    body: project
-  });
+  // 统一字段名：前端用 desc/visibility/creator，后端用 description/is_public/creator_phone
+  const body = {
+    id:             project.id,
+    name:           project.name,
+    description:    project.desc || project.description || '',
+    is_public:      (project.visibility === 'public' || project.is_public === 1) ? 1 : 0,
+    creator_phone:  project.creator_phone || project.creator || '',
+  };
+  const data = await cloudRequest('/projects', { method: 'POST', body });
   console.log('[cloudCreateProject] 返回:', data);
   return data.success ? data.data : null;
 }

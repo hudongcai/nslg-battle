@@ -286,17 +286,27 @@ app.get('/api/projects/:id', async (req, res) => {
 
 app.post('/api/projects', async (req, res) => {
   try {
-    const { id, name, description, creator_id, is_public } = req.body;
-    
+    const { id, name, description, desc, creator_id, creator_phone, is_public, visibility } = req.body;
+
+    // 字段兼容：前端可能用 desc/visibility/creator_phone
+    const finalDesc = description || desc || '';
+    const finalPublic = (is_public || visibility === 'public') ? 1 : 0;
+
+    // creator_id：优先直接传入，否则通过 creator_phone 查询
+    let finalCreatorId = creator_id || null;
+    if (!finalCreatorId && creator_phone) {
+      const [urows] = await pool.query('SELECT id FROM users WHERE phone = ?', [creator_phone]);
+      if (urows.length) finalCreatorId = urows[0].id;
+    }
+
     const projectId = id || Date.now();
     const now = new Date();
-    
-    const [result] = await pool.query(
-      'INSERT INTO projects (id, name, description, creator_id, is_public, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [projectId, name, description, creator_id, is_public ? 1 : 0, now, now]
+
+    await pool.query(
+      'INSERT INTO projects (id, name, description, creator_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [projectId, name, finalDesc, finalCreatorId, finalPublic, now, now]
     );
-    
+
     res.json({ code: 200, data: { id: projectId } });
   } catch (err) {
     res.json({ code: 500, message: err.message });
