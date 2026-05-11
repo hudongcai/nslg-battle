@@ -291,7 +291,7 @@ function deductUserPoints(phone, amount){
     return userDBPut(u).then(()=>{
       // 同步到云端
       if (window.cloudSync && typeof window.cloudSync.updateUserPoints === 'function') {
-        window.cloudSync.updateUserPoints(phone, u.points).catch(e => console.error('[积分同步] 云端更新失败:', e));
+        window.cloudSync.updateUserPoints(phone, u.points, { type: 'consume', description: '用户消费' }).catch(e => console.error('[积分同步] 云端更新失败:', e));
       }
       return true;
     });
@@ -608,10 +608,53 @@ window.doLoginPwd = async function doLoginPwd(){
     let user = await userDBGet(phone);
 
     if(user){
-      // 本地有记录，验证本地密码
-      if(user.password!=pwd){msgEl.textContent='密码错误';return;}
+      // 本地有记录但密码为空（云同步覆盖），走云端验证
+      if(!user.password){
+        console.log('[Login] 本地密码为空，走云端验证:', phone);
+        if(typeof cloudLogin === 'function'){
+          const cloudUser = await cloudLogin(phone, pwd);
+          if(!cloudUser){ msgEl.textContent='密码错误'; return; }
+          user.password = pwd;
+          await userDBPut(user);
+        }
+      } else if(user.password != pwd){
+        msgEl.textContent='密码错误'; return;
+      }
+
+      // 本地密码验证通过后，必须通过云端确认账号仍然有效
+      // （防止已被删除/禁用的账号凭本地缓存继续登录）
+      if(typeof cloudLogin === 'function'){
+        try{
+          const cloudUser = await cloudLogin(phone, pwd);
+          if(cloudUser === null){
+            // 云端明确拒绝：账号已被删除或密码已更改
+            console.warn('[Login] 云端拒绝登录，清理本地缓存:', phone);
+            try{ await userDBDelete(phone); }catch(e){}
+            try{ clearSession(); }catch(e){}
+            msgEl.textContent='该账号已被删除或禁用，请联系管理员';
+            return;
+          }
+          // 云端验证通过，同步最新数据
+          let updated = false;
+          if(cloudUser.points !== undefined && cloudUser.points !== user.points){ user.points = cloudUser.points; updated = true; }
+          if(cloudUser.avatar !== undefined && cloudUser.avatar !== user.avatar){ user.avatar = cloudUser.avatar; updated = true; }
+          if(cloudUser.status !== undefined && cloudUser.status !== user.status){ user.status = cloudUser.status; updated = true; }
+          if(cloudUser.nickname || cloudUser.name){
+            const n = cloudUser.nickname || cloudUser.name;
+            if(n !== user.name){ user.name = n; updated = true; }
+          }
+          if(updated) await userDBPut(user);
+        }catch(cloudErr){
+          // 网络不可用时允许离线模式，但不允许账号状态为0时继续
+          if(user.status === 0){
+            msgEl.textContent='该账号已被禁用，请联系管理员';
+            return;
+          }
+          console.warn('[Login] 云端验证失败，使用离线模式:', cloudErr.message);
+        }
+      }
     } else {
-      // 本地无记录 → 尝试云端登录（支持后台直接创建的账号 / 跨设备登录）
+      // 本地无记录 → 必须走云端登录（支持后台直接创建的账号 / 跨设备登录）
       console.log('[Login] 本地无此用户，尝试云端验证:', phone);
       if(typeof cloudLogin === 'function'){
         const cloudUser = await cloudLogin(phone, pwd);
@@ -639,39 +682,12 @@ window.doLoginPwd = async function doLoginPwd(){
       }
     }
 
-    // 登录成功（本地）
+    // 登录成功
     currentUser = user;
     saveSession(user);
     saveRememberedUser(phone, pwd, user.name, user.role);
-    if(!user._cloudSynced) addSysLog('login','密码登录成功');
-
-    // 如果本地已有记录，补充尝试云端登录获取最新信息和 JWT token
-    if(user._cloudSynced !== true){
-      try {
-        if (typeof cloudLogin === 'function') {
-          const cloudUser = await cloudLogin(phone, pwd);
-          if (cloudUser) {
-            console.log('[Login] 云端登录成功，JWT token 已保存');
-            let updated = false;
-            if (cloudUser.points !== undefined && cloudUser.points > 0 && cloudUser.points !== user.points) {
-              user.points = cloudUser.points; currentUser.points = cloudUser.points; updated = true;
-              console.log('[Login] 已同步云端积分:', cloudUser.points);
-            }
-            if (cloudUser.avatar !== undefined && cloudUser.avatar !== user.avatar) {
-              user.avatar = cloudUser.avatar; currentUser.avatar = cloudUser.avatar; updated = true;
-              console.log('[Login] 已同步云端头像:', cloudUser.avatar);
-            }
-            if (cloudUser.status !== undefined && cloudUser.status !== user.status) {
-              user.status = cloudUser.status; currentUser.status = cloudUser.status; updated = true;
-              console.log('[Login] 已同步云端状态:', cloudUser.status);
-            }
-            if (updated) { await userDBPut(user); }
-          }
-        }
-      } catch (cloudErr) {
-        console.warn('[Login] 云端登录失败，继续使用本地模式:', cloudErr.message);
-      }
-    }
+    addSysLog('login','密码登录成功');
+    startSessionHeartbeat();
     onLoginSuccess();
   }catch(e){msgEl.textContent='登录失败：'+e.message;}
 }
@@ -857,8 +873,48 @@ async function renderUserBar(){
   if(typeof updateUserNavPoints==='function') updateUserNavPoints();
 }
 
+// ========== 会话心跳检测 ==========
+let _sessionHeartbeatTimer = null;
+
+function startSessionHeartbeat() {
+  stopSessionHeartbeat();
+  _sessionHeartbeatTimer = setInterval(async () => {
+    if (!currentUser) { stopSessionHeartbeat(); return; }
+    try {
+      // 调用 /api/auth/profile 验证当前账号是否仍然有效
+      const token = typeof getToken === 'function' ? getToken() : '';
+      const apiBase = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'https://api.zhenwu.fun/api';
+      const resp = await fetch(`${apiBase}/auth/profile`, {
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+      });
+      const data = await resp.json();
+      if (data && data.code === 401) {
+        stopSessionHeartbeat();
+        // 清理本地状态
+        try { if (typeof userDBDelete === 'function') await userDBDelete(currentUser.phone); } catch(e) {}
+        try { if (typeof setToken === 'function') setToken(null); } catch(e) {}
+        clearSession();
+        currentUser = null;
+        alert('您的账号已被删除或禁用（' + (data.message || '请重新登录') + '）');
+        if (typeof showLogin === 'function') showLogin();
+        else location.reload();
+      }
+    } catch(e) {
+      // 网络不可用，跳过本次检测
+    }
+  }, 5 * 60 * 1000); // 每5分钟检测一次
+}
+
+function stopSessionHeartbeat() {
+  if (_sessionHeartbeatTimer) {
+    clearInterval(_sessionHeartbeatTimer);
+    _sessionHeartbeatTimer = null;
+  }
+}
+
 // ========== 退出登录 ==========
 function doLogout(){
+  stopSessionHeartbeat();
   addSysLog('login','用户退出登录');
   clearSession();
   currentUser=null;
@@ -896,6 +952,8 @@ async function renderUserManage(){
       const cloudUsers = await window.cloudSync.getUsers();
       console.log('[UserManage] 云端用户同步:', cloudUsers.length, '个');
       for(const u of cloudUsers){
+        const local = await userDBGet(u.phone);
+        if(local && local.password) u.password = local.password;
         await userDBPut(u);
       }
     }catch(e){
@@ -910,17 +968,30 @@ async function renderUserManage(){
   tbody.innerHTML = users.map(u=>{
     const isSuper = u.role==='super_admin';
     const avatarChar = (u.name||u.phone).charAt(0);
+    const roleIcons = {super_admin:'👑',admin:'🛡️',member:'👤'};
     const roleName = (roles.find(r=>r.id===u.role)||{}).name || u.role || 'member';
-    // 角色下拉框（超级管理员不可改）
+    // 角色列（超管固定展示，其他用自定义下拉）
     let roleSel = '';
+    const wrId = 'rd_u_' + u.phone.replace(/\D/g,'');
     if(isSuper){
-      roleSel = '<span class="role-badge super">超级管理员（内置）</span>';
+      roleSel = '<span style="font-size:12px;color:var(--accent);font-weight:600;">👑 超级管理员 <span style="font-size:11px;color:var(--text3);">(内置)</span></span>';
     }else{
-      roleSel = '<select onchange="changeUserRole(\''+u.phone+'\',this.value)" style="padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text);font-size:12px;">';
-      for(const r of roles){
-        roleSel += '<option value="'+r.id+'" '+(u.role===r.id?'selected':'')+'>'+escHtml(r.name)+'</option>';
-      }
-      roleSel += '</select>';
+      const selRole = roles.find(r=>r.id===u.role)||{id:'member',name:'普通成员'};
+      const filterRoles = roles.filter(r=>r.id!=='super_admin');
+      roleSel = '<div class="rd-wrap" id="'+wrId+'" data-value="'+u.role+'" style="min-width:130px;">'+
+        '<div class="rd-trigger" onclick="rdToggle(\''+wrId+'\')">'+
+          '<span class="rd-label">'+(roleIcons[selRole.id]||'👤')+' '+escHtml(selRole.name)+'</span>'+
+          '<span class="rd-arrow">▾</span>'+
+        '</div>'+
+        '<div class="rd-menu">'+
+          filterRoles.map(r=>
+            '<div class="rd-item '+(r.id===u.role?'selected':'')+'" data-value="'+r.id+'" '+
+            'onclick="rdPick(\''+wrId+'\',this);changeUserRole(\''+u.phone+'\',\''+r.id+'\')">'+
+            (roleIcons[r.id]||'👤')+' '+escHtml(r.name)+
+            '</div>'
+          ).join('')+
+        '</div>'+
+      '</div>';
     }
     return '<tr>'+
       '<td class="avatar-cell"><div class="avatar-circle '+(isSuper?'super':'normal')+'">'+avatarChar+'</div></td>'+
@@ -949,7 +1020,7 @@ async function changeUserRole(phone, newRoleId){
     try {
       if (typeof cloudRequest === 'function') {
         const userData = await cloudRequest('/users');
-        const list = (userData.data && userData.data.list) || [];
+        const list = Array.isArray(userData.data) ? userData.data : ((userData.data && userData.data.list) || []);
         const cloudUser = list.find(x => x.phone === phone);
         if (cloudUser && cloudUser.id) {
           await cloudRequest(`/users/${cloudUser.id}`, { method: 'PUT', body: { role_id: newRoleId } });
@@ -973,7 +1044,7 @@ async function resetUserPwd(phone){
     try {
       if (typeof cloudRequest === 'function') {
         const userData = await cloudRequest('/users');
-        const list = (userData.data && userData.data.list) || [];
+        const list = Array.isArray(userData.data) ? userData.data : ((userData.data && userData.data.list) || []);
         const cloudUser = list.find(u => u.phone === phone);
         if (cloudUser && cloudUser.id) {
           await cloudRequest(`/users/${cloudUser.id}/reset-password`, {
@@ -1030,7 +1101,8 @@ async function doAdjustPoints() {
     // 同步到云端（超管调整积分）
     try {
       if (typeof cloudUpdateUserPoints === 'function') {
-        const synced = await cloudUpdateUserPoints(phone, val);
+        const operatorPhone = currentUser && currentUser.phone;
+        const synced = await cloudUpdateUserPoints(phone, val, { type: 'adjust', description: '超管调整积分', operator_phone: operatorPhone });
         if (synced) {
           console.log('[doAdjustPoints] 云端积分同步成功:', phone, val);
         } else {
@@ -1078,7 +1150,7 @@ window.deleteUser = async function(phone){
     if (typeof cloudRequest === 'function') {
       try {
         const userData = await cloudRequest('/users');
-        const list = userData.data || [];
+        const list = Array.isArray(userData.data) ? userData.data : ((userData.data && userData.data.list) || []);
         const cloudUser = list.find(u => u.phone === phone);
         if (cloudUser && cloudUser.id) {
           const delResult = await cloudRequest(`/users/${cloudUser.id}`, { method: 'DELETE' });
@@ -1140,28 +1212,19 @@ async function showAddUserModal(){
   if(phoneEl) phoneEl.value = '';
   if(pwdEl)   pwdEl.value = '';
   if(errEl)   { errEl.textContent = ''; errEl.className = 'msg-err'; }
-  // 填充角色选择器
-  const roleSel = document.getElementById('addUserRole');
-  if(roleSel){
-    roleSel.innerHTML = '<option value="">加载中...</option>';
-    try {
-      let roles = await roleDBGetAll();
-      // 兜底：若 DB 中无角色，使用内置列表
-      if(!roles || roles.length === 0){
-        const BUILTIN = [
-          {id:'super_admin', name:'超级管理员'},
-          {id:'admin',       name:'管理员'},
-          {id:'member',      name:'普通成员'},
-        ];
-        roles = BUILTIN;
-      }
-      roleSel.innerHTML = roles.map(r=>`<option value="${r.id}">${escHtml(r.name||r.id)}</option>`).join('');
-      // 默认选中"普通成员"
-      const memberOpt = [...roleSel.options].find(o => o.value === 'member');
-      if(memberOpt) memberOpt.selected = true;
-    } catch(e){
-      roleSel.innerHTML = '<option value="member">普通成员（默认）</option>';
+  // 填充角色选择器（自定义下拉）
+  try {
+    let roles = await roleDBGetAll();
+    if(!roles || roles.length === 0){
+      roles = [
+        {id:'super_admin', name:'超级管理员'},
+        {id:'admin',       name:'管理员'},
+        {id:'member',      name:'普通成员'},
+      ];
     }
+    if(typeof rdBuild === 'function') rdBuild('addUserRoleWrap', roles, 'member');
+  } catch(e){
+    if(typeof rdBuild === 'function') rdBuild('addUserRoleWrap', [{id:'member',name:'普通成员'}], 'member');
   }
   modal.style.display = 'flex';
 }
@@ -1175,7 +1238,6 @@ async function doAddUser(){
   const nameEl  = document.getElementById('addUserName');
   const phoneEl = document.getElementById('addUserPhone');
   const pwdEl   = document.getElementById('addUserPwd');
-  const roleEl  = document.getElementById('addUserRole');
   const errEl   = document.getElementById('addUserError');
   if(!errEl) return;
   errEl.className = 'msg-err';
@@ -1184,7 +1246,7 @@ async function doAddUser(){
   const name    = nameEl  ? nameEl.value.trim()  : '';
   const phone   = phoneEl ? phoneEl.value.trim() : '';
   const pwd     = pwdEl   ? pwdEl.value       : '';
-  const roleId  = roleEl  ? roleEl.value        : 'member';
+  const roleId  = (typeof rdGetValue === 'function' ? rdGetValue('addUserRoleWrap') : '') || 'member';
 
   if(!/^1[3-9]\d{9}$/.test(phone)){
     errEl.textContent = '请输入正确的手机号';
@@ -1216,8 +1278,7 @@ async function doAddUser(){
         console.log('[doAddUser] 同步用户到云端:', phone, name||`用户${phone.slice(-4)}`, roleId);
         const cloudResult = await window.cloudSync.createUser(phone, name||`用户${phone.slice(-4)}`, pwd, roleId);
         console.log('[doAddUser] 云端同步结果:', cloudResult);
-        user._cloudSynced = true;
-        await userDBPut(user);
+        if (cloudResult) { user._cloudSynced = true; await userDBPut(user); }
       } else if (typeof cloudRequest === 'function') {
         // 备用：直接通过 API 注册到 MySQL
         console.log('[doAddUser] 通过 cloudRequest 注册到云端');
@@ -1226,8 +1287,7 @@ async function doAddUser(){
           body: { phone, password: pwd, name: name||`用户${phone.slice(-4)}`, role: roleId }
         });
         console.log('[doAddUser] cloudRequest 注册结果:', regResult);
-        user._cloudSynced = true;
-        await userDBPut(user);
+        if (regResult && regResult.code === 200) { user._cloudSynced = true; await userDBPut(user); }
       }
     } catch(cloudErr) {
       console.warn('[doAddUser] 云端同步失败（本地已保存）:', cloudErr);
@@ -1254,7 +1314,7 @@ async function changeUserRole(phone, newRoleId){
     try {
       if (typeof cloudRequest === 'function') {
         const userData = await cloudRequest('/users');
-        const list = (userData.data && userData.data.list) || [];
+        const list = Array.isArray(userData.data) ? userData.data : ((userData.data && userData.data.list) || []);
         const cloudUser = list.find(u => u.phone === phone);
         if (cloudUser && cloudUser.id) {
           await cloudRequest(`/users/${cloudUser.id}`, {
@@ -1287,8 +1347,30 @@ async function checkLoginState(){
     try{
       const user = await userDBGet(session.phone);
       if(user&&user.role===session.role){
+        // 验证云端账号是否仍然存在（防止已删账号通过本地会话复活）
+        let cloudOk = true; // 默认乐观，网络不通时允许离线
+        try{
+          if(typeof cloudRequest === 'function'){
+            const resp = await cloudRequest(`/projects?phone=${encodeURIComponent(session.phone)}`);
+            // /projects 会在用户不存在时返回 code:400
+            if(resp && resp.code === 400 && resp.message && resp.message.includes('用户不存在')){
+              cloudOk = false;
+              console.warn('[Session] 云端用户已被删除，清理本地会话:', session.phone);
+            }
+          }
+        }catch(netErr){
+          // 网络不可用，跳过验证允许离线
+          console.warn('[Session] 云端验证失败，使用离线模式:', netErr.message);
+        }
+        if(!cloudOk){
+          try{ await userDBDelete(session.phone); }catch(e){}
+          clearSession();
+          showLogin();
+          return;
+        }
         currentUser = user;
         addSysLog('login','自动登录（会话恢复）');
+        startSessionHeartbeat();
         onLoginSuccess();
         return;
       }

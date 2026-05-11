@@ -14,6 +14,47 @@ app.use((req, res, next) => {
   next();
 });
 
+// 请求日志中间件
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, (JSON.stringify(req.body) || '').slice(0, 200));
+  }
+  next();
+});
+
+// ========== Token 工具函数 ==========
+// token 格式：mock-token-{phone}-{timestamp}
+function extractPhoneFromToken(token) {
+  if (!token) return null;
+  const t = token.replace(/^Bearer\s+/i, '').trim();
+  const m = t.match(/^mock-token-(1\d{10})-\d+$/);
+  return m ? m[1] : null;
+}
+
+// 敏感操作中间件：验证 token 对应用户仍存在且未被禁用
+async function requireActiveUser(req, res, next) {
+  const rawToken = req.headers['authorization'] || '';
+  const phone = extractPhoneFromToken(rawToken);
+  if (!phone) {
+    // 没有有效 token，由各路由自行处理（向下兼容）
+    return next();
+  }
+  try {
+    const [rows] = await pool.query('SELECT id, status FROM users WHERE phone = ? LIMIT 1', [phone]);
+    if (rows.length === 0) {
+      return res.json({ code: 401, message: '账号不存在，请重新登录' });
+    }
+    if (rows[0].status === 0) {
+      return res.json({ code: 401, message: '账号已被禁用，请联系管理员' });
+    }
+    req.authPhone = phone;
+    req.authUserId = rows[0].id;
+    next();
+  } catch (err) {
+    next(); // 数据库异常不阻断请求
+  }
+}
+
 const dbConfig = {
   host: 'localhost',
   port: 3306,
@@ -55,12 +96,12 @@ app.post('/api/auth/login', async (req, res) => {
       const loginIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.connection?.remoteAddress || '';
       await pool.query('UPDATE users SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?', [loginIp, user.id]);
       
-      res.json({ 
-        code: 200, 
-        data: { 
-          token: 'mock-token-' + Date.now(), 
-          user: { nickname: user.nickname, phone: user.phone, role: user.role_id, points: points } 
-        } 
+      res.json({
+        code: 200,
+        data: {
+          token: 'mock-token-' + user.phone + '-' + Date.now(),
+          user: { nickname: user.nickname, phone: user.phone, role: user.role_id, points: points }
+        }
       });
     } else {
       res.json({ code: 401, message: '账号或密码错误' });
@@ -88,9 +129,18 @@ app.post('/api/auth/register', async (req, res) => {
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [phone, password, name || `用户${phone.slice(-4)}`, role || 'member', 1, 18, 0, 0, now, now]
     );
-    
-    res.json({ 
-      code: 200, 
+    const newUserId = userResult.insertId;
+    try {
+      await pool.query(
+        'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [newUserId, 18, 18, 'register', '新用户注册免费赠送', newUserId, now]
+      );
+    } catch (logErr) {
+      console.error('[register] credit_log INSERT 失败:', logErr.message);
+    }
+
+    res.json({
+      code: 200,
       message: '注册成功',
       data: { phone, nickname: name || `用户${phone.slice(-4)}`, role: role || 'member' }
     });
@@ -105,15 +155,21 @@ app.get('/api/auth/profile', async (req, res) => {
     if (!token) {
       return res.json({ code: 401, message: '未登录' });
     }
-    
-    const phone = token.split('-').pop();
-    const [userRows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
-    
-    if (userRows.length === 0) {
-      return res.json({ code: 401, message: '用户不存在' });
+
+    const phone = extractPhoneFromToken(token);
+    if (!phone) {
+      return res.json({ code: 401, message: '无效的登录凭证，请重新登录' });
     }
-    
+    const [userRows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
+
+    if (userRows.length === 0) {
+      return res.json({ code: 401, message: '账号不存在，请重新登录' });
+    }
+
     const user = userRows[0];
+    if (user.status === 0) {
+      return res.json({ code: 401, message: '账号已被禁用' });
+    }
     res.json({
       code: 200,
       data: {
@@ -226,11 +282,12 @@ app.get('/api/projects', async (req, res) => {
     
     const user = userRows[0];
     
-    let query = 'SELECT DISTINCT p.*, u.phone as creator_phone FROM projects p LEFT JOIN users u ON p.creator_id = u.id';
+    const countSub = `(SELECT COUNT(*) FROM project_members pm2 WHERE pm2.project_id = p.id) + 1 AS member_count, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = p.id) AS battle_count`;
+    let query = `SELECT DISTINCT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.created_at, p.updated_at, u.phone as creator_phone, ${countSub} FROM projects p LEFT JOIN users u ON p.creator_id = u.id`;
     let params = [];
 
     if (user.role_id !== 'super_admin') {
-      query = 'SELECT DISTINCT p.*, u.phone as creator_phone FROM projects p LEFT JOIN users u ON p.creator_id = u.id LEFT JOIN project_members pm ON p.id = pm.project_id WHERE p.creator_id = ? OR pm.user_id = ? OR p.is_public = 1';
+      query = `SELECT DISTINCT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.created_at, p.updated_at, u.phone as creator_phone, ${countSub} FROM projects p LEFT JOIN users u ON p.creator_id = u.id LEFT JOIN project_members pm ON p.id = pm.project_id WHERE p.creator_id = ? OR pm.user_id = ? OR p.is_public = 1`;
       params = [user.id, user.id];
     }
 
@@ -243,6 +300,7 @@ app.get('/api/projects', async (req, res) => {
         description: p.description,
         creator_id: p.creator_id,
         creator_phone: p.creator_phone || '',
+        status: p.status,
         is_public: p.is_public,
         member_count: p.member_count,
         battle_count: p.battle_count,
@@ -258,12 +316,19 @@ app.get('/api/projects', async (req, res) => {
 app.get('/api/projects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query('SELECT * FROM projects WHERE id = ?', [id]);
-    
+    const [rows] = await pool.query(
+      `SELECT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.created_at, p.updated_at,
+        u.phone as creator_phone,
+        (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) + 1 AS member_count,
+        (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = p.id) AS battle_count
+       FROM projects p LEFT JOIN users u ON p.creator_id = u.id WHERE p.id = ?`,
+      [id]
+    );
+
     if (rows.length === 0) {
       return res.json({ code: 404, message: '项目不存在' });
     }
-    
+
     const p = rows[0];
     res.json({
       code: 200,
@@ -272,6 +337,8 @@ app.get('/api/projects/:id', async (req, res) => {
         name: p.name,
         description: p.description,
         creator_id: p.creator_id,
+        creator_phone: p.creator_phone || '',
+        status: p.status,
         is_public: p.is_public,
         member_count: p.member_count,
         battle_count: p.battle_count,
@@ -284,7 +351,7 @@ app.get('/api/projects/:id', async (req, res) => {
   }
 });
 
-app.post('/api/projects', async (req, res) => {
+app.post('/api/projects', requireActiveUser, async (req, res) => {
   try {
     const { id, name, description, desc, creator_id, creator_phone, is_public, visibility } = req.body;
 
@@ -299,15 +366,20 @@ app.post('/api/projects', async (req, res) => {
       if (urows.length) finalCreatorId = urows[0].id;
     }
 
-    const projectId = id || Date.now();
+    // 前端传来的 id 可能是 'proj_xxx_xxx' 字符串（BIGINT 列不接受），
+    // 只有纯整数才直接使用，否则设为 null 让 MySQL AUTO_INCREMENT 分配
+    const parsedId = id ? Number(id) : NaN;
+    const projectId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
     const now = new Date();
 
-    await pool.query(
-      'INSERT INTO projects (id, name, description, creator_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    const [insertResult] = await pool.query(
+      'INSERT INTO projects (id, name, description, creator_id, is_public, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
       [projectId, name, finalDesc, finalCreatorId, finalPublic, now, now]
     );
 
-    res.json({ code: 200, data: { id: projectId } });
+    // AUTO_INCREMENT 分配的 id 在 insertResult.insertId 里
+    const actualId = insertResult.insertId || projectId;
+    res.json({ code: 200, data: { id: actualId } });
   } catch (err) {
     res.json({ code: 500, message: err.message });
   }
@@ -316,22 +388,26 @@ app.post('/api/projects', async (req, res) => {
 app.put('/api/projects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, is_public, status } = req.body;
-    
+    const { name, description, desc, is_public, visibility, status } = req.body;
+
     const updates = [];
     const params = [];
-    
+
     if (name !== undefined) {
       updates.push('name = ?');
       params.push(name);
     }
-    if (description !== undefined) {
+    if (description !== undefined || desc !== undefined) {
       updates.push('description = ?');
-      params.push(description);
+      params.push(description !== undefined ? description : desc);
     }
+    // is_public 支持直接传 is_public 或 visibility 字符串
     if (is_public !== undefined) {
       updates.push('is_public = ?');
       params.push(is_public ? 1 : 0);
+    } else if (visibility !== undefined) {
+      updates.push('is_public = ?');
+      params.push(visibility === 'public' ? 1 : 0);
     }
     if (status !== undefined) {
       updates.push('status = ?');
@@ -352,9 +428,10 @@ app.put('/api/projects/:id', async (req, res) => {
 app.delete('/api/projects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+    await pool.query('DELETE FROM project_members WHERE project_id = ?', [id]);
+    await pool.query('DELETE FROM battle_gallery WHERE project_id = ?', [id]);
+    await pool.query('DELETE FROM battle_records WHERE project_id = ?', [id]);
     await pool.query('DELETE FROM projects WHERE id = ?', [id]);
-    
     res.json({ code: 200, message: '删除成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -406,7 +483,12 @@ app.post('/api/projects/:id/members', async (req, res) => {
       'INSERT INTO project_members (project_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)',
       [id, userId, role || 'viewer', now]
     );
-    
+    // 同步更新项目的 member_count 和 updated_at
+    await pool.query(
+      'UPDATE projects SET member_count = (SELECT COUNT(*)+1 FROM project_members WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
+      [id, id]
+    );
+
     res.json({ code: 200, message: '添加成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -424,7 +506,12 @@ app.delete('/api/projects/:id/members/:phone', async (req, res) => {
     const userId = userRows[0].id;
     
     await pool.query('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [id, userId]);
-    
+    // 同步更新项目的 member_count 和 updated_at
+    await pool.query(
+      'UPDATE projects SET member_count = (SELECT COUNT(*)+1 FROM project_members WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
+      [id, id]
+    );
+
     res.json({ code: 200, message: '删除成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -553,7 +640,7 @@ app.get('/api/battles', async (req, res) => {
   }
 });
 
-app.post('/api/battles', async (req, res) => {
+app.post('/api/battles', requireActiveUser, async (req, res) => {
   try {
     const body = req.body;
     const projectId = body.projectId;
@@ -594,6 +681,13 @@ app.post('/api/battles', async (req, res) => {
        1, 1, now, now]
     );
     
+    // 同步更新所属项目的 battle_count 和 updated_at
+    if (projectId) {
+      await pool.query(
+        'UPDATE projects SET battle_count = (SELECT COUNT(*) FROM battle_records WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
+        [projectId, projectId]
+      );
+    }
     res.json({ code: 200, data: { id: resultRow.insertId } });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -637,9 +731,18 @@ app.put('/api/battles/:id', async (req, res) => {
 app.delete('/api/battles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+    // 先查出所属项目，删除后同步更新 updated_at
+    const [bRows] = await pool.query('SELECT project_id FROM battle_records WHERE id = ?', [id]);
+    const bProjectId = bRows.length ? bRows[0].project_id : null;
+
     await pool.query('DELETE FROM battle_records WHERE id = ?', [id]);
-    
+
+    if (bProjectId) {
+      await pool.query(
+        'UPDATE projects SET battle_count = (SELECT COUNT(*) FROM battle_records WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
+        [bProjectId, bProjectId]
+      );
+    }
     res.json({ code: 200, message: '删除成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -713,11 +816,27 @@ app.put('/api/user_credits/:userId', async (req, res) => {
 // 按手机号更新积分（前端调用）
 app.put('/api/user_credits', async (req, res) => {
   try {
-    const { phone, balance } = req.body;
+    const { phone, balance, type, description, operator_id, operator_phone } = req.body;
     if (!phone || balance === undefined) return res.json({ code: 400, message: '缺少参数' });
-    const [rows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    const [rows] = await pool.query('SELECT id, credit_balance FROM users WHERE phone = ?', [phone]);
     if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
-    await pool.query('UPDATE users SET credit_balance = ? WHERE id = ?', [balance, rows[0].id]);
+    const userId = rows[0].id;
+    const oldBalance = rows[0].credit_balance || 0;
+    const changeAmount = balance - oldBalance;
+    await pool.query('UPDATE users SET credit_balance = ? WHERE id = ?', [balance, userId]);
+    let finalOperatorId = operator_id || null;
+    if (!finalOperatorId && operator_phone) {
+      const [opRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [operator_phone]);
+      if (opRows.length) finalOperatorId = opRows[0].id;
+    }
+    const logType = type || 'adjust';
+    const logDesc = description || '超管调整积分';
+    // 消费/无操作者时，操作者即用户本身
+    if (!finalOperatorId && logType === 'consume') finalOperatorId = userId;
+    await pool.query(
+      'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+      [userId, changeAmount, balance, logType, logDesc, finalOperatorId]
+    );
     res.json({ code: 200, message: '更新成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -876,7 +995,7 @@ app.get('/api/db/table/:tableName/desc', async (req, res) => {
 const DOUBAO_API_KEY = 'ark-74b37e3f-3407-4070-b918-71d6a455bc5a-19ae6';
 const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
 
-app.post('/api/ocr', async (req, res) => {
+app.post('/api/ocr', requireActiveUser, async (req, res) => {
   try {
     const response = await fetch(DOUBAO_URL, {
       method: 'POST',
@@ -898,25 +1017,32 @@ app.post('/api/ocr', async (req, res) => {
 
 // ========== 战报图片（battle_gallery）==========
 // 上传图片（与战报绑定）
-app.post('/api/gallery', async (req, res) => {
+app.post('/api/gallery', requireActiveUser, async (req, res) => {
   try {
-    const { battle_id, project_id, image_data, original_name, file_size } = req.body;
+    const { battle_id, project_id, image_data, original_name, file_size, uploader_phone } = req.body;
     if (!image_data || !project_id) return res.json({ code: 400, message: '缺少参数' });
+
+    // 通过 phone 查 user_id
+    let uploaded_by = null;
+    if (uploader_phone) {
+      const [uRows] = await pool.query('SELECT id FROM users WHERE phone = ? LIMIT 1', [uploader_phone]);
+      if (uRows.length > 0) uploaded_by = uRows[0].id;
+    }
 
     // 如果 battle_id 已有图片则更新，否则插入
     if (battle_id) {
       const [exist] = await pool.query('SELECT id FROM battle_gallery WHERE battle_id = ?', [battle_id]);
       if (exist.length > 0) {
         await pool.query(
-          'UPDATE battle_gallery SET image_data=?, original_name=?, file_size=?, updated_at=NOW() WHERE battle_id=?',
-          [image_data, original_name || '', file_size || 0, battle_id]
+          'UPDATE battle_gallery SET image_data=?, original_name=?, file_size=?, uploaded_by=?, updated_at=NOW() WHERE battle_id=?',
+          [image_data, original_name || '', file_size || 0, uploaded_by, battle_id]
         );
         return res.json({ code: 200, data: { id: exist[0].id } });
       }
     }
     const [result] = await pool.query(
-      'INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, created_at, updated_at) VALUES (?,?,?,?,?,NOW(),NOW())',
-      [project_id, battle_id || null, image_data, original_name || '', file_size || 0]
+      'INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())',
+      [project_id, battle_id || null, image_data, original_name || '', file_size || 0, uploaded_by]
     );
     res.json({ code: 200, data: { id: result.insertId } });
   } catch (err) {
@@ -928,11 +1054,14 @@ app.post('/api/gallery', async (req, res) => {
 app.get('/api/gallery', async (req, res) => {
   try {
     const { projectId, battleId } = req.query;
-    let query = 'SELECT id, project_id, battle_id, original_name, file_size, created_at FROM battle_gallery WHERE status=1';
+    let query = `SELECT g.id, g.project_id, g.battle_id, g.original_name, g.file_size, g.created_at,
+      u.phone as uploader_phone, u.nickname as uploader_name
+      FROM battle_gallery g LEFT JOIN users u ON g.uploaded_by = u.id
+      WHERE g.status=1`;
     const params = [];
-    if (battleId) { query += ' AND battle_id=?'; params.push(battleId); }
-    else if (projectId) { query += ' AND project_id=?'; params.push(projectId); }
-    query += ' ORDER BY created_at DESC';
+    if (battleId) { query += ' AND g.battle_id=?'; params.push(battleId); }
+    else if (projectId) { query += ' AND g.project_id=?'; params.push(projectId); }
+    query += ' ORDER BY g.created_at DESC';
     const [rows] = await pool.query(query, params);
     res.json({ code: 200, data: rows });
   } catch (err) {
