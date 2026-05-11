@@ -34,10 +34,14 @@ function extractPhoneFromToken(token) {
 // 敏感操作中间件：验证 token 对应用户仍存在且未被禁用
 async function requireActiveUser(req, res, next) {
   const rawToken = req.headers['authorization'] || '';
+  // 没有携带任何 token，直接拒绝（敏感接口必须登录）
+  if (!rawToken) {
+    return res.json({ code: 401, message: '未登录，请先登录' });
+  }
   const phone = extractPhoneFromToken(rawToken);
   if (!phone) {
-    // 没有有效 token，由各路由自行处理（向下兼容）
-    return next();
+    // token 存在但格式无法解析（旧格式 token），要求重新登录
+    return res.json({ code: 401, message: '登录状态已过期，请重新登录' });
   }
   try {
     const [rows] = await pool.query('SELECT id, status FROM users WHERE phone = ? LIMIT 1', [phone]);

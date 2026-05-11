@@ -1348,15 +1348,18 @@ async function checkLoginState(){
       const user = await userDBGet(session.phone);
       if(user&&user.role===session.role){
         // 验证云端账号是否仍然存在（防止已删账号通过本地会话复活）
+        // 用原始 fetch 调 /api/auth/profile，避免 cloudRequest 把 HTTP 错误码当异常处理
         let cloudOk = true; // 默认乐观，网络不通时允许离线
         try{
-          if(typeof cloudRequest === 'function'){
-            const resp = await cloudRequest(`/projects?phone=${encodeURIComponent(session.phone)}`);
-            // /projects 会在用户不存在时返回 code:400
-            if(resp && resp.code === 400 && resp.message && resp.message.includes('用户不存在')){
-              cloudOk = false;
-              console.warn('[Session] 云端用户已被删除，清理本地会话:', session.phone);
-            }
+          const _token = typeof getToken === 'function' ? getToken() : '';
+          const _base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'https://api.zhenwu.fun/api';
+          const profileResp = await fetch(`${_base}/auth/profile`, {
+            headers: _token ? { 'Authorization': 'Bearer ' + _token } : {}
+          });
+          const profileData = await profileResp.json();
+          if(profileData && profileData.code === 401){
+            cloudOk = false;
+            console.warn('[Session] 云端验证不通过，清理本地会话:', session.phone, profileData.message);
           }
         }catch(netErr){
           // 网络不可用，跳过验证允许离线
