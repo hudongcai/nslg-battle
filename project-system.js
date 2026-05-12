@@ -1,7 +1,7 @@
 /* ==========================================================
    PROJECT SYSTEM - 项目管理、权限控制
    ========================================================== */
-console.log('[project-system.js] v202605080208 加载');
+console.log('[project-system.js] v202605111115 加载');
 
 // ========== 项目数据结构 ==========
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
@@ -17,26 +17,28 @@ async function getVisibleProjects(){
   for (const p of localProjects) { merged.set(p.id, p); }
 
   // 再从云端获取，合并到本地
+  // cloudIds = 后端按权限过滤后返回的项目集合，用于前端可见性判断
+  let cloudIds = new Set();
+  let cloudFetchSuccess = false; // 标记云端是否成功响应
   if(window.cloudSync){
     try{
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] 从云端获取项目:', cloudProjects.length, '个');
-      const cloudIds = new Set();
       for(const proj of cloudProjects){
-        cloudIds.add(proj.id);
+        cloudIds.add(String(proj.id));
         await projDBPut(proj); // 同步到本地缓存
-        // 保留本地版本（用户新建但云端还未同步的），或更新为云端最新版本
-        if(!merged.has(proj.id)){ merged.set(proj.id, proj); }
+        merged.set(proj.id, proj); // 云端始终覆盖本地（云端是真相源）
       }
-      // 关键修复：清理本地有但云端没有的项目（可能是其他设备/用户删除了）
-      // 仅超管执行清理，避免误删本地新建但云端尚未同步的项目
-      if(cloudProjects.length > 0 && currentUser.role === 'super_admin'){
-        for(const [id, p] of merged){
-          if(!cloudIds.has(id)){
-            console.log('[Cloud] 项目', p.name, '(', id, ') 在云端不存在，从本地清理');
-            await projDBDelete(id);
-            merged.delete(id);
-          }
+      cloudFetchSuccess = true;
+
+      // 清理本地有但云端没有的项目（所有用户生效）
+      // 注意：不再自动推送本地项目到云端——那会把管理员已删除的项目复活
+      // 云端是唯一真相源：不在云端 = 已被删除，直接清理本地缓存
+      for(const [id, p] of new Map(merged)){
+        if(!cloudIds.has(String(id))){
+          console.log('[Cloud] 项目', p.name, '(', id, ') 在云端不存在，从本地清理');
+          await projDBDelete(id);
+          merged.delete(id);
         }
       }
     }catch(e){
@@ -47,16 +49,22 @@ async function getVisibleProjects(){
   const all = Array.from(merged.values());
 
   if(currentUser.role==='super_admin') return all;
-  // 合并 data-perm 的 projAccess 授权
+
+  // 云端响应成功：以云端权限为唯一依据，防止显示数据库已删除的幽灵项目
+  if(cloudFetchSuccess){
+    return all.filter(p => cloudIds.has(String(p.id)));
+  }
+
+  // 云端响应失败（离线模式）：回退到本地缓存判断
   let grantedIds = new Set();
   if(typeof getGrantedProjectIds === 'function'){
     try{ grantedIds = await getGrantedProjectIds(currentUser.phone); }catch(e){}
   }
   return all.filter(p=>
-    p.visibility==='public' ||
-    p.creator === currentUser.phone ||
-      (p.memberPhones||[]).includes(currentUser.phone) ||
-      grantedIds.has(p.id)
+    p.visibility==='public' || p.is_public == 1 ||
+    p.creator === currentUser.phone || p.creator_phone === currentUser.phone ||
+    (p.memberPhones||[]).includes(currentUser.phone) ||
+    grantedIds.has(p.id)
   );
 }
 
@@ -99,15 +107,6 @@ async function renderProjectManage(){
   const empty = document.getElementById('projectEmpty');
   if(!grid)return;
 
-  // 超管可见的"修复战报计数"按钮
-  let repairHtml = '';
-  if (canManage) {
-    repairHtml = `<div style="grid-column:1/-1;margin-bottom:12px;display:flex;justify-content:flex-end;">
-      <button onclick="repairBattleRecordIds()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--accent);background:rgba(240,180,41,.08);color:var(--accent);cursor:pointer;font-size:12px;">
-        🔧 修复所有项目战报计数
-      </button>
-    </div>`;
-  }
   if(projects.length===0){
     grid.style.display='none';
     if(empty) empty.style.display='block';
@@ -126,19 +125,25 @@ async function renderProjectManage(){
   }
 
   let html = projects.map(p=>{
-    const isOwner = p.creator===currentUser.phone;
-    const isPublic = p.visibility==='public';
-    const memberCount = p.memberCount !== undefined ? p.memberCount : (p.memberPhones||[]).length + 1;
-    const battleCount = p.battleCount !== undefined ? p.battleCount : (p.battleRecordIds||[]).length;
-    const dateStr  = p.createdAt?new Date(p.createdAt).toLocaleDateString('zh-CN'):'-';
+    const isOwner = p.creator===currentUser.phone || p.creator_phone===currentUser.phone;
+    // 兼容云端字段：is_public=1 或 visibility='public'
+    const isPublic = p.visibility==='public' || p.is_public==1;
+    // member_count/battle_count 优先用云端实时计算值，回退本地统计
+    const memberCount = p.member_count !== undefined ? p.member_count : (p.memberCount !== undefined ? p.memberCount : (p.memberPhones||[]).length + 1);
+    const battleCount = p.battle_count !== undefined ? p.battle_count : (p.battleCount !== undefined ? p.battleCount : (p.battleRecordIds||[]).length);
+    // 时间：优先 created_at（云端），回退 createdAt（本地）
+    const dateRaw = p.created_at || p.createdAt;
+    const dateStr = dateRaw ? new Date(dateRaw).toLocaleDateString('zh-CN') : '-';
     const perm = userPerms[p.id] || {};
     const canEdit = isOwner || canManage || perm.canEdit;
     const canDelete = isOwner || canManage || perm.canDelete;
+    // 成员管理权：超管 或 被超管授权了 canMember
+    const canMember = canManage || perm.canMember;
     return `<div class="proj-card" onclick="viewProject('${p.id}')">
       <div class="pc-top">
         <div>
           <div class="pc-name">${escHtml(p.name)}</div>
-          <div class="pc-desc">${escHtml(p.desc||'暂无描述')}</div>
+          <div class="pc-desc">${escHtml(p.desc||p.description||'暂无描述')}</div>
         </div>
         <span class="pc-badge" style="background:${isPublic?'rgba(81,207,102,.12);color:var(--green);':'rgba(255,107,107,.1);color:var(--red);'}">${isPublic?'🌐 公开':'🔒 私有'}</span>
       </div>
@@ -149,7 +154,7 @@ async function renderProjectManage(){
       </div>
       <div class="pc-actions" onclick="event.stopPropagation();">
         ${canEdit?`<button onclick="editProject('${p.id}')">编辑</button>`:''}
-        ${canManage?`<button onclick="manageProjectMembers('${p.id}')">成员</button>`:''}
+        ${canMember?`<button onclick="manageProjectMembers('${p.id}')">成员</button>`:''}
         ${canDelete?`<button style="color:#ff5252;border-color:rgba(255,82,82,.2);" onclick="deleteProject('${p.id}')">删除</button>`:''}
       </div>
     </div>`;
@@ -165,7 +170,7 @@ async function renderProjectManage(){
   </div>`;
 
 
-  grid.innerHTML = repairHtml + html;
+  grid.innerHTML = html;
 }
 
 // ========== 新建/编辑项目弹窗 ==========
@@ -177,6 +182,10 @@ async function showCreateProject(projectId){
     proj = await getProjectWithFallback(projectId);
     if(!proj){alert('项目不存在');return;}
   }
+  // 计算有效可见性：优先 visibility 字段，兜底用 is_public（云端返回原始数据时 visibility 可能为 undefined）
+  const projVis = isEdit
+    ? (proj.visibility || (proj.is_public == 1 ? 'public' : 'private'))
+    : 'private';
   const overlay = document.createElement('div');
   overlay.id = 'projectModal';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
@@ -194,8 +203,8 @@ async function showCreateProject(projectId){
       <div style="margin-bottom:16px;">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">可见性</label>
         <select id="projVisibility" style="width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);">
-          <option value="public" ${isEdit&&proj.visibility==='public'?'selected':''}>🌐 公开 - 所有用户可见</option>
-          <option value="private" ${!isEdit?'selected':(isEdit&&proj.visibility==='private'?'selected':'')}>🔒 私有 - 仅成员可见</option>
+          <option value="public" ${projVis==='public'?'selected':''}>🌐 公开 - 所有用户可见</option>
+          <option value="private" ${projVis==='private'?'selected':''}>🔒 私有 - 仅成员可见</option>
         </select>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -231,9 +240,8 @@ async function saveProject(projectId){
         }catch(e){console.error('[Cloud] 同步失败:', e);}
       }
     }else{
-      // 创建新项目
+      // 创建新项目：先调云端获取真实 ID，再存本地
       const newProj = {
-        id: 'proj_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
         name, desc, visibility,
         creator: currentUser.phone,
         creator_phone: currentUser.phone,
@@ -243,26 +251,24 @@ async function saveProject(projectId){
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      await projDBPut(newProj);
 
-      // 同步到云端
-      console.log('[saveProject] window.cloudSync 存在?', !!window.cloudSync, '| createProject 类型:', typeof window?.cloudSync?.createProject);
+      // 先同步到云端（获取后端分配的整数 ID）
       if(window.cloudSync){
         try{
-          console.log('[Cloud] 准备同步项目到云端:', JSON.stringify(newProj, null, 2));
           const result = await window.cloudSync.createProject(newProj);
           console.log('[Cloud] 云端创建项目返回:', JSON.stringify(result));
           if(result && result.id){
-            // 如果云端返回了不同的 ID，更新本地
-            if(result.id !== newProj.id){
-              await projDBDelete(newProj.id);
-              newProj.id = result.id;
-              await projDBPut(newProj);
-            }
+            newProj.id = result.id;
           }
-          console.log('[Cloud] 项目已同步到云端:', newProj.name);
         }catch(e){console.error('[Cloud] 同步失败:', e);}
       }
+
+      // 若云端未返回 ID（离线模式），用临时本地 ID
+      if(!newProj.id){
+        newProj.id = 'tmp_' + Date.now();
+      }
+
+      await projDBPut(newProj);
 
       // 自动给创建者授予编辑和删除权限
       if(typeof permDBPut === 'function'){
@@ -287,79 +293,161 @@ function editProject(id){showCreateProject(id);}
 
 // ========== 成员管理 ==========
 async function manageProjectMembers(projectId){
-  // 只有超管能分配成员
-  if(!currentUser || currentUser.role !== 'super_admin'){
-    alert('只有超级管理员可以分配项目成员');
-    return;
+  if(!currentUser){ return; }
+  const isAdmin = currentUser.role === 'super_admin';
+  if (!isAdmin) {
+    let hasMemberPerm = false;
+    if (typeof getProjAccessForUser === 'function') {
+      try {
+        const entries = await getProjAccessForUser(currentUser.phone);
+        const perm = entries.find(e => String(e.projectId) === String(projectId));
+        hasMemberPerm = !!(perm && perm.canMember);
+      } catch(e) {}
+    }
+    if (!hasMemberPerm) { alert('没有成员管理权限，请联系超级管理员授权'); return; }
   }
-  const proj = await getProjectWithFallback(projectId);
-  if(!proj){alert('项目不存在');return;}
-  const allUsers = await userDBGetAll();
-  const members = proj.memberPhones||[];
-  let userOpts = allUsers
-    .filter(u=>u.phone!==proj.creator)
-    .map(u=>`<option value="${u.phone}" ${members.includes(u.phone)?'selected':''}>${escHtml(u.name)} (${u.phone})</option>`)
-    .join('');
+  // 先显示加载占位
   const overlay = document.createElement('div');
   overlay.id='memberModal';
   overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
-  overlay.innerHTML=`
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:400px;max-width:90vw;">
-      <h3 style="margin:0 0 16px 0;color:var(--accent);">成员管理 - ${escHtml(proj.name)}</h3>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">选择可访问该项目的用户（Creator自动拥有权限）：</div>
-      <select id="memberSelect" multiple style="width:100%;height:180px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px;font-size:12px;">
-        ${userOpts}
-      </select>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px;">按住 Ctrl 可多选</div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-        <button class="btn btn-secondary" onclick="closeMemberModal()">取消</button>
-        <button class="btn btn-primary" onclick="saveMembers('${projectId}')">保存</button>
-      </div>
-    </div>`;
+  overlay.innerHTML=`<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:32px;color:var(--text2);font-size:14px;">⏳ 加载成员信息…</div>`;
   document.body.appendChild(overlay);
-}
-function closeMemberModal(){const el=document.getElementById('memberModal');if(el)el.remove();}
-
-async function saveMembers(projectId){
-  const sel = document.getElementById('memberSelect');
-  const selected = [...sel.selectedOptions].map(o=>o.value);
   try{
-    const proj = await projDBGet(projectId);
-    if(!proj){alert('项目不存在');return;}
-    proj.memberPhones = selected;
-    proj.updatedAt = Date.now();
-    await projDBPut(proj);
-    
-    // 同步到云端：先获取云端现有成员，然后添加/删除差异
-    if(window.cloudSync){
-      try{
-        console.log('[Cloud] 同步项目成员到云端:', projectId, selected);
-        // 获取云端当前成员
-        const cloudMembers = await window.cloudSync.getProjectMembers(projectId);
-        const cloudPhones = (cloudMembers || []).map(m => m.phone);
-        
-        // 添加新成员到云端
-        for(const phone of selected){
-          if(!cloudPhones.includes(phone)){
-            await window.cloudSync.addProjectMember(projectId, phone, false, false, currentUser.phone);
-          }
-        }
-        
-        // 从云端删除移除的成员
-        for(const cm of cloudMembers || []){
-          if(!selected.includes(cm.phone)){
-            await window.cloudSync.removeProjectMember(projectId, cm.phone);
-          }
-        }
-        
-        console.log('[Cloud] 项目成员已同步到云端');
-      }catch(e){console.error('[Cloud] 同步成员失败:', e);}
+    const proj = await getProjectWithFallback(projectId);
+    if(!proj){ overlay.remove(); alert('项目不存在'); return; }
+    const allUsers = await userDBGetAll();
+    let cloudMembers = [];
+    if(window.cloudSync){ try{ cloudMembers = await window.cloudSync.getProjectMembers(projectId)||[]; }catch(e){} }
+    const memberPhones = new Set(cloudMembers.map(m=>m.phone));
+    _mmBuild(overlay, projectId, proj, allUsers, memberPhones);
+  }catch(e){ overlay.remove(); alert('加载失败：'+e.message); }
+}
+
+// 渲染单个用户行（供列表复用）
+function _mmRow(u, memberPhones){
+  const ok = memberPhones.has(u.phone);
+  return `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;cursor:pointer;margin-bottom:3px;border:1px solid ${ok?'rgba(240,180,41,.35)':'var(--border)'};background:${ok?'rgba(240,180,41,.05)':'transparent'};transition:border .15s,background .15s;user-select:none;">
+    <input type="checkbox" value="${escHtml(u.phone)}" ${ok?'checked':''} style="width:15px;height:15px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;" onchange="_mmToggle(this)">
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(u.name)}</div>
+      <div style="font-size:11px;color:var(--text2);">${u.phone}</div>
+    </div>
+    ${ok?'<span style="font-size:10px;color:var(--accent);background:rgba(240,180,41,.15);padding:1px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;">已加入</span>':''}
+  </label>`;
+}
+
+function _mmBuild(overlay, projectId, proj, allUsers, memberPhones){
+  const creatorPhone = proj.creator_phone || proj.creator || '';
+  window._mm = { projectId, proj, allUsers, memberPhones: new Set(memberPhones), origPhones: new Set(memberPhones), creatorPhone };
+  const creatorUser = allUsers.find(u=>u.phone===creatorPhone);
+  const others = allUsers.filter(u=>u.phone!==creatorPhone);
+
+  overlay.innerHTML=`
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);width:440px;max-width:92vw;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:16px 20px 12px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div style="font-size:15px;font-weight:600;color:var(--accent);">👥 成员管理</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(proj.name)}</div>
+    </div>
+    <div style="padding:10px 20px 6px;flex-shrink:0;">
+      <input id="mm-kw" placeholder="🔍 搜索姓名 / 手机号…" oninput="_mmRefresh(this.value)"
+        style="width:100%;box-sizing:border-box;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;">
+    </div>
+    <div style="padding:4px 20px 6px;flex-shrink:0;">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:5px;">创建者（始终拥有权限）</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;border:1px solid var(--border);background:rgba(255,255,255,.03);">
+        <span style="font-size:16px;flex-shrink:0;">👑</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;color:var(--text);">${escHtml(creatorUser?.name||'未知用户')}</div>
+          <div style="font-size:11px;color:var(--text2);">${creatorPhone}</div>
+        </div>
+        <span style="font-size:10px;color:var(--accent);background:rgba(240,180,41,.15);padding:1px 7px;border-radius:10px;flex-shrink:0;">创建者</span>
+      </div>
+    </div>
+    <div style="padding:2px 20px 4px;flex-shrink:0;"><div style="font-size:11px;color:var(--text3);">其他成员</div></div>
+    <div id="mm-list" style="flex:1;overflow-y:auto;padding:2px 20px 8px;">
+      ${others.length ? others.map(u=>_mmRow(u,memberPhones)).join('') : '<div style="text-align:center;color:var(--text3);padding:24px 0;font-size:13px;">暂无其他用户</div>'}
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div style="font-size:12px;color:var(--text2);">已选 <b id="mm-cnt">${memberPhones.size}</b> 名成员（不含创建者）</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="closeMemberModal()">取消</button>
+        <button class="btn btn-primary" id="mm-btn" onclick="_mmSave()">保存</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _mmRefresh(kw){
+  const {allUsers, creatorPhone, memberPhones} = window._mm;
+  const k = (kw||'').toLowerCase();
+  const users = allUsers.filter(u=>{
+    if(u.phone===creatorPhone) return false;
+    if(!k) return true;
+    return u.name.toLowerCase().includes(k) || u.phone.includes(k);
+  });
+  const list = document.getElementById('mm-list');
+  if(list) list.innerHTML = users.length
+    ? users.map(u=>_mmRow(u,memberPhones)).join('')
+    : '<div style="text-align:center;color:var(--text3);padding:24px 0;font-size:13px;">暂无匹配用户</div>';
+}
+
+function _mmToggle(cb){
+  const {memberPhones} = window._mm;
+  if(cb.checked) memberPhones.add(cb.value); else memberPhones.delete(cb.value);
+  const row = cb.closest('label');
+  if(row){
+    row.style.border = cb.checked ? '1px solid rgba(240,180,41,.35)' : '1px solid var(--border)';
+    row.style.background = cb.checked ? 'rgba(240,180,41,.05)' : 'transparent';
+    let badge = row.querySelector('span:last-of-type');
+    if(cb.checked && (!badge || badge.textContent!=='已加入')){
+      const s = document.createElement('span');
+      s.style.cssText='font-size:10px;color:var(--accent);background:rgba(240,180,41,.15);padding:1px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;';
+      s.textContent='已加入';
+      row.appendChild(s);
+    } else if(!cb.checked && badge && badge.textContent==='已加入'){
+      badge.remove();
     }
-    
+  }
+  const cnt = document.getElementById('mm-cnt');
+  if(cnt) cnt.textContent = memberPhones.size;
+}
+
+async function _mmSave(){
+  const {projectId, memberPhones, origPhones} = window._mm;
+  const btn = document.getElementById('mm-btn');
+  if(btn){ btn.disabled=true; btn.textContent='保存中…'; }
+  try{
+    const newPhones = [...memberPhones];
+    const proj = await projDBGet(projectId);
+    if(proj){ proj.memberPhones=newPhones; proj.updatedAt=Date.now(); await projDBPut(proj); }
+    if(window.cloudSync){
+      const toAdd = newPhones.filter(p=>!origPhones.has(p));
+      const toRemove = [...origPhones].filter(p=>!memberPhones.has(p));
+      for(const phone of toAdd){
+        await window.cloudSync.addProjectMember(projectId, phone, 'viewer');
+        // 自动写入 canView 权限到本地 permDB（成员自动拥有可见权限）
+        if(typeof permDBPut === 'function'){
+          await permDBPut({ id: phone+'_'+projectId, phone, projectId, grantedBy: currentUser.phone, grantedAt: Date.now(), canView: true, canEdit: false, canDelete: false, canMember: false });
+        }
+      }
+      for(const phone of toRemove){
+        await window.cloudSync.removeProjectMember(projectId, phone);
+        // 移除成员时清除 canView 权限（如无其他权限则删除整条记录）
+        if(typeof permDBDelete === 'function'){
+          await permDBDelete(phone+'_'+projectId);
+        }
+      }
+      if(typeof clearPermCache === 'function') clearPermCache();
+    }
     closeMemberModal();
     renderProjectManage();
-  }catch(e){alert('保存失败：'+e.message);}
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='保存'; }
+    alert('保存失败：'+e.message);
+  }
 }
+
+function closeMemberModal(){ const el=document.getElementById('memberModal'); if(el) el.remove(); delete window._mm; }
 
 // ========== 查看项目（进入项目详情，显示子导航） ==========
 async function viewProject(projectId){
@@ -400,7 +488,7 @@ async function deleteProject(projectId){
   // 权限检查：超管 / 创建者 / 有 canDelete 权限的用户
   const proj = await getProjectWithFallback(projectId);
   if(!proj){alert('项目不存在');return;}
-  const isOwner = proj.creator === currentUser.phone;
+  const isOwner = proj.creator === currentUser.phone || proj.creator_phone === currentUser.phone;
   const isSuperAdmin = currentUser.role === 'super_admin';
   let canDelete = false;
   if(isSuperAdmin || isOwner) canDelete = true;
@@ -411,19 +499,22 @@ async function deleteProject(projectId){
     alert('您没有删除该项目的权限');
     return;
   }
+  if(!confirm(`确认删除项目「${proj.name}」？\n此操作不可恢复，该项目下所有战报也将一并删除。`)) return;
   try{
     // 先从云端删除
     if(window.cloudSync){
       try{
         await window.cloudSync.deleteProject(projectId);
         console.log('[Cloud] 项目已从云端删除:', proj.name);
-      }catch(e){console.error('[Cloud] 云端删除失败:', e);}
+      }catch(e){
+        console.error('[Cloud] 云端删除失败:', e);
+        if(!confirm('云端删除失败，是否仅删除本地记录？')) return;
+      }
     }
-    
     // 再从本地删除
     await projDBDelete(projectId);
-    renderProjectManage();
     if(typeof addSysLog==='function') addSysLog('delete', '删除项目: '+proj.name);
+    await renderProjectManage();
   }catch(e){alert('删除失败：'+e.message);}
 }
 
@@ -439,18 +530,7 @@ async function renderProjectSwitcher(){
     const navEl = document.querySelector('.nav');
     if(navEl) navEl.parentNode.insertBefore(switcher, navEl);
   }
-  if(projects.length===0){
-    switcher.innerHTML=`<span style="color:var(--text3);">暂无项目，</span><a href="javascript:void(0)" onclick="showProjectHome();" style="color:var(--accent);">去创建</a>`;
-  }else{
-    let html=`<span style="color:var(--text3);white-space:nowrap;">项目：</span>`;
-    html+=`<span style="cursor:pointer;padding:2px 8px;border-radius:4px;${!window.currentProjectId?'background:var(--accent);color:#000;font-weight:bold;':'color:var(--text2);'}" onclick="clearProjectFilter()">全部</span>`;
-    projects.forEach(p=>{
-      const active = window.currentProjectId===p.id;
-      html+=`<span style="cursor:pointer;padding:2px 8px;border-radius:4px;white-space:nowrap;${active?'background:var(--accent);color:#000;font-weight:bold;':'color:var(--text2);'}" onclick="switchToProject('${p.id}')">${escHtml(p.name)}</span>`;
-    });
-    switcher.innerHTML=html;
-  }
-  switcher.style.display='flex';
+  switcher.style.display='none';
 }
 
 async function switchToProject(pid){
@@ -507,50 +587,6 @@ async function assignRecordToProject(recordId, projectId){
     await projDBPut(proj);
   }
   return true;
-}
-
-// ========== 修复项目 battleRecordIds（同步实际战报数据）==========
-async function repairBattleRecordIds() {
-  if (!confirm('确定修复所有项目的战报计数？\n\n这会根据实际战报数据重新同步 battleRecordIds。\n\n注意：此操作会覆盖项目中的 battleRecordIds，请确保数据已备份。')) return;
-  try {
-    const projects = await projDBGetAll();
-    const records = await dbGetAll();
-
-    console.log('[repair] 共', projects.length, '个项目，', records.length, '条战报');
-    // 调试：打印前3条战报的 projectId 字段
-    records.slice(0, 3).forEach((r, i) => {
-      console.log(`[repair] 战报${i}: id=${r.id}, projectId=${r.projectId} (type: ${typeof r.projectId})`);
-    });
-
-    // 构建 projectId → recordId[] 映射（强制转字符串比较）
-    const recordMap = {};
-    for (const r of records) {
-      if (!r.projectId && r.projectId !== 0) continue;
-      const pid = String(r.projectId);
-      if (!recordMap[pid]) recordMap[pid] = [];
-      recordMap[pid].push(r.id);
-    }
-
-    console.log('[repair] recordMap keys:', Object.keys(recordMap));
-
-    let repaired = 0;
-    for (const proj of projects) {
-      const pid = String(proj.id);
-      const actualIds = recordMap[pid] || [];
-      const oldIds = proj.battleRecordIds || [];
-
-      console.log(`[repair] 项目 ${proj.name} (id=${pid}): 旧 ${oldIds.length} 条 → 新 ${actualIds.length} 条`);
-
-      // 强制更新
-      proj.battleRecordIds = actualIds;
-      await projDBPut(proj);
-      repaired++;
-    }
-    alert(`修复完成！共修复 ${repaired} 个项目。\n\n请按 F5 刷新页面查看最新战报数量。`);
-  } catch (e) {
-    console.error('[repair] 失败:', e);
-    alert('修复失败：' + e.message);
-  }
 }
 
 // ========== 显示项目管理首页 ==========

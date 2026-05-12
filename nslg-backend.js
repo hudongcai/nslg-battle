@@ -17,7 +17,8 @@ app.use((req, res, next) => {
 // 请求日志中间件
 app.use((req, res, next) => {
   if (req.method !== 'GET') {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, (JSON.stringify(req.body) || '').slice(0, 200));
+    const bodyStr = req.body ? JSON.stringify(req.body) : '{}';
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, (bodyStr || '').slice(0, 200));
   }
   next();
 });
@@ -60,6 +61,35 @@ async function requireActiveUser(req, res, next) {
   }
 }
 
+// ========== 全局用户存活中间件 ==========
+// 对所有 /api/* 请求：携带新格式 token 时验证用户仍存在且未被禁用
+// 不影响无 token 的公开请求；POST 敏感接口仍保留 requireActiveUser 做"无 token 拒绝"兜底
+async function globalUserCheck(req, res, next) {
+  // 跳过登录/注册接口本身，避免循环
+  if (req.path === '/auth/login' || req.path === '/auth/register') return next();
+
+  const rawToken = req.headers['authorization'] || '';
+  if (!rawToken) return next(); // 无 token → 公开请求，由各接口自行处理
+
+  const phone = extractPhoneFromToken(rawToken);
+  if (!phone) return next(); // 旧格式 token → 由 requireActiveUser 各自处理
+
+  try {
+    const [rows] = await pool.query('SELECT id, status FROM users WHERE phone = ? LIMIT 1', [phone]);
+    if (rows.length === 0) {
+      return res.status(401).json({ code: 401, message: '账号不存在，请重新登录' });
+    }
+    if (rows[0].status === 0) {
+      return res.status(401).json({ code: 401, message: '账号已被禁用，请联系管理员' });
+    }
+    req.authPhone = phone;
+    req.authUserId = rows[0].id;
+    next();
+  } catch (err) {
+    next(); // DB 异常不阻断请求
+  }
+}
+
 const dbConfig = {
   host: 'localhost',
   port: 3306,
@@ -81,6 +111,9 @@ async function initDB() {
     process.exit(1);
   }
 }
+
+// 全局用户存活检查：对所有 /api 路由生效
+app.use('/api', globalUserCheck);
 
 app.post('/api/auth/login', async (req, res) => {
   const { phone, password } = req.body;
@@ -268,6 +301,28 @@ app.put('/api/users/:phone', async (req, res) => {
     await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE phone = ?`, params);
     
     res.json({ code: 200, message: '更新成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+app.post('/api/users/:id/reset-password', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.json({ code: 400, message: '密码至少6位' });
+    }
+
+    const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
+    if (userRows.length === 0) {
+      return res.json({ code: 404, message: '用户不存在' });
+    }
+
+    await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, id]);
+
+    res.json({ code: 200, message: '密码重置成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
   }
@@ -702,12 +757,32 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
 app.put('/api/battles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { attacker_name, enemy_name, result, battle_date, description,
-            left_alliance, right_alliance,
-            left_loss, right_loss, left_total, right_total,
-            left_loss_rate, right_loss_rate,
-            left_generals, right_generals,
-            left_tactics, right_tactics, left_formation, right_formation } = req.body;
+    // 兼容 camelCase 和 snake_case
+    const attacker_name = req.body.attacker_name || req.body.attackerName;
+    const enemy_name = req.body.enemy_name || req.body.enemyName;
+    const result = req.body.result;
+    const battle_date = req.body.battle_date || req.body.battleDate;
+    const description = req.body.description;
+    const left_alliance = req.body.left_alliance || req.body.leftAlliance;
+    const right_alliance = req.body.right_alliance || req.body.rightAlliance;
+    const left_loss = req.body.left_loss || req.body.leftLoss;
+    const right_loss = req.body.right_loss || req.body.rightLoss;
+    const left_total = req.body.left_total || req.body.leftTotal;
+    const right_total = req.body.right_total || req.body.rightTotal;
+    const left_loss_rate = req.body.left_loss_rate || req.body.leftLossRate;
+    const right_loss_rate = req.body.right_loss_rate || req.body.rightLossRate;
+    let left_generals = req.body.left_generals || req.body.leftGenerals;
+    let right_generals = req.body.right_generals || req.body.rightGenerals;
+    let left_tactics = req.body.left_tactics || req.body.leftTactics;
+    let right_tactics = req.body.right_tactics || req.body.rightTactics;
+    const left_formation = req.body.left_formation || req.body.leftFormation;
+    const right_formation = req.body.right_formation || req.body.rightFormation;
+
+    // JSON 序列化数组字段
+    const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
+    const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
+    const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
+    const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
 
     const now = new Date();
 
@@ -723,10 +798,10 @@ app.put('/api/battles/:id', async (req, res) => {
        left_alliance || '', right_alliance || '',
        left_loss, right_loss, left_total, right_total,
        left_loss_rate ?? null, right_loss_rate ?? null,
-       left_generals, right_generals,
-       left_tactics, right_tactics, left_formation, right_formation, now, id]
+       left_generals_str, right_generals_str,
+       left_tactics_str, right_tactics_str, left_formation, right_formation, now, id]
     );
-    
+
     res.json({ code: 200, message: '更新成功' });
   } catch (err) {
     res.json({ code: 500, message: err.message });
@@ -740,6 +815,7 @@ app.delete('/api/battles/:id', async (req, res) => {
     const [bRows] = await pool.query('SELECT project_id FROM battle_records WHERE id = ?', [id]);
     const bProjectId = bRows.length ? bRows[0].project_id : null;
 
+    await pool.query('DELETE FROM battle_gallery WHERE battle_id = ?', [id]);
     await pool.query('DELETE FROM battle_records WHERE id = ?', [id]);
 
     if (bProjectId) {
