@@ -168,7 +168,7 @@
       }
     }
     return Object.values(groups)
-      .filter(g => g.total >= 2)
+      .filter(g => g.total >= 1)
       .map(g => {
         const aWR = g.total ? g.aW / g.total * 100 : 0;
         const bWR = g.total ? g.bW / g.total * 100 : 0;
@@ -210,7 +210,10 @@
   function analyzeRecommend(recs) {
     const enemies = analyzeEnemyFreq(recs);
     if (!enemies.length) return [];
+    // 高频敌方队伍 key 集合（O(1) 查找）
+    const enemyKeySet = new Set(enemies.map(e => teamKey(e.generals, e.tactics, e.formation)));
     const matrix = {};
+    let recProcessed = 0, recMatchedRight = 0, recMatchedLeft = 0;
     for (const rec of recs) {
       const lg = normGens(rec.leftGenerals  || rec.left_generals);
       const lt = normTacs(rec.leftTactics   || rec.left_tactics);
@@ -219,34 +222,57 @@
       const rt = normTacs(rec.rightTactics  || rec.right_tactics);
       const rf = rec.rightFormation || rec.right_formation || '';
       if (!lg.length || !rg.length) continue;
-      const ek = teamKey(rg, rt, rf);
-      const ok = teamKey(lg, lt, lf);
-      if (!matrix[ek]) matrix[ek] = {};
-      if (!matrix[ek][ok]) {
-        matrix[ek][ok] = { generals: lg, tactics: lt, formation: lf, wins: 0, total: 0, ourLoss: 0, enLoss: 0, records: [] };
+      recProcessed++;
+      const leftKey  = teamKey(lg, lt, lf);
+      const rightKey = teamKey(rg, rt, rf);
+      const w = winner(rec.result);
+      const leftLoss  = parseFloat(rec.leftLoss  || rec.left_loss  || 0);
+      const rightLoss = parseFloat(rec.rightLoss || rec.right_loss || 0);
+
+      // 敌方高频队伍在右侧 → 左侧是潜在克制方
+      if (enemyKeySet.has(rightKey)) {
+        recMatchedRight++;
+        addEncounter(matrix, rightKey, leftKey, lg, lt, lf, w === 'left', leftLoss, rightLoss, rec);
       }
-      const c = matrix[ek][ok];
-      c.total++;
-      c.records.push(rec);
-      c.ourLoss += parseFloat(rec.leftLoss  || rec.left_loss  || 0);
-      c.enLoss  += parseFloat(rec.rightLoss || rec.right_loss || 0);
-      if (winner(rec.result) === 'left') c.wins++;
+      // 敌方高频队伍在左侧 → 右侧是潜在克制方（左右不同队时）
+      if (leftKey !== rightKey && enemyKeySet.has(leftKey)) {
+        recMatchedLeft++;
+        addEncounter(matrix, leftKey, rightKey, rg, rt, rf, w === 'right', rightLoss, leftLoss, rec);
+      }
     }
     return enemies.map(enemy => {
       const ek = teamKey(enemy.generals, enemy.tactics, enemy.formation);
-      const counters = Object.values(matrix[ek] || {})
+      const allCounters = Object.values(matrix[ek] || {});
+      const counters = allCounters
+        .filter(c => c.wins > 0)
         .map(c => ({
           generals: c.generals, tactics: c.tactics, formation: c.formation,
           records: c.records,
+          wins: c.wins,
           winRate:  c.total ? Math.round(c.wins / c.total * 1000) / 10 : 0,
-          lossRate: c.enLoss ? Math.round(c.ourLoss / c.enLoss * 100) : 0,
+          lossRate: c.enemyLoss ? Math.round(c.counterLoss / c.enemyLoss * 100) : 0,
           total: c.total
         }))
-        .filter(c => c.winRate > 50)
-        .sort((a, b) => b.winRate - a.winRate)
-        .slice(0, 5);
-      return counters.length ? { enemy, counters } : null;
-    }).filter(Boolean);
+        .sort((a, b) => b.winRate - a.winRate || b.total - a.total)
+        .slice(0, 8);
+      return { enemy, counters };
+    });
+  }
+
+  function addEncounter(matrix, enemyKey, cKey, cGens, cTacs, cForm, cWon, cLoss, eLoss, rec) {
+    if (!matrix[enemyKey]) matrix[enemyKey] = {};
+    if (!matrix[enemyKey][cKey]) {
+      matrix[enemyKey][cKey] = {
+        generals: cGens, tactics: cTacs, formation: cForm,
+        wins: 0, total: 0, counterLoss: 0, enemyLoss: 0, records: []
+      };
+    }
+    const c = matrix[enemyKey][cKey];
+    c.total++;
+    if (cWon) c.wins++;
+    c.counterLoss += cLoss;
+    c.enemyLoss  += eLoss;
+    c.records.push(rec);
   }
 
   // ==================== 渲染：Tab 1 克制关系 ====================
@@ -261,7 +287,7 @@
 
     if (!data.length) {
       el.innerHTML = `<tr><td colspan="7" class="ca-empty">
-        暂无克制关系数据<br><small>需要至少两条双方队伍（武将＋战法＋阵型均相同）的战报</small>
+        暂无克制关系数据<br><small>只要有敌对战报就会显示（武将＋战法＋阵型均相同视为同一队伍）</small>
       </td></tr>`;
       return;
     }
@@ -319,17 +345,24 @@
       return;
     }
 
-    el.innerHTML = data.map((item, gi) => {
-      const countersHtml = item.counters.map((c, ci) => `
-        <div class="ca-rec-counter">
-          ${teamChip(c.generals, c.tactics, c.formation, true)}
-          <div class="ca-rec-stats">
-            <span class="ca-badge ca-badge-win">${c.winRate}% 胜率</span>
-            <span class="ca-badge ca-badge-loss">战损 ${c.lossRate}%</span>
-            <span class="ca-badge ca-badge-cnt">${c.total} 场</span>
-            <button class="ca-src-btn" onclick="caShowRecSrc(${gi},${ci})">溯源</button>
-          </div>
-        </div>`).join('');
+    el.innerHTML = `<div class="ca-rec-header">
+        <div class="ca-rec-header-left">敌方高频队伍</div>
+        <div class="ca-rec-arrow-spacer"></div>
+        <div class="ca-rec-header-right">克制推荐队伍</div>
+      </div>
+      ${data.map((item, gi) => {
+      const countersHtml = item.counters.length
+        ? item.counters.map((c, ci) => `
+          <div class="ca-rec-counter">
+            ${teamChip(c.generals, c.tactics, c.formation, true)}
+            <div class="ca-rec-stats">
+              <span class="ca-badge ca-badge-win">${c.winRate}% 胜率</span>
+              <span class="ca-badge ca-badge-loss">战损 ${c.lossRate}%</span>
+              <span class="ca-badge ca-badge-cnt">${c.total} 场</span>
+              <button class="ca-src-btn" onclick="caShowRecSrc(${gi},${ci})">溯源</button>
+            </div>
+          </div>`).join('')
+        : `<div class="ca-rec-empty">暂无克制数据</div>`;
 
       return `<div class="ca-rec-group">
         <div class="ca-rec-enemy">
@@ -340,7 +373,7 @@
         <div class="ca-rec-arrow">▶</div>
         <div class="ca-rec-counters">${countersHtml}</div>
       </div>`;
-    }).join('');
+    }).join('')}`;
   };
 
   window.caShowRecSrc = function (gi, ci) {
@@ -362,7 +395,7 @@
         </div>
 
         <div id="caPanelRelationship">
-          <p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）对战 ≥2 次时统计，胜率高者显示在左侧</p>
+          <p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p>
           <div class="ca-tbl-wrap">
             <table class="ca-tbl">
               <thead><tr>
@@ -395,7 +428,7 @@
         </div>
 
         <div id="caPanelRecommend" style="display:none;">
-          <p class="ca-hint">针对敌方高频队伍，列出我方胜率 &gt;50% 的克制阵容，按胜率降序</p>
+          <p class="ca-hint">针对敌方高频队伍，从所有战报中找出有过战胜记录（胜率 &gt;50%）的克制阵容，按胜率降序</p>
           <div id="counterRecommendations"></div>
         </div>
       </div>`;
@@ -516,9 +549,17 @@
       .ca-empty-blk small{display:block;color:#444;margin-top:6px;font-size:11px;}
 
       /* ---- Tab3 克制推荐 ---- */
+      .ca-rec-header{display:flex;align-items:center;
+        background:var(--bg, #0a0a1a);border:1px solid var(--border,#2a2a3e);
+        border-radius:8px 8px 0 0;padding:8px 14px;margin-bottom:0;font-weight:600;font-size:11px;
+        color:var(--accent,#f0b429);letter-spacing:.04em;}
+      .ca-rec-header-left{flex:1 1 0;min-width:0;text-align:center;}
+      .ca-rec-header-right{flex:1 1 0;min-width:0;text-align:center;}
+      .ca-rec-arrow-spacer{flex:0 0 26px;}
       .ca-rec-group{display:flex;align-items:stretch;
         background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);
-        border-radius:8px;margin-bottom:8px;overflow:hidden;}
+        border-top:none;border-radius:0;margin-bottom:0;overflow:hidden;}
+      .ca-rec-group:last-child{border-radius:0 0 8px 8px;margin-bottom:8px;}
       .ca-rec-enemy{flex:1 1 0;min-width:0;padding:12px 14px;
         border-right:1px solid var(--border,#2a2a3e);
         display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.01);}
@@ -530,6 +571,7 @@
       .ca-rec-counter{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);
         display:flex;flex-direction:column;gap:6px;}
       .ca-rec-counter:last-child{border-bottom:none;}
+      .ca-rec-empty{color:var(--text3,#888);font-size:12px;padding:16px 14px;font-style:italic;}
       .ca-rec-stats{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
     `;
     document.head.appendChild(s);
