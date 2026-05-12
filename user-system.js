@@ -235,20 +235,24 @@ async function getUserPoints(phone){
   try {
     const token = getToken();
     if (token && typeof cloudRequest === 'function') {
-      const res = await cloudRequest('/auth/profile');
-      if (res && res.code === 200 && res.data && res.data.points !== undefined) {
-        const cloudPoints = res.data.points;
-        // 同步到本地
-        const u = await userDBGet(phone);
-        if (u && u.points !== cloudPoints) {
-          u.points = cloudPoints;
-          await userDBPut(u);
-          if (currentUser && currentUser.phone === phone) {
-            currentUser.points = cloudPoints;
-            saveSession(currentUser);
+      // 修复：/api/auth/profile 有 bug，改用 /api/users 获取用户积分
+      const res = await cloudRequest('/users');
+      if (res && res.code === 200 && res.data) {
+        const list = Array.isArray(res.data) ? res.data : ((res.data && res.data.list) || []);
+        const cloudUser = list.find(u => u.phone === phone);
+        if (cloudUser && cloudUser.points !== undefined) {
+          const cloudPoints = cloudUser.points;
+          // 同步到本地
+          const u = await userDBGet(phone);
+          if (u && u.points !== cloudPoints) {
+            u.points = cloudPoints;
+            await userDBPut(u);
+            if (currentUser && currentUser.phone === phone) {
+              currentUser.points = cloudPoints;
+            }
           }
+          return cloudPoints;
         }
-        return cloudPoints;
       }
     }
   } catch (e) {
@@ -397,6 +401,7 @@ function saveSession(user){
     phone: user.phone,
     name: user.name,
     role: user.role,
+    points: user.points || 0,  // 同步积分到会话（用于自动登录时恢复）
     loginAt: Date.now()
   }));
 }
@@ -726,25 +731,73 @@ async function doRegPwd(){
     await userDBPut(user);
 
     // 同步到云端（注册时创建云端用户）
+    let cloudUser = null;
     try {
       console.log('[doRegPwd] window.cloudSync 存在?', !!window.cloudSync, '| createUser 类型:', typeof window?.cloudSync?.createUser);
       if (window.cloudSync && typeof window.cloudSync.createUser === 'function') {
         console.log('[doRegPwd] 准备调用 cloudSync.createUser:', phone, name||`用户${phone.slice(-4)}`, 'member');
         const createResult = await window.cloudSync.createUser(phone, name||`用户${phone.slice(-4)}`, pwd1, 'member');
         console.log('[doRegPwd] 云端用户创建结果:', createResult);
+
+        // 注册成功后立即登录，获取 token 和云端最新积分
+        if (createResult && typeof cloudLogin === 'function') {
+          console.log('[doRegPwd] 注册成功，立即登录获取 token 和积分...');
+          cloudUser = await cloudLogin(phone, pwd1);
+          if (cloudUser && cloudUser.points !== undefined) {
+            console.log('[doRegPwd] 登录成功，云端积分:', cloudUser.points);
+            // 同步云端积分到本地（确保一致）
+            if (cloudUser.points !== user.points) {
+              user.points = cloudUser.points;
+              await userDBPut(user);
+            }
+          }
+        }
       } else {
         console.warn('[doRegPwd] cloudSync.createUser 不可用，跳过云端同步');
       }
     } catch (cloudErr) {
-      console.error('[doRegPwd] 云端用户创建失败（本地已保存）:', cloudErr);
+      console.error('[doRegPwd] 云端用户创建或登录失败（本地已保存）:', cloudErr);
       // 不阻塞注册流程，本地已保存
     }
 
     msgEl.className='msg-suc';
-    msgEl.textContent='注册成功！即将自动登录...（已赠送18积分）';
+    msgEl.textContent='注册成功！';
     saveRememberedUser(phone, pwd1, user.name, 'member');
     addSysLog('action', '密码注册新用户: '+phone);
-    setTimeout(()=>{currentUser=user;saveSession(user);closeRegister();onLoginSuccess();},1200);
+
+    // 赠送积分弹窗——要求用户主动确认
+    const _regOverlay = document.createElement('div');
+    _regOverlay.className = 'confirm-overlay';
+    _regOverlay.innerHTML = `
+      <div class="confirm-panel" style="text-align:center;max-width:360px;">
+        <div class="confirm-header" style="justify-content:center;border-bottom:none;padding-bottom:4px;">
+          <h3 class="confirm-title" style="font-size:20px;">🎉 注册成功！</h3>
+        </div>
+        <div class="confirm-body" style="padding:4px 22px 16px;">
+          <div style="background:linear-gradient(135deg,#0d2a0d,#1a3a1a);border:2px solid #4caf50;border-radius:14px;padding:22px 16px;margin-bottom:12px;">
+            <div style="font-size:13px;color:#81c784;margin-bottom:6px;">🎁 新用户免费赠送</div>
+            <div style="font-size:56px;font-weight:bold;color:#4caf50;line-height:1;text-shadow:0 0 20px rgba(76,175,80,.5);">${user.points || 18}</div>
+            <div style="font-size:15px;color:#a5d6a7;margin-top:8px;font-weight:bold;">积 分</div>
+            <div style="font-size:12px;color:#66bb6a;margin-top:6px;">已自动存入您的账户</div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);line-height:1.6;">积分可用于解锁战报高级分析功能<br>欢迎加入三谋！</div>
+        </div>
+        <div class="confirm-footer" style="justify-content:center;padding-bottom:20px;">
+          <button id="_regSuccessOkBtn" class="confirm-btn confirm" style="flex:0 0 auto;min-width:180px;font-size:15px;padding:12px 24px;">✓ 好的，开始使用！</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(_regOverlay);
+    document.getElementById('_regSuccessOkBtn').onclick = function(){
+      _regOverlay.remove();
+      // 确保积分正确
+      currentUser = user;
+      // 立即更新右上角显示（不需要等 onLoginSuccess 的异步积分刷新）
+      if(typeof updateUserNavPoints === 'function') updateUserNavPoints();
+      saveSession(currentUser);
+      closeRegister();
+      onLoginSuccess();
+    };
   }catch(e){msgEl.textContent='注册失败：'+e.message;}
 }
 
@@ -826,27 +879,34 @@ async function onLoginSuccess(){
       if(typeof updateUserNavPoints === 'function') updateUserNavPoints();
     }).catch(e => console.warn('[onLoginSuccess] 积分刷新失败:', e.message));
   }
-  // 登录成功后加载战报数据（带上正确的 currentUser）
-  if(typeof dataInit==='function'){
-    dataInit();
-  }
-  
-  // ========== 项目云同步（与角色同步机制一致）==========
-  // 登录成功后从云端同步项目数据，确保跨浏览器可见
+  // ① 先确保 IndexedDB 打开（openDB 必须完成才能写入战报数据）
+  if(typeof openDB==='function') await openDB();
+
+  // ② 加载本地已有数据先展示（不阻塞云端同步）
+  if(typeof loadAllRecords==='function') await loadAllRecords();
+
+  // ③ 从云端拉取最新数据（覆盖/补全本地）
   if(window.cloudSync && window.cloudSync.syncToLocal){
     try{
-      console.log('[onLoginSuccess] 开始同步云端项目数据...');
+      console.log('[onLoginSuccess] 开始同步云端数据...');
       const syncResult = await window.cloudSync.syncToLocal();
-      console.log('[onLoginSuccess] 云端项目同步完成:', syncResult);
+      console.log('[onLoginSuccess] 云端同步完成:', syncResult);
     }catch(e){
-      console.error('[onLoginSuccess] 云端项目同步失败:', e);
+      console.error('[onLoginSuccess] 云端同步失败:', e);
     }
   }
-  
-  // 渲染项目切换栏（含"全部"按钮）
-  if(typeof renderProjectSwitcher === 'function') renderProjectSwitcher();
-  // 默认进入项目管理页
-  showProjectHome();
+
+  // ④ 同步完成后刷新项目栏 + 战报视图
+  if(typeof renderProjectSwitcher === 'function') await renderProjectSwitcher();
+  if(typeof loadAllRecords === 'function'){
+    await loadAllRecords();
+    if(typeof renderDataTable === 'function') renderDataTable();
+    if(typeof renderGallery === 'function') renderGallery();
+  }
+
+  // ⑤ 刷新项目管理页面（页面刷新后首次进入需要渲染项目列表）
+  if(typeof renderProjectManage === 'function') await renderProjectManage();
+
 }
 
 // ========== 渲染用户栏 ==========
@@ -875,7 +935,7 @@ async function renderUserBar(){
   bar.innerHTML=`
     <div style="display:flex;align-items:center;gap:8px;">
       <div style="width:30px;height:30px;border-radius:50%;background:${roleColor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">${escHtml(avatarChar)}</div>
-      <div style="display:flex;flex-direction:column;line-height:1.35;">
+      <div class="header-username" style="display:flex;flex-direction:column;line-height:1.35;">
         <span style="font-size:13px;font-weight:500;color:var(--text);">${escHtml(currentUser.name)||escHtml(currentUser.phone)}</span>
         <span style="font-size:10px;color:${roleColor};opacity:.85;">${escHtml(roleName)}</span>
       </div>
@@ -1385,6 +1445,11 @@ async function checkLoginState(){
           return;
         }
         currentUser = user;
+        // 同步会话中的积分到本地（确保自动登录时积分是最新的）
+        if(session.points !== undefined && session.points !== user.points){
+          user.points = session.points;
+          await userDBPut(user);
+        }
         addSysLog('login','自动登录（会话恢复）');
         startSessionHeartbeat();
         onLoginSuccess();

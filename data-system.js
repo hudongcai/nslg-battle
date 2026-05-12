@@ -233,7 +233,10 @@ async function dbAdd(rec) {
             leftLossRate: rec.leftLossRate ?? null,
             rightLossRate: rec.rightLossRate ?? null,
             result: rec.result || '',
-            description: rec.description || ''
+            description: rec.description || '',
+            imageBase64: rec.imageBase64 || '',
+            imageName: rec.imageName || '',
+            uploaderPhone: rec.user_phone || (typeof currentUser !== 'undefined' ? currentUser.phone : '')
           };
           console.log('[dbAdd] 准备调用 cloudSync.createRecord, cloudRec:', JSON.stringify(cloudRec).slice(0,200));
           window.cloudSync.createRecord(cloudRec).then(result => {
@@ -262,6 +265,16 @@ function dbPutLocal(rec) {
     const tx = db.transaction(['records'], 'readwrite');
     const req = tx.objectStore('records').put(rec);
     req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// 仅删 IndexedDB，不同步云端（用于同步时清理本地孤立记录）
+function dbDeleteLocal(id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['records'], 'readwrite');
+    const req = tx.objectStore('records').delete(id);
+    req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
 }
@@ -460,7 +473,7 @@ async function loadAllRecords() {
           for (const rec of r) {
             if (!rec.projectId) rec.projectId = '';
             if (!rec.uploader) rec.uploader = '';
-            try { await dbAdd(rec); } catch (e) { }
+            try { await dbPutLocal(rec); } catch (e) { } // 只写本地，不推云端
           }
           allRecords = await dbGetAll();
           if (window.currentProjectId) {

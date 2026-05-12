@@ -16,6 +16,9 @@ body{font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;background:var
 .header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),var(--blue),var(--accent),transparent);opacity:.6;}
 .header h1{font-size:20px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:1px;white-space:nowrap;}
 .header h1 .sub{font-size:11px;font-weight:normal;margin-left:10px;-webkit-text-fill-color:var(--text2);letter-spacing:0;}
+@media(max-width:960px){.header{padding:12px 16px;}.header h1{font-size:17px;}#ocrStatus{display:none!important;}}
+@media(max-width:720px){.header{padding:10px 14px;}.header h1{font-size:15px;}.header h1 .sub{display:none!important;}#headerStats{display:none!important;}}
+@media(max-width:520px){.header{padding:8px 12px;}#pointsMallBtn{display:none!important;}#navPoints{font-size:12px!important;margin-right:0!important;}.header-username{display:none!important;}}
 .ocr-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);padding:5px 12px;border-radius:20px;background:rgba(255,255,255,.03);border:1px solid var(--border);}
 .ocr-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);transition:all .3s;}
 .ocr-dot.ok{background:var(--green);box-shadow:0 0 8px rgba(81,207,102,.5);}
@@ -426,7 +429,7 @@ document.addEventListener('click', function(e) {
   <div><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 2026.05.04</span></h1></div>
   <div style="display:flex;gap:16px;align-items:center;margin-left:auto;">
     <div class="ocr-status" id="ocrStatus"><span class="ocr-dot" id="ocrDot"></span><span id="ocrText">OCR 待检测</span></div>
-    <div style="display:flex;gap:14px;">
+    <div id="headerStats" style="display:flex;gap:14px;">
       <div style="text-align:center;"><div style="font-size:18px;font-weight:bold;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="statTotal">0</div><div style="font-size:9px;color:var(--text2);">总战报</div></div>
       <div style="text-align:center;"><div style="font-size:18px;font-weight:bold;background:linear-gradient(135deg,var(--green),#7bed9f);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="statTeams">0</div><div style="font-size:9px;color:var(--text2);">队伍数</div></div>
     </div>
@@ -474,14 +477,14 @@ document.addEventListener('click', function(e) {
   <div id="tab-data" class="tab-content">
     <div class="card">
       <h3>📤 批量上传战报图片</h3>
-      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('batchInput').click()">
+      <div class="upload-zone" id="uploadZone" onclick="checkCreditsBeforeUpload()">
         <div class="icon">📁</div><div>点击或拖拽上传战报图片（支持批量）</div><div style="font-size:10px;color:var(--text3);margin-top:6px;">PNG / JPG / JPEG</div>
       </div>
       <input type="file" id="batchInput" multiple accept="image/*" style="display:none;" onchange="handleBatchUpload(this.files)">
       <div id="queueArea" style="display:none;margin-top:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:12px;font-weight:bold;color:var(--accent);">处理队列 (<span id="queueCount">0</span>)</span>
-          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch" onclick="toggleBatchPause()" disabled>⏸ 暂停</button><button class="btn btn-sm btn-danger" id="btnBatchDelQueue" style="display:none;" onclick="batchRemoveQueue()">🗑 删除已取消</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
+          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch" onclick="toggleBatchPause()" disabled>⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="batchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
         <div class="queue-list" id="queueList"></div>
@@ -1387,16 +1390,16 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   </div>
 </div>
 
-  <script src="cloud-sync.js?v=202605111004"></script>
+  <script src="cloud-sync.js?v=202605112300"></script>
   <script src="data-system.js?v=202605110006"></script>
   <script src="data_heroes.js?v=202605081430"></script>
   <script src="data_tactics.js?v=202605081430"></script>
   <script src="counter-analysis.js?v=202605120002"></script>
-  <script src="user-system.js?v=202605111005"></script>
-  <script src="project-system.js?v=202605110500"></script>
+  <script src="user-system.js?v=202605111900"></script>
+  <script src="project-system.js?v=202605121430"></script>
   <script src="role-system.js?v=202605110001"></script>
-  <script src="ocr-system.js?v=202605110008"></script>
-  <script src="data-perm.js?v=202605081430"></script>
+  <script src="ocr-system.js?v=202605112000"></script>
+  <script src="data-perm.js?v=202605111120"></script>
   <script src="points-mall.js?v=202605081430"></script>
 <script>
 // 全局兜底：确保 getRolePermissions 始终有定义

@@ -8,7 +8,7 @@ const OCR_CONFIG = {
   // 本地自动启用，线上也启用（依赖云端 Worker 处理 OCR）
   enabled: true,
   model: 'ep-m-20260426183050-krmx7',
-  maxTokens: 2000,
+  maxTokens: 3000,
   timeout: 120000,    // 视觉模型识别大图可能较久，从60s提升到120s
   batchConcurrency: 2,
   batchInterval: 1500,
@@ -28,6 +28,8 @@ function getOcrEndpoint() {
 let ocrQueue = [];
 let ocrRunning = false;
 let ocrPaused = false;
+let batchAbortController = null;  // 用于中止正在进行的 OCR 请求（暂停时使用）
+let ocrPausedByUser = false;      // 标记是否为用户主动暂停导致的中止
 
 // ========== 初始化 ==========
 function initOCR() {
@@ -63,7 +65,7 @@ function setupOCRListeners() {
 }
 
 // ========== OCR API ==========
-async function callOCRAPI(base64Data) {
+async function callOCRAPI(base64Data, externalSignal = null) {
   const startTime = Date.now();
   updateOCRStatus('work', 'OCR 识别中...');
   // 定时更新状态文字，显示已等待时间，让用户知道没卡死
@@ -74,21 +76,42 @@ async function callOCRAPI(base64Data) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OCR_CONFIG.timeout);
 
-  const promptText = `请识别这张三国谋定天下游戏的战报截图，严格按照格式输出：
+  // 将外部中止信号（用户暂停）转发给内部 controller
+  let onExternalAbort;
+  if (externalSignal) {
+    onExternalAbort = () => controller.abort();
+    externalSignal.addEventListener('abort', onExternalAbort);
+  }
 
-规则：
-- 战报左侧和右侧玩家头像上方各有一行文字，格式固定为"同盟名丨玩家名"，分隔符是游戏内竖线"丨"（也可能显示为"|"或"｜"）
-- 同盟名在竖线之前，玩家名在竖线之后，例如"真武丨憨憨牛"→同盟=真武、玩家=憨憨牛
-- 【重要】同盟名一定存在，请仔细查看头像上方区域，即使文字较小或颜色较浅也要识别，绝对不能填"未知"
-- 同盟和玩家必须拆开分别填写，绝对不能合并写在一起
-- 武将名、战法名无法识别时填"未知"，数字字段无法识别填0
+  const promptText = `你是三国谋定天下游戏战报识别专家。请仔细分析这张战报截图，严格按照格式输出所有字段。
 
+【画面布局说明】
+- 画面分左右两半，中央有"胜"或"败"大字结果
+- 每侧顶部有两个独立区域：
+  ① 同盟名称区：单独显示该玩家所在同盟的名称（这里只有同盟名，没有玩家名）
+  ② 玩家名称区：单独显示玩家自己的名字（玩家名本身可能含有"丨"符号，这是玩家取名的一部分，不代表任何分隔，要完整保留）
+  ③ 阵型标签：显示阵型名称（如"方圆阵"、"雁行阵"、"鱼鳞阵"、"锋矢阵"、"箕形阵"等）
+- 每侧中部：三位武将的头像卡片横向排列，头像下方有武将名字
+- 每侧底部：三列战法框，每列对应上方的武将，每个框内列出该武将的战法名称（战法名旁边可能有"×数字"表示叠加层数，忽略这些数字，只取战法名称）
+- 每侧顶部数字区：显示"战损:XXXX"（已损失兵力）和总兵力数字（通常格式为"XXXX/XXXXX"，斜线前为战损、斜线后为总兵）
+
+【识别规则】
+1. 同盟名：从同盟名称区域单独读取，不要从玩家名中拆分
+2. 玩家名：从玩家名称区域单独读取，完整保留，即使含有"丨"也不要拆分（"丨"是玩家名的一部分）
+3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
+4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
+5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3
+6. 战法：每位武将下方的战法框中，每行一个战法名，忽略"×数字"，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
+7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
+8. 无法识别的文字填"未知"，数字填0
+
+【输出格式（严格按此格式，不要增减字段）】
 【左侧】
-同盟：（竖线前的同盟名）
-玩家：（竖线后的玩家名）
-阵型：（如雁形阵、箕形阵、鱼鳞阵，无法识别填"未知"）
-战损：（纯数字，如 8152）
-总兵：（纯数字，如 30000）
+同盟：xxx
+玩家：xxx
+阵型：xxx
+战损：数字
+总兵：数字
 武将1：武将名
 战法1：战法A,战法B,战法C
 武将2：武将名
@@ -96,11 +119,11 @@ async function callOCRAPI(base64Data) {
 武将3：武将名
 战法3：战法G,战法H,战法I
 【右侧】
-同盟：（竖线前的同盟名）
-玩家：（竖线后的玩家名）
-阵型：（如雁形阵、箕形阵、鱼鳞阵，无法识别填"未知"）
-战损：（纯数字）
-总兵：（纯数字）
+同盟：xxx
+玩家：xxx
+阵型：xxx
+战损：数字
+总兵：数字
 武将1：武将名
 战法1：战法A,战法B,战法C
 武将2：武将名
@@ -108,10 +131,9 @@ async function callOCRAPI(base64Data) {
 武将3：武将名
 战法3：战法G,战法H,战法I
 【结果】
-胜负：胜 或 败 或 平
+胜负：胜或败或平
 【日期】
-战斗日期：YYYY-MM-DD，如 2026-05-07，无法识别则留空
-注意：每个武将对应3个战法，用英文逗号分隔`;
+战斗日期：YYYY-MM-DD（无法识别则留空）`;
 
   try {
     const reqBody = {
@@ -128,9 +150,13 @@ async function callOCRAPI(base64Data) {
 
     const apiEndpoint = getOcrEndpoint();
     console.log('[OCR] 请求地址:', apiEndpoint);
+    const ocrToken = typeof getToken === 'function' ? getToken() : '';
     const resp = await fetch(apiEndpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(ocrToken ? { 'Authorization': 'Bearer ' + ocrToken } : {})
+      },
       body: JSON.stringify(reqBody),
       signal: controller.signal,
       credentials: 'omit',  // OCR 请求不需要 cookie，避免 CORS 问题
@@ -138,9 +164,28 @@ async function callOCRAPI(base64Data) {
 
     clearTimeout(timeout);
     clearInterval(statusTimer);
+    if (externalSignal && onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
 
     if (!resp.ok) {
       const errBody = await resp.text();
+      // 账号被删/禁时，触发与 cloudRequest 一致的强制退出逻辑
+      if (resp.status === 401) {
+        let errMsg = '';
+        try { errMsg = JSON.parse(errBody).message || ''; } catch(e) {}
+        const isFatal = errMsg.includes('账号不存在') || errMsg.includes('已被禁用') || errMsg.includes('已被删除') || errMsg.includes('登录状态已过期');
+        if (isFatal) {
+          if (typeof setToken === 'function') setToken(null);
+          if (typeof clearSession === 'function') clearSession();
+          if (typeof userDBDelete === 'function' && typeof currentUser !== 'undefined' && currentUser && currentUser.phone) {
+            try { await userDBDelete(currentUser.phone); } catch(e) {}
+          }
+          if (typeof currentUser !== 'undefined') currentUser = null;
+          setTimeout(() => {
+            alert((errMsg || '您的账号已被删除或禁用') + '，即将退出登录');
+            if (typeof showLogin === 'function') showLogin(); else location.reload();
+          }, 0);
+        }
+      }
       throw new Error('HTTP ' + resp.status + ': ' + errBody.substring(0, 200));
     }
 
@@ -154,9 +199,12 @@ async function callOCRAPI(base64Data) {
   } catch (e) {
     clearTimeout(timeout);
     clearInterval(statusTimer);
+    if (externalSignal && onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
     console.error('[OCR] 异常:', e.name, e.message);
-    if (e.name === 'AbortError') e.message = 'OCR 请求超时(120秒)，图片可能太大，请尝试压缩后重试';
-    else if (e.name === 'TypeError' && e.message.includes('Failed to fetch')) {
+    // 仅超时中止（非用户主动暂停）才改写错误信息
+    if (e.name === 'AbortError' && !(externalSignal && externalSignal.aborted)) {
+      e.message = 'OCR 请求超时(120秒)，图片可能太大，请尝试压缩后重试';
+    } else if (e.name === 'TypeError' && e.message.includes('Failed to fetch')) {
       e.message = '网络请求失败（可能是 CORS 跨域拦截或网络不通）。请按 F12 打开控制台 → Network 标签，查看 /api/ocr 请求的状态和响应头';
     }
     updateOCRStatus('err', 'OCR 错误: ' + e.message);
@@ -195,30 +243,38 @@ function parseOCRResponse(text) {
 
   function flush(sideKey) {
     const indices = Object.keys(generalMap).map(Number).sort((a, b) => a - b);
-    const gens = [];
-    const tacs = [];
-    indices.forEach(i => {
-      const g = generalMap[i];
-      if (g && g !== '未知') gens.push(g);
-      const t = tacticsMap[i] || [];
-      tacs.push(...t);
-    });
-    if (sideKey === 'left') { record.leftGenerals = gens; record.leftTactics = tacs; }
-    else if (sideKey === 'right') { record.rightGenerals = gens; record.rightTactics = tacs; }
+    // generalMap 为空说明模型使用了无编号格式（武将：xxx），已由 key==='武将' 分支设置，不覆盖
+    if (indices.length > 0) {
+      const gens = [];
+      const tacs = [];
+      indices.forEach(i => {
+        const g = generalMap[i];
+        if (g && g !== '未知') gens.push(g);
+        const t = tacticsMap[i] || [];
+        tacs.push(...t);
+      });
+      if (sideKey === 'left') { record.leftGenerals = gens; record.leftTactics = tacs; }
+      else if (sideKey === 'right') { record.rightGenerals = gens; record.rightTactics = tacs; }
+    }
     generalMap = {};
     tacticsMap = {};
   }
 
   for (const line of lines) {
-    if (line.includes('【左侧】')) {
+    // 兼容多种 section 标题写法：【左侧】 / 左侧 / **左侧** / ## 左侧
+    const isLeft   = line.includes('【左侧】')  || /^[*#\s]*左侧[*#\s：:]*$/.test(line);
+    const isRight  = line.includes('【右侧】')  || /^[*#\s]*右侧[*#\s：:]*$/.test(line);
+    const isResult = line.includes('【结果】')  || line.includes('【胜负】') ||
+                     /^[*#\s]*(结果|胜负)[*#\s：:]*$/.test(line);
+    if (isLeft) {
       if (side === 'left') flush('left'); else if (side === 'right') flush('right');
       side = 'left'; continue;
     }
-    if (line.includes('【右侧】')) {
+    if (isRight) {
       if (side === 'left') flush('left');
       side = 'right'; continue;
     }
-    if (line.includes('【结果】') || line.includes('【胜负】')) {
+    if (isResult) {
       if (side === 'left') flush('left'); else if (side === 'right') flush('right');
       side = 'result'; continue;
     }
@@ -249,27 +305,15 @@ function parseOCRResponse(text) {
       continue;
     }
     if (key.includes('玩家') || key.includes('玩家名')) {
-      let alliance = '';
-      let name = val;
-      // 兼容游戏内竖线 丨(U+4E28)、ASCII |、全角 ｜(U+FF5C)
-      const pipeRe = /[|｜丨]/;
-      if (pipeRe.test(name)) {
-        const parts = name.split(pipeRe);
-        alliance = parts[0].trim();
-        name = parts[parts.length - 1].trim();
-      }
-      if (side === 'left') {
-        record.leftPlayer = name;
-        if (alliance && alliance !== '无' && alliance !== '未知' && !record.leftAlliance) record.leftAlliance = alliance;
-      } else if (side === 'right') {
-        record.rightPlayer = name;
-        if (alliance && alliance !== '无' && alliance !== '未知' && !record.rightAlliance) record.rightAlliance = alliance;
-      }
+      // 玩家名完整保留，不按竖线拆分（玩家名本身可能含丨）
+      const name = val.trim();
+      if (side === 'left') record.leftPlayer = name;
+      else if (side === 'right') record.rightPlayer = name;
     } else if (key.includes('同盟')) {
-      // 防止 AI 把"同盟丨玩家"写在同盟字段：只取竖线前面部分
-      let allianceVal = val;
-      const pipeRe2 = /[|｜丨]/;
-      if (pipeRe2.test(allianceVal)) allianceVal = allianceVal.split(pipeRe2)[0].trim();
+      // 同盟名来自独立区域，直接使用；防御性处理：如果模型仍写了"同盟丨玩家"格式则只取竖线前
+      let allianceVal = val.trim();
+      const pipeRe = /[|｜丨]/;
+      if (pipeRe.test(allianceVal)) allianceVal = allianceVal.split(pipeRe)[0].trim();
       if (allianceVal === '无' || allianceVal === '未知') allianceVal = '';
       if (side === 'left') record.leftAlliance = allianceVal;
       else if (side === 'right') record.rightAlliance = allianceVal;
@@ -346,15 +390,41 @@ function parseOCRResponse(text) {
 }
 
 // ========== 批量上传 ==========
-function handleBatchUpload(files) {
+
+// 点击上传区前先检查积分（从云端获取最新值）
+async function checkCreditsBeforeUpload() {
+  if (!currentUser) return;
+  try {
+    const pts = await getUserPoints(currentUser.phone);
+    if (pts <= 0) {
+      showPointsInsufficientModal(pts, 1);
+      return;
+    }
+    // 积分充足，打开文件选择对话框
+    const input = document.getElementById('batchInput');
+    if (input) input.click();
+  } catch (e) {
+    // 网络问题获取不到积分，放行让后续步骤再次检查
+    const input = document.getElementById('batchInput');
+    if (input) input.click();
+  }
+}
+
+async function handleBatchUpload(files) {
   if (!files || files.length === 0) return;
 
-  // 积分检查：上传数量不能超过用户积分
-  const userPoints = (currentUser && currentUser.points) || 0;
-  const maxUpload = userPoints;
+  // 从云端获取最新积分（管理员可能已调整）
+  let userPoints = (currentUser && currentUser.points) || 0;
+  try {
+    if (currentUser && typeof getUserPoints === 'function') {
+      userPoints = await getUserPoints(currentUser.phone);
+    }
+  } catch (e) { /* 网络问题，回退到本地缓存值 */ }
+
   const totalToUpload = files.length;
 
-  if (totalToUpload > maxUpload) {
+  // 选中图片数量超过剩余积分，立即拦截并弹窗提示
+  if (totalToUpload > userPoints) {
     showPointsInsufficientModal(userPoints, totalToUpload);
     return;
   }
@@ -371,9 +441,6 @@ function renderOCRQueue() {
   const queueCount = document.getElementById('queueCount');
   const queueList = document.getElementById('queueList');
   if (queueCount) queueCount.textContent = ocrQueue.length;
-
-  // 统计可删除的数量（pending / error 状态）
-  const deletableCount = ocrQueue.filter(i => i.status === 'pending' || i.status === 'error').length;
 
   if (queueList) {
     queueList.innerHTML = ocrQueue.map((item, idx) => {
@@ -399,14 +466,6 @@ function renderOCRQueue() {
         ${delBtn}
       </div>`;
     }).join('');
-
-    // 批量删除按钮（有可删除项时才显示）
-    const batchDelBtn = document.getElementById('btnBatchDelQueue');
-    if (batchDelBtn) {
-      batchDelBtn.style.display = deletableCount > 0 ? 'inline-block' : 'none';
-      batchDelBtn.textContent = `🗑 删除已取消 (${deletableCount})`;
-      batchDelBtn.onclick = batchRemoveQueue;
-    }
   }
 }
 
@@ -498,32 +557,26 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function startBatchProcess() {
   if (ocrRunning) return;
 
-  // 检查积分（每张图片扣 1 积分）
+  // 检查积分：待处理张数不能超过剩余积分，实际按成功张数扣（失败不扣）
   const fileCount = ocrQueue.filter(i => i.status === 'pending').length;
-  if (fileCount > 0 && typeof deductUserPoints === 'function') {
+  if (fileCount > 0 && currentUser) {
     const pts = await getUserPoints(currentUser.phone);
     if (pts < fileCount) {
       showPointsInsufficientModal(pts, fileCount);
       return;
     }
-    // 预扣积分（先扣除本次批量所需的积分）
-    const deducted = await deductUserPoints(currentUser.phone, fileCount);
-    if (!deducted) {
-      showPointsInsufficientModal(pts, fileCount);
-      return;
-    }
-    // deductUserPoints 内部已同步 currentUser.points，无需重复扣除
     if (typeof updateUserNavPoints === 'function') updateUserNavPoints();
-    updateOCRStatus('work', `已预扣${fileCount}积分，余额：${(currentUser.points||0)}分`);
   }
 
   ocrRunning = true;
   ocrPaused = false;
+  ocrPausedByUser = false;
+  batchAbortController = new AbortController();
 
   const btnStart = document.getElementById('btnStartBatch');
   const btnPause = document.getElementById('btnPauseBatch');
   if (btnStart) btnStart.disabled = true;
-  if (btnPause) btnPause.disabled = false;
+  if (btnPause) { btnPause.disabled = false; btnPause.textContent = '⏸ 暂停'; }
 
   let processing = 0;
   let idx = 0;
@@ -546,7 +599,7 @@ async function startBatchProcess() {
       let base64 = null;
       try {
         base64 = await readFileAsBase64(item.file);
-        const rawResult = await callOCRAPI(base64);
+        const rawResult = await callOCRAPI(base64, batchAbortController ? batchAbortController.signal : null);
         const record = parseOCRResponse(rawResult);
         record.imageBase64 = base64;
         record.imageName = item.name;
@@ -563,7 +616,39 @@ async function startBatchProcess() {
           }
         }
         item.status = 'done';
+        // OCR 成功后扣 1 积分（失败不扣）
+        if (typeof deductUserPoints === 'function' && currentUser) {
+          const deducted = await deductUserPoints(currentUser.phone, 1);
+          if (deducted) {
+            if (typeof updateUserNavPoints === 'function') updateUserNavPoints();
+          } else {
+            // 积分已耗尽，停止批处理
+            processing--;
+            idx++;
+            renderOCRQueue();
+            updateOCRProgress();
+            ocrRunning = false;
+            if (btnStart) btnStart.disabled = false;
+            if (btnPause) btnPause.disabled = true;
+            showPointsInsufficientModal(0, 1);
+            return;
+          }
+        }
       } catch (e) {
+        // 用户主动暂停导致的中止：将当前项重置为待处理，等待"继续"重新处理
+        if (e.name === 'AbortError' && ocrPausedByUser) {
+          item.status = 'pending';
+          item.error = null;
+          processing--;
+          renderOCRQueue();
+          updateOCRProgress();
+          // 停止循环，由"继续"按钮重新启动 startBatchProcess
+          ocrRunning = false;
+          if (btnStart) btnStart.disabled = false;
+          if (btnPause) { btnPause.disabled = false; /* 保持"继续"文字 */ }
+          updateOCRStatus('ok', '已暂停，点击"继续"恢复');
+          return;
+        }
         try {
           if (!base64) base64 = await readFileAsBase64(item.file);
           if (typeof dbAdd === 'function') {
@@ -611,9 +696,22 @@ async function startBatchProcess() {
 }
 
 function toggleBatchPause() {
-  ocrPaused = !ocrPaused;
   const btn = document.getElementById('btnPauseBatch');
-  if (btn) btn.textContent = ocrPaused ? '▶ 继续' : '⏸ 暂停';
+  if (!ocrPaused) {
+    // ——暂停：立即中止正在进行的 OCR 请求——
+    ocrPaused = true;
+    ocrPausedByUser = true;
+    if (batchAbortController) batchAbortController.abort();
+    if (btn) btn.textContent = '▶ 继续';
+  } else {
+    // ——继续：重新启动批处理（已处理完的项保持 done，从第一个 pending 继续）——
+    ocrPaused = false;
+    ocrPausedByUser = false;
+    if (btn) btn.textContent = '⏸ 暂停';
+    if (!ocrRunning) {
+      startBatchProcess();
+    }
+  }
 }
 
 function updateOCRProgress() {

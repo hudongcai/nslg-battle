@@ -1,6 +1,8 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = 3000;
@@ -22,6 +24,15 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// 添加日志文件记录
+const logFile = path.join(__dirname, 'reset-password.log');
+function logReset(msg) {
+  const timestamp = new Date().toISOString();
+  const logMsg = `[${timestamp}] ${msg}`;
+  console.log(msg);
+  try { fs.appendFileSync(logFile, logMsg + '\n'); } catch(e) {}
+}
 
 // ========== Token 工具函数 ==========
 // token 格式：mock-token-{phone}-{timestamp}
@@ -311,19 +322,34 @@ app.post('/api/users/:id/reset-password', async (req, res) => {
     const { id } = req.params;
     const { newPassword } = req.body;
 
+    logReset(`[reset-password] 被调用 - ID: ${id} (类型: ${typeof id}), newPassword: ${newPassword}`);
+
     if (!newPassword || newPassword.length < 6) {
       return res.json({ code: 400, message: '密码至少6位' });
     }
 
     const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
+    logReset(`[reset-password] 查询结果: ${userRows.length} 行`);
+
     if (userRows.length === 0) {
       return res.json({ code: 404, message: '用户不存在' });
     }
 
-    await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, id]);
+    const targetUser = userRows[0];
+    logReset(`[reset-password] 目标用户: ${targetUser.phone} (ID: ${id})`);
+
+    const [result] = await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, id]);
+    logReset(`[reset-password] 更新结果 - 受影响行数: ${result.affectedRows}`);
+
+    // 验证更新后的数据
+    const [checkRows] = await pool.query('SELECT id, phone, password FROM users WHERE id = ?', [id]);
+    if (checkRows.length > 0) {
+      logReset(`[reset-password] 验证 - 用户 ${checkRows[0].phone} 的新密码: ${checkRows[0].password}`);
+    }
 
     res.json({ code: 200, message: '密码重置成功' });
   } catch (err) {
+    logReset(`[reset-password] 错误: ${err.message}`);
     res.json({ code: 500, message: err.message });
   }
 });

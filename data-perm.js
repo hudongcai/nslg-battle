@@ -2,7 +2,7 @@
    DATA PERM - 数据权限管理（重构版 V2）
    ========================================================== */
 
-console.log('[DataPerm] data-perm.js V2.1 开始加载');
+console.log('[DataPerm] data-perm.js V2.3 开始加载');
 
 // ========== projAccess 新数据结构 ==========
 // {
@@ -87,37 +87,35 @@ async function getProjAccessForUser(phone) {
   return await permDBGetByPhone(phone);
 }
 
-// ========== 扩展 getVisibleProjects（修复：云端为真相之源，清理本地已删除项目）==========
-window._origGetVisibleProjects = window.getVisibleProjects || null;
-
+// ========== 覆盖 getVisibleProjects（云端为真相之源）==========
 window.getVisibleProjects = async function () {
   if (!currentUser) return [];
 
-  // 始终先读本地
   const localProjects = await projDBGetAll();
   let merged = new Map();
   for (const p of localProjects) { merged.set(p.id, p); }
 
-  // 再从云端获取，合并到本地
-  // 注意：不再检查 token，直接调用 getProjects()，它内部会自动处理无 token 的情况（尝试自动登录）
+  // cloudIds = 后端按权限过滤后返回的项目ID集合
+  let cloudIds = new Set();
+  let cloudFetchSuccess = false; // 标记云端是否成功响应
   if (window.cloudSync && window.cloudSync.getProjects) {
     try {
       const cloudProjects = await window.cloudSync.getProjects();
       console.log('[Cloud] data-perm 获取云端项目:', cloudProjects.length, '个');
-      const cloudIds = new Set();
       for (const proj of cloudProjects) {
-        cloudIds.add(proj.id);
+        cloudIds.add(String(proj.id));
         await projDBPut(proj);
-        if (!merged.has(proj.id)) { merged.set(proj.id, proj); }
+        merged.set(proj.id, proj); // 云端始终覆盖本地
       }
-      // 关键修复：超管清理本地有但云端已删除的项目
-      if (cloudProjects.length > 0 && currentUser.role === 'super_admin') {
-        for (const [id, p] of merged) {
-          if (!cloudIds.has(id)) {
-            console.log('[Cloud] 项目', p.name, '(', id, ') 在云端不存在，从本地清理');
-            await projDBDelete(id);
-            merged.delete(id);
-          }
+      cloudFetchSuccess = true;
+
+      // 清理本地有但云端没有的项目（所有用户生效，不限超管）
+      // 云端是唯一真相源：不在云端 = 已被删除，清理本地缓存防止幽灵项目
+      for (const [id, p] of new Map(merged)) {
+        if (!cloudIds.has(String(id))) {
+          console.log('[Cloud] 项目', p.name, '(', id, ') 在云端不存在，从本地清理');
+          await projDBDelete(id);
+          merged.delete(id);
         }
       }
     } catch (e) {
@@ -125,18 +123,21 @@ window.getVisibleProjects = async function () {
     }
   }
 
-  let all = Array.from(merged.values());
-
-  // 超管返回全部项目（云端+本地合并，已清理云端不存在的）
+  const all = Array.from(merged.values());
   if (currentUser.role === 'super_admin') return all;
 
-  // 普通用户需要过滤权限
+  // 云端响应成功：以云端权限为唯一依据，防止显示幽灵项目
+  if (cloudFetchSuccess) {
+    return all.filter(p => cloudIds.has(String(p.id)));
+  }
+
+  // 云端响应失败（离线模式）：回退本地缓存判断
   const grantedIds = await getGrantedProjectIds(currentUser.phone);
   return all.filter(p =>
-    p.visibility === 'public' ||
-    p.creator === currentUser.phone ||
+    p.visibility === 'public' || p.is_public == 1 ||
+    p.creator === currentUser.phone || p.creator_phone === currentUser.phone ||
     (p.memberPhones || []).includes(currentUser.phone) ||
-    grantedIds.has(p.id)
+    grantedIds.has(p.id) || grantedIds.has(String(p.id))
   );
 };
 
@@ -286,29 +287,35 @@ async function showProjectPermModal(projectId) {
   // 构建现有权限映射
   const permMap = {};
   for (const a of accessList) {
-    permMap[a.phone] = { canEdit: a.canEdit, canDelete: a.canDelete };
+    permMap[a.phone] = { canView: a.canView, canEdit: a.canEdit, canDelete: a.canDelete, canMember: a.canMember };
   }
 
   // 渲染弹窗
   let usersHtml = '';
   for (const u of normalUsers) {
-    const isCreator = u.phone === proj.creator;
+    const isCreator = u.phone === proj.creator || u.phone === proj.creator_phone;
     const isMember = (proj.memberPhones || []).includes(u.phone);
     let badge = '';
     let disabled = false;
     if (isCreator) {
-      badge = '<span style="font-size:10px;color:var(--green);">创建者（自动有权）</span>';
+      badge = '<span style="font-size:10px;color:var(--green);">创建者（自动有编辑/删除权）</span>';
       disabled = true;
     } else if (isMember) {
-      badge = '<span style="font-size:10px;color:var(--accent);">项目成员（自动有权）</span>';
+      badge = '<span style="font-size:10px;color:var(--accent);">项目成员（可访问）</span>';
       disabled = true;
     }
 
-    const checked = permMap[u.phone] ? 'checked' : '';
-    const canEdit = permMap[u.phone] && permMap[u.phone].canEdit ? 'checked' : '';
-    const canDelete = permMap[u.phone] && permMap[u.phone].canDelete ? 'checked' : '';
+    const perm = permMap[u.phone] || {};
+    // 成员和创建者自动拥有可见权限（不可取消）
+    const autoView = isCreator || isMember;
+    const canViewChecked = autoView || perm.canView ? 'checked' : '';
+    const canViewDisabled = autoView ? 'disabled' : '';
+    const canEdit = perm.canEdit ? 'checked' : '';
+    const canDelete = perm.canDelete ? 'checked' : '';
+    const canMember = perm.canMember ? 'checked' : '';
 
-    const isMemberChecked = (proj.memberPhones || []).includes(u.phone) ? 'checked' : (permMap[u.phone] ? 'checked' : '');
+    // 用户行是否已在权限记录中（成员 OR 有显式权限记录）
+    const isMemberChecked = isMember ? 'checked' : (permMap[u.phone] ? 'checked' : '');
     usersHtml += `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);">
         <input type="checkbox" class="dp-user-check" data-phone="${u.phone}" ${isMemberChecked} ${disabled ? 'disabled' : ''} style="accent-color:var(--accent);">
@@ -316,7 +323,10 @@ async function showProjectPermModal(projectId) {
           <div style="font-size:12px;color:var(--text);">${escHtml(u.name || '未命名')}</div>
           <div style="font-size:10px;color:var(--text3);">${escHtml(u.phone)}</div>
         </div>
-        <div style="display:flex;gap:10px;font-size:11px;color:var(--text2);">
+        <div style="display:flex;gap:8px;font-size:11px;color:var(--text2);">
+          <label style="display:flex;align-items:center;gap:3px;cursor:${autoView?'default':'pointer'};" title="${autoView?'成员自动拥有可见权限':'允许该用户看到此项目'}">
+            <input type="checkbox" class="dp-perm-view" data-phone="${u.phone}" ${canViewChecked} ${canViewDisabled} style="accent-color:#0ea5e9;"> 可见
+          </label>
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;">
             <input type="checkbox" class="dp-perm-member" data-phone="${u.phone}" ${isMemberChecked} style="accent-color:var(--accent);"> 成员
           </label>
@@ -325,6 +335,9 @@ async function showProjectPermModal(projectId) {
           </label>
           <label style="display:flex;align-items:center;gap:3px;cursor:pointer;">
             <input type="checkbox" class="dp-perm-del" data-phone="${u.phone}" ${canDelete} style="accent-color:var(--red);"> 删除
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;cursor:pointer;" title="允许该用户管理此项目的成员列表">
+            <input type="checkbox" class="dp-perm-mgr" data-phone="${u.phone}" ${canMember} style="accent-color:#7c3aed;"> 管成员
           </label>
         </div>
         ${badge ? '<div style="min-width:100px;text-align:right;">' + badge + '</div>' : ''}
@@ -363,12 +376,16 @@ async function saveProjectPermissions(projectId) {
   const phones = [...checkboxes].map(cb => cb.dataset.phone);
 
   // 收集权限
+  const permView = {};
+  document.querySelectorAll('.dp-perm-view:checked').forEach(cb => { permView[cb.dataset.phone] = true; });
   const permMember = {};
   document.querySelectorAll('.dp-perm-member:checked').forEach(cb => { permMember[cb.dataset.phone] = true; });
   const permEdit = {};
   document.querySelectorAll('.dp-perm-edit:checked').forEach(cb => { permEdit[cb.dataset.phone] = true; });
   const permDel = {};
   document.querySelectorAll('.dp-perm-del:checked').forEach(cb => { permDel[cb.dataset.phone] = true; });
+  const permMgr = {};
+  document.querySelectorAll('.dp-perm-mgr:checked').forEach(cb => { permMgr[cb.dataset.phone] = true; });
 
   // 读取项目
   const proj = await projDBGet(projectId);
@@ -416,17 +433,21 @@ async function saveProjectPermissions(projectId) {
     await permDBDelete(a.id);
   }
 
-  // 写入新权限（仅对勾选了"成员"的用户写入 projAccess 记录，用于记录编辑/删除权限）
+  // 写入新权限：成员 OR 有任意显式权限的用户都写入 projAccess
   for (const phone of phones) {
-    if (!permMember[phone]) continue; // 未勾选成员的不写入
+    const isMember = !!permMember[phone];
+    const hasAnyPerm = isMember || permView[phone] || permEdit[phone] || permDel[phone] || permMgr[phone];
+    if (!hasAnyPerm) continue;
     await permDBPut({
       id: phone + '_' + projectId,
       phone,
       projectId,
       grantedBy: currentUser.phone,
       grantedAt: Date.now(),
+      canView: isMember || !!permView[phone], // 成员自动有可见权限
       canEdit: !!permEdit[phone],
-      canDelete: !!permDel[phone]
+      canDelete: !!permDel[phone],
+      canMember: !!permMgr[phone]
     });
   }
 

@@ -456,11 +456,33 @@ async function viewProject(projectId){
   window.currentProjectId = projectId;
   // 隐藏项目列表，显示项目子导航
   document.getElementById('tab-project').style.display='none';
-  document.getElementById('projectSubNav').style.display='flex';
+  // 更新项目子导航，添加项目名称显示
+  const projectSubNav = document.getElementById('projectSubNav');
+  if(projectSubNav){
+    // 保存原始 HTML（如果还没保存）
+    if(!window._originalProjectSubNavHTML){
+      window._originalProjectSubNavHTML = projectSubNav.innerHTML;
+    }
+    // 重新构建子导航：左侧项目信息，中间按钮居中，右侧对称留白
+    const visLabel = (proj.visibility==='public'||proj.is_public==1) ? '公开' : '私有';
+    projectSubNav.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+        <button onclick="exitProject()" style="background:transparent;color:var(--text2);border:none;font-size:13px;padding:4px 10px;border-radius:6px;cursor:pointer;transition:all .2s;flex-shrink:0;" onmouseover="this.style.color='var(--accent)';this.style.background='rgba(240,180,41,.06)'" onmouseout="this.style.color='var(--text2)';this.style.background='transparent'" title="返回项目列表">← 返回</button>
+        <span style="font-size:14px;font-weight:600;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;" title="${escHtml(proj.name)}">${escHtml(proj.name)}</span>
+        <span style="font-size:10px;color:var(--text2);background:rgba(240,180,41,.08);padding:1px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;">${escHtml(visLabel)}</span>
+      </div>
+      <div style="display:flex;gap:16px;flex-shrink:0;">
+        <button onclick="switchTab('data',this)" style="min-width:200px;padding:10px 32px;border-radius:8px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:14px;font-weight:bold;transition:all .25s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">📥 战报导入</button>
+        <button onclick="switchTab('winrate',this)" style="min-width:200px;padding:10px 32px;border-radius:8px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:14px;font-weight:bold;transition:all .25s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">⚔️ 克制分析</button>
+      </div>
+      <div style="flex:1;min-width:0;"></div>
+    `;
+    projectSubNav.style.display='flex';
+  }
   // 先加载项目数据（过滤后），再切换 tab 确保显示正确
   if(typeof loadAllRecords==='function') await loadAllRecords();
   // 默认切换到战报导入
-  switchTab('data', document.querySelector('#projectSubNav button'));
+  switchTab('data', document.querySelector('#projectSubNav button[onclick*="switchTab\(\'data\'"]'));
 }
 
 // ========== 退出项目（返回项目列表） ==========
@@ -468,7 +490,13 @@ function exitProject(){
   window.currentProjectId = null;
   // 隐藏子导航
   const sn = document.getElementById('projectSubNav');
-  if(sn) sn.style.display='none';
+  if(sn){
+    // 恢复原始 HTML
+    if(window._originalProjectSubNavHTML){
+      sn.innerHTML = window._originalProjectSubNavHTML;
+    }
+    sn.style.display='none';
+  }
   // 用 switchTab 正确切换到项目管理 tab（会自动隐藏其他 tab）
   if(typeof switchTab==='function'){
     switchTab('project', document.getElementById('navProject'));

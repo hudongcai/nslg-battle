@@ -311,37 +311,52 @@ async function renderRoleManage(){
   }
   const roles = allRoles; // DB 里已包含内置角色
   console.log('[renderRoleManage] 总共', roles.length, '个角色');
+
+  // 角色徽章颜色映射
+  const ROLE_COLORS = { super_admin: 'var(--accent)', admin: 'var(--blue, #3b82f6)', member: 'var(--green, #22c55e)' };
+
   let html = '';
-  html += '<div class="card" style="padding:16px 20px;margin-bottom:16px;">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-  html += '<h3 style="margin:0;">角色管理</h3>';
-  html += '<button class="btn btn-sm btn-primary" onclick="showRoleEdit()">＋ 新建角色</button>';
-  html += '</div></div>';
+  html += `<div class="card" style="padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <h3 style="margin:0 0 2px 0;font-size:15px;">🛡️ 角色管理</h3>
+      <div style="font-size:12px;color:var(--text3);">共 ${roles.length} 个角色，管理各角色的菜单与功能权限</div>
+    </div>
+    <button class="btn btn-sm btn-primary" onclick="showRoleEdit()">＋ 新建角色</button>
+  </div>`;
+
   if(roles.length===0){
-    html += '<div class="card" style="padding:32px;text-align:center;color:var(--text3);">暂无可用角色。</div>';
-  }else{
-    html += '<div class="card" style="padding:0;overflow:hidden;">';
-    html += '<table style="width:100%;border-collapse:collapse;">';
-    html += '<thead><tr style="background:var(--bg2);">';
-    html += '<th style="padding:10px 14px;text-align:left;">角色名称</th>';
-    html += '<th style="padding:10px 14px;text-align:left;">描述</th>';
-    html += '<th style="padding:10px 14px;text-align:left;">权限数</th>';
-    html += '<th style="padding:10px 14px;text-align:left;">操作</th>';
-    html += '</tr></thead><tbody>';
+    html += '<div class="card" style="padding:48px;text-align:center;color:var(--text3);">暂无可用角色</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:10px;">';
     for(const r of roles){
       const permCount = r.permissions ? Object.values(r.permissions).filter(Boolean).length : 0;
-      html += '<tr style="border-top:1px solid var(--border);">';
-      html += `<td style="padding:10px 14px;font-weight:600;">${escHtml(r.name)}${r.isBuiltIn?' <span style="font-size:12px;color:var(--text3);">(内置)</span>':''}</td>`;
-      html += `<td style="padding:10px 14px;color:var(--text2);">${escHtml(r.description||'-')}</td>`;
-      html += `<td style="padding:10px 14px;">${permCount} / ${PERMISSIONS.length}</td>`;
-      html += '<td style="padding:10px 14px;">';
-      html += `<button class="btn btn-sm btn-secondary" style="margin-right:6px;" onclick="showRoleEdit('${r.id}')">编辑</button>`;
-      if(!r.isBuiltIn){
-        html += `<button class="btn btn-sm btn-danger" onclick="deleteRole('${r.id}')">删除</button>`;
-      }
-      html += '</td></tr>';
+      const total = PERMISSIONS.length;
+      const pct = total ? Math.round(permCount / total * 100) : 0;
+      const badgeColor = ROLE_COLORS[r.id] || 'var(--text2)';
+      html += `<div class="card" style="padding:14px 18px;display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:${badgeColor}22;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">
+          ${r.id==='super_admin'?'👑':r.id==='admin'?'🛡️':'👤'}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="font-weight:700;font-size:14px;color:var(--text);">${escHtml(r.name)}</span>
+            ${r.isBuiltIn?'<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:var(--bg3);color:var(--text3);border:1px solid var(--border);">内置</span>':''}
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">${escHtml(r.description||'暂无描述')}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;height:4px;background:var(--border);border-radius:2px;max-width:120px;">
+              <div style="width:${pct}%;height:100%;background:${badgeColor};border-radius:2px;transition:width .3s;"></div>
+            </div>
+            <span style="font-size:11px;color:var(--text3);">${permCount}/${total} 权限</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn btn-sm btn-secondary" onclick="showRoleEdit('${r.id}')">编辑</button>
+          ${!r.isBuiltIn?`<button class="btn btn-sm btn-danger" onclick="deleteRole('${r.id}')">删除</button>`:''}
+        </div>
+      </div>`;
     }
-    html += '</tbody></table></div>';
+    html += '</div>';
   }
   container.innerHTML = html;
 }
@@ -373,11 +388,10 @@ async function showRoleEdit(roleId){
     let html = '';
     for(const p of perms){
       const checked = role.permissions&&role.permissions[p.key]?'checked':'';
-      const pad = indent ? 'style="padding-left:20px;"' : '';
-      html += `<label ${pad} style="display:flex;align-items:center;margin-bottom:6px;cursor:pointer;min-width:200px;">
+      html += `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2);min-width:48%;padding:3px 0;">
         <input type="checkbox" id="perm_${p.key}" ${checked}
           onchange="permOnChange('${p.key}','${p.parent}',this.checked)"
-          style="margin-right:8px;width:15px;height:15px;cursor:pointer;">
+          style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent);flex-shrink:0;">
         ${p.label}
       </label>`;
     }
@@ -390,15 +404,15 @@ async function showRoleEdit(roleId){
     const children = childMap[p.key]||[];
     const checked = role.permissions&&role.permissions[p.key]?'checked':'';
     permHtml += `
-      <div style="margin-bottom:14px;padding:10px 14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
-        <label style="display:flex;align-items:center;cursor:pointer;font-weight:700;margin-bottom:${children.length?'10px':'0'};">
+      <div style="padding:12px 14px;background:var(--bg2);border-radius:10px;border:1px solid var(--border);">
+        <label style="display:flex;align-items:center;cursor:pointer;font-weight:700;font-size:13px;${children.length?'margin-bottom:10px;':''}">
           <input type="checkbox" id="perm_${p.key}" ${checked}
             onchange="permOnChange('${p.key}','',this.checked)"
-            style="margin-right:8px;width:15px;height:15px;cursor:pointer;">
+            style="margin-right:8px;width:15px;height:15px;cursor:pointer;accent-color:var(--accent);">
           ${p.label}
-          <span style="font-size:12px;color:var(--text3);font-weight:400;margin-left:6px;">（顶级导航）</span>
+          <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;background:var(--bg3);padding:1px 7px;border-radius:8px;border:1px solid var(--border);">主功能</span>
         </label>
-        ${children.length ? permCheckboxes(children, true) : ''}
+        ${children.length ? `<div style="padding-left:22px;display:flex;flex-wrap:wrap;gap:6px 0;">${permCheckboxes(children, true)}</div>` : ''}
       </div>`;
   }
   // 无父级的子权限（兜底，应该为空）
@@ -409,24 +423,35 @@ async function showRoleEdit(roleId){
   }
 
   const html = `
-    <div id="roleEditMask" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
-      <div style="background:var(--card);border-radius:12px;padding:28px 32px;min-width:560px;max-width:680px;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
-        <h3 style="margin:0 0 18px 0;">${isEdit?'编辑角色':'新建角色'}</h3>
-        <div style="margin-bottom:12px;">
-          <label style="display:block;margin-bottom:4px;font-weight:600;">角色名称</label>
-          <input id="roleName" value="${escHtml(role.name)}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);box-sizing:border-box;" ${isEdit&&role.isBuiltIn?'readonly':''}>
+    <div id="roleEditMask" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:92%;max-width:620px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.3);overflow:hidden;">
+        <!-- 标题栏 -->
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);flex-shrink:0;">
+          <h3 style="margin:0;color:var(--accent);font-size:15px;">${isEdit?'✏️ 编辑角色':'🛡️ 新建角色'}</h3>
+          <button onclick="closeRoleEdit()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;">&times;</button>
         </div>
-        <div style="margin-bottom:12px;">
-          <label style="display:block;margin-bottom:4px;font-weight:600;">描述</label>
-          <input id="roleDesc" value="${escHtml(role.description||'')}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);box-sizing:border-box;">
+        <!-- 滚动内容区 -->
+        <div style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;flex:1;">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">角色名称 <span style="color:var(--red);font-size:11px;">*</span></label>
+            <input id="roleName" value="${escHtml(role.name)}" placeholder="请输入角色名称"
+              style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:14px;box-sizing:border-box;"
+              ${isEdit&&role.isBuiltIn?'readonly style="opacity:0.6;cursor:not-allowed;"':''}>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">角色描述 <span style="color:var(--text3);">（选填）</span></label>
+            <input id="roleDesc" value="${escHtml(role.description||'')}" placeholder="简单描述该角色的职责"
+              style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:14px;box-sizing:border-box;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:10px;">权限配置 <span style="color:var(--text3);font-weight:400;">· 勾选父权限将自动开启子权限</span></label>
+            <div style="display:flex;flex-direction:column;gap:8px;">${permHtml}</div>
+          </div>
         </div>
-        <div style="margin-bottom:16px;">
-          <label style="display:block;margin-bottom:8px;font-weight:600;">权限设置 <span style="font-size:12px;color:var(--text3);font-weight:400;">（勾选子权限将自动勾选父级）</span></label>
-          <div>${permHtml}</div>
-        </div>
-        <div style="text-align:right;">
-          <button class="btn btn-secondary" style="margin-right:8px;" onclick="closeRoleEdit()">取消</button>
-          <button class="btn btn-primary" onclick="saveRole('${roleId||''}')">保存</button>
+        <!-- 底部按钮 -->
+        <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;background:var(--bg3);flex-shrink:0;">
+          <button class="btn btn-secondary" onclick="closeRoleEdit()" style="padding:9px 20px;">取消</button>
+          <button class="btn btn-primary" onclick="saveRole('${roleId||''}')" style="padding:9px 24px;">保存角色</button>
         </div>
       </div>
     </div>`;

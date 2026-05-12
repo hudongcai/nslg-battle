@@ -1,9 +1,9 @@
-console.log('[@@ cloud-sync.js 执行中 - 文件顶部 - 版本: v202605110101 @@]');
+console.log('[@@ cloud-sync.js 执行中 - 文件顶部 - 版本: v202605112300 @@]');
 console.log('[cloud-sync.js] 脚本开始加载 v202605110101');
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
- * 版本: v202605110101
+ * 版本: v202605112300
  */
 
 // 根据当前页面域名自动确定 API 地址 - 直接调用 MySQL API，绕过 Cloudflare Worker
@@ -342,10 +342,10 @@ async function cloudGetRecords(projectId) {
       rightPlayer: r.enemyName || r.enemy_name || '',
       leftAlliance: r.leftAlliance || r.left_alliance || '',
       rightAlliance: r.rightAlliance || r.right_alliance || '',
-      leftGenerals: r.leftGenerals || [],
-      rightGenerals: r.rightGenerals || [],
-      leftTactics: r.leftTactics || [],
-      rightTactics: r.rightTactics || [],
+      leftGenerals: r.leftGenerals || r.left_generals || [],
+      rightGenerals: r.rightGenerals || r.right_generals || [],
+      leftTactics: r.leftTactics || r.left_tactics || [],
+      rightTactics: r.rightTactics || r.right_tactics || [],
       leftFormation: r.leftFormation || r.left_formation || '',
       rightFormation: r.rightFormation || r.right_formation || '',
       leftLoss: (r.leftLoss !== undefined) ? r.leftLoss : ((r.left_loss !== undefined) ? r.left_loss : null),
@@ -544,6 +544,11 @@ async function syncCloudToLocal() {
     return false;
   }
 
+  // 确保 IndexedDB 已打开（调用方可能未 await openDB）
+  if (typeof openDB === 'function') {
+    try { await openDB(); } catch(e) { console.warn('[Sync] openDB 失败:', e); }
+  }
+
   try {
     // 1. 同步项目列表
     const cloudProjects = await cloudGetProjects();
@@ -612,10 +617,20 @@ async function syncCloudToLocal() {
                 }
               }
             }
+            // 本地无图片时从云端图库补拉
+            if (!localRec.imageBase64 && localRec.cloudId) {
+              try {
+                const galleryData = await cloudRequest(`/gallery/by-battle/${localRec.cloudId}`);
+                if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
+                  localRec.imageBase64 = galleryData.data.image_data;
+                  console.log('[Sync] 3.1 从云端图库补拉图片, battle_id:', localRec.cloudId);
+                }
+              } catch (e) { /* 无图片不影响同步 */ }
+            }
             // 不动 localRec.id（IndexedDB 主键），只更新同步标记
             localRec._synced = true;
             localRec._syncTime = Date.now();
-            await dbPut(localRec);
+            await dbPutLocal(localRec);
           } else {
             // 3.2 按业务字段匹配（OCR 记录还没关联 cloudId）
             // 兼容：本地记录可能用 leftPlayer/rightPlayer 或 attackerName/enemyName
@@ -679,22 +694,24 @@ async function syncCloudToLocal() {
               // 保留本地 ID（IndexedDB 主键不变），只更新 cloudId
               localRec._synced = true;
               localRec._syncTime = Date.now();
-              await dbPut(localRec);
+              await dbPutLocal(localRec);
               // 不再写入重复记录（cloudId 已关联，无需再用云端 ID 写入）
             } else {
               // 3.3 本地完全没有 → 直接写入云端记录，并从 gallery 拉图片
-              if (!rec.imageBase64 && rec.cloudId) {
+              if (!rec.imageBase64 && rec.id) {
                 try {
-                  const galleryData = await cloudRequest(`/gallery/by-battle/${rec.cloudId}`);
+                  const galleryData = await cloudRequest(`/gallery/by-battle/${rec.id}`);
                   if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
                     rec.imageBase64 = galleryData.data.image_data;
-                    console.log('[Sync] 从云端图库拉取图片, battle_id:', rec.cloudId);
+                    console.log('[Sync] 从云端图库拉取图片, battle_id:', rec.id);
                   }
                 } catch (e) { /* 无图片不影响同步 */ }
               }
               rec._synced = true;
               rec._syncTime = Date.now();
-              await dbPut(rec);
+              // 案例3.3：云端新记录写入本地，需保留 cloudId 引用
+              rec.cloudId = rec.id;
+              await dbPutLocal(rec);
             }
           }
 
@@ -704,6 +721,34 @@ async function syncCloudToLocal() {
         }
       }
       console.log('[Sync] 战报同步完成，共', syncCount, '/', cloudRecords.length, '条');
+
+      // 4. 清理本地孤立记录：有 cloudId 但云端已删除的记录
+      try {
+        const cloudIdSet = new Set(cloudRecords.map(r => r.id));
+        const allLocalAfterSync = await dbGetAll();
+        let deletedCount = 0;
+        for (const local of allLocalAfterSync) {
+          if (local.cloudId && !cloudIdSet.has(local.cloudId)) {
+            await dbDeleteLocal(local.id);
+            deletedCount++;
+            console.log('[Sync] 清理本地孤立记录:', local.id, '(cloudId:', local.cloudId, '已不在云端)');
+          }
+        }
+        if (deletedCount > 0) console.log('[Sync] 已清理', deletedCount, '条本地孤立记录');
+
+        // 5. 汇总：打印最终本地 IndexedDB 中的记录情况（便于调试）
+        const finalLocal = await dbGetAll();
+        console.log('[Sync] === 同步后 IndexedDB 汇总 ===');
+        console.log('[Sync] 总记录数:', finalLocal.length, '| 云端记录数:', cloudRecords.length);
+        const byProject = {};
+        for (const r of finalLocal) {
+          const pid = r.projectId || 'none';
+          byProject[pid] = (byProject[pid] || 0) + 1;
+        }
+        console.log('[Sync] 按项目分布:', JSON.stringify(byProject));
+      } catch (e) {
+        console.warn('[Sync] 清理孤立记录失败（不影响主流程）:', e);
+      }
     } catch (e) {
       console.warn('[Sync] 战报同步失败（不影响项目列表）:', e);
     }
@@ -773,7 +818,7 @@ async function cloudSaveRole(role) {
 }
 
 // 导出给全局使用
-console.log('[cloud-sync.js] 正在挂载 window.cloudSync, 当前 cloudSync 存在?', !!window.cloudSync, '| 版本: v202605081410');
+console.log('[cloud-sync.js] 正在挂载 window.cloudSync, 当前 cloudSync 存在?', !!window.cloudSync, '| 版本: v202605112300');
 window.cloudSync = {
   getProjects: cloudGetProjects,
   createProject: cloudCreateProject,
