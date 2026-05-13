@@ -285,8 +285,10 @@ function dbPut(rec) {
     const req = tx.objectStore('records').put(rec);
     req.onsuccess = () => {
       // 同步到云端
-      console.log('[dbPut] window.cloudSync 存在?', !!window.cloudSync, '| updateRecord 类型:', typeof window?.cloudSync?.updateRecord, '| rec.id:', rec.id);
-      if(window.cloudSync && rec.id){
+      console.log('[dbPut] window.cloudSync 存在?', !!window.cloudSync, '| updateRecord 类型:', typeof window?.cloudSync?.updateRecord, '| rec.id:', rec.id, '| rec.cloudId:', rec.cloudId);
+      // 修复：必须用 cloudId 更新云端，而不是本地 id
+      const cloudRecordId = rec.cloudId || rec.id;
+      if(window.cloudSync && cloudRecordId){
         try{
           const cloudRec = {
             projectId: rec.projectId || window.currentProjectId || null,
@@ -310,8 +312,8 @@ function dbPut(rec) {
             result: rec.result || '',
             description: rec.description || ''
           };
-          console.log('[dbPut] 准备调用 cloudSync.updateRecord, rec.id:', rec.id);
-          window.cloudSync.updateRecord(rec.id, cloudRec).then(r => {
+          console.log('[dbPut] 准备调用 cloudSync.updateRecord, cloudRecordId:', cloudRecordId, 'rec.cloudId:', rec.cloudId, 'rec.id:', rec.id);
+          window.cloudSync.updateRecord(cloudRecordId, cloudRec).then(r => {
             console.log('[dbPut] 战报更新云端返回:', r);
           }).catch(e => console.error('[Cloud] 更新失败:', e));
         }catch(e){console.error('[Cloud] 同步异常:', e);}
@@ -416,12 +418,16 @@ async function loadAllRecords() {
   try {
     let records = await dbGetAll();
     // 旧数据迁移：为没有 projectId/uploader 的记录补全字段
+    // 重要：只处理真正需要迁移的旧数据（无 cloudId），避免触发云端更新
     const migratePromises = [];
     for (const rec of records) {
       let changed = false;
       if (rec.projectId === undefined) { rec.projectId = ''; changed = true; }
       if (rec.uploader === undefined) { rec.uploader = ''; changed = true; }
-      if (changed) migratePromises.push(dbPut(rec));
+      // 修复：只有没有 cloudId 的本地记录才需要迁移写入，有 cloudId 的记录不应该在这里触发 dbPut
+      if (changed && !rec.cloudId) {
+        migratePromises.push(dbPutLocal(rec));
+      }
     }
     if (migratePromises.length > 0) await Promise.all(migratePromises);
     // 按项目过滤（统一转字符串比较，避免云端数字ID vs 本地字符串ID不一致）
