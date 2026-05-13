@@ -247,7 +247,14 @@ if (typeof renderEnemyFreq === 'function') {
   renderEnemyFreq = renderEnemyFreqEnhanced;
 }
 
-// 强制覆盖 renderWinRateTable
-window.renderWinRateTable = renderWinRateTableEnhanced;
+// 延迟覆盖 renderWinRateTable 以确保在所有内联脚本执行后
+setTimeout(() => {
+  window.renderWinRateTable = renderWinRateTableEnhanced;
+  console.log('[counter-analysis-enhanced] renderWinRateTable 已覆盖');
+  // 如果数据已加载，立即刷新表格
+  if (typeof allRecords !== 'undefined' && allRecords.length > 0) {
+    renderWinRateTableEnhanced();
+  }
+}, 100);
 
 console.log('[counter-analysis-enhanced] 已加载 ✅');
