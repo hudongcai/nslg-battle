@@ -876,7 +876,9 @@ function renderWinRateTable(){let data=computeWinRateData();cachedWinRateData=da
       <td class="num" style="color:var(--text3);font-size:11px;">${d.total}</td>
       <td><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${escHtml(d.leftTeam)}','${escHtml(d.rightTeam)}')" style="color:var(--accent);text-decoration:underline;font-size:12px;">📋 溯源</a></td>
     </tr>`;}).join('');}renderRestrictCards(data);}
-document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('#winRateTable th[data-sort]').forEach(th=>{th.addEventListener('click',()=>{const f=th.dataset.sort;if(winRateSortField===f)winRateSortDir=winRateSortDir==='asc'?'desc':'asc';else{winRateSortField=f;winRateSortDir='desc';}renderWinRateTable();});});});
+// 注意：renderWinRateTable 已从 inline script 移除，现定义在 counter-analysis-enhanced.js
+// 保留 DOMContentLoaded 事件绑定以支持排序功能
+document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('#winRateTable th[data-sort]').forEach(th=>{th.addEventListener('click',()=>{const f=th.dataset.sort;if(winRateSortField===f)winRateSortDir=winRateSortDir==='asc'?'desc':'asc';else{winRateSortField=f;winRateSortDir='desc';}if(typeof renderWinRateTable==='function')renderWinRateTable();});});});
 
 
 
@@ -1460,7 +1462,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data_heroes.js?v=202605081430"></script>
   <script src="data_tactics.js?v=202605081430"></script>
   <script src="counter-analysis.js?v=202605120002"></script>
-  <script src="counter-analysis-enhanced.js?v=202605130002"></script>
+  <script src="counter-analysis-enhanced.js?v=202605130003"></script>
   <script src="user-system.js?v=202605111900"></script>
   <script src="project-system.js?v=202605121430"></script>
   <script src="role-system.js?v=202605110001"></script>

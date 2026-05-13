@@ -247,9 +247,7 @@ if (typeof renderEnemyFreq === 'function') {
   renderEnemyFreq = renderEnemyFreqEnhanced;
 }
 
-if (typeof renderWinRateTable === 'function') {
-  const originalRenderWinRateTable = renderWinRateTable;
-  renderWinRateTable = renderWinRateTableEnhanced;
-}
+// 强制覆盖 renderWinRateTable
+window.renderWinRateTable = renderWinRateTableEnhanced;
 
 console.log('[counter-analysis-enhanced] 已加载 ✅');
