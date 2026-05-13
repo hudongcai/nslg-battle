@@ -864,20 +864,8 @@ function renderEnemyFreq(){
   }).join('');
 }
 function updateWinRateFilters(){const wrData=computeWinRateData();const leftTeams=[...new Set(wrData.map(d=>d.leftTeam))].sort();const rightTeams=[...new Set(wrData.map(d=>d.rightTeam))].sort();const sl=document.getElementById('wrFilterLeft'),sr=document.getElementById('wrFilterRight');const vL=sl.value,vR=sr.value;sl.innerHTML='<option value="">全部左侧</option>'+leftTeams.map(t=>`<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');sr.innerHTML='<option value="">全部右侧</option>'+rightTeams.map(t=>`<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');sl.value=vL;sr.value=vR;}
-function renderWinRateTable(){let data=computeWinRateData();cachedWinRateData=data;const search=(document.getElementById('wrSearch').value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);if(winRateSortField){data.sort((a,b)=>{let va,vb;switch(winRateSortField){case'leftTeam':va=a.leftTeam;vb=b.leftTeam;break;case'rightTeam':va=a.rightTeam;vb=b.rightTeam;break;case'count':va=a.total;vb=b.total;break;case'winRate':va=a.winRate;vb=b.winRate;break;case'lossRate':va=parseFloat(a.lossRateVal);vb=parseFloat(b.lossRateVal);break;case'leftLossPct':va=a.avgLLoss||0;vb=b.avgLLoss||0;break;case'rightLossPct':va=a.avgRLoss||0;vb=b.avgRLoss||0;break;default:return 0;}if(typeof va==='string')return winRateSortDir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return winRateSortDir==='asc'?va-vb:vb-va;});}else{data.sort((a,b)=>b.winRate-a.winRate);}const tbody=document.getElementById('winRateTableBody');if(data.length===0){tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text3);">暂无对战数据</td></tr>';}else{tbody.innerHTML=data.map((d,di)=>{const wrCls=d.winRate>=60?'wr-high':d.winRate>=40?'wr-mid':'wr-low';const barCls=d.winRate>=60?'bar-green':d.winRate>=40?'bar-yellow':'bar-red';const barW=Math.min(d.winRate,100);function tacConfig(generals,tactics){if(!generals||generals.length===0)return'-';return generals.map((g,i)=>{const base=i*3;const tacs=[tactics?.[base+1]||'',tactics?.[base+2]||''].filter(t=>t&&t!=='未知');return `<span style="color:var(--blue);font-weight:bold;">${escHtml(g)}</span>${tacs.length?'<span style="color:var(--text2);font-size:10px;">('+tacs.map(t=>escHtml(t)).join(',')+')</span>':''}`;}).join(' ');};const lossRatio=d.lossRateVal;const lossColor=parseFloat(lossRatio)<=50?'var(--green)':parseFloat(lossRatio)>=100?'var(--red)':'var(--accent)';return `<tr>
-      <td style="font-weight:bold;font-size:12px;white-space:nowrap;">${escHtml(d.leftTeam)}</td>
-      <td style="font-size:11px;line-height:1.6;">${tacConfig(d.leftGenerals,d.leftTactics)}</td>
-      <td class="num" style="font-size:11px;color:${(d.avgLLoss||0)>3000?'var(--red)':'var(--text2)'};">${fmtNum(Math.round(d.avgLLoss||0))}</td>
-      <td><span class="wr ${wrCls}" style="font-size:12px;font-weight:900;">${d.winRate.toFixed(0)}%</span><span class="wr-bar ${barCls}" style="width:${barW}px;display:inline-block;"></span></td>
-      <td class="num" style="font-weight:900;font-size:12px;color:${lossColor};">${lossRatio}%</td>
-      <td class="num" style="font-size:11px;color:${(d.avgRLoss||0)>3000?'var(--red)':'var(--text2)'};">${fmtNum(Math.round(d.avgRLoss||0))}</td>
-      <td style="font-weight:bold;font-size:12px;white-space:nowrap;">${escHtml(d.rightTeam)}</td>
-      <td style="font-size:11px;line-height:1.6;">${tacConfig(d.rightGenerals,d.rightTactics)}</td>
-      <td class="num" style="color:var(--text3);font-size:11px;">${d.total}</td>
-      <td><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${escHtml(d.leftTeam)}','${escHtml(d.rightTeam)}')" style="color:var(--accent);text-decoration:underline;font-size:12px;">📋 溯源</a></td>
-    </tr>`;}).join('');}renderRestrictCards(data);}
-// 注意：renderWinRateTable 已从 inline script 移除，现定义在 counter-analysis-enhanced.js
-// 保留 DOMContentLoaded 事件绑定以支持排序功能
+// 注意：renderWinRateTable 函数定义在 counter-analysis-enhanced.js
+// 保留 DOMContentLoaded 事件监听器以支持排序功能
 document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('#winRateTable th[data-sort]').forEach(th=>{th.addEventListener('click',()=>{const f=th.dataset.sort;if(winRateSortField===f)winRateSortDir=winRateSortDir==='asc'?'desc':'asc';else{winRateSortField=f;winRateSortDir='desc';}if(typeof renderWinRateTable==='function')renderWinRateTable();});});});
 
 
@@ -1462,7 +1450,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data_heroes.js?v=202605081430"></script>
   <script src="data_tactics.js?v=202605081430"></script>
   <script src="counter-analysis.js?v=202605120002"></script>
-  <script src="counter-analysis-enhanced.js?v=202605130007"></script>
+  <script src="counter-analysis-enhanced.js?v=202605130008"></script>
   <script src="user-system.js?v=202605111900"></script>
   <script src="project-system.js?v=202605121430"></script>
   <script src="role-system.js?v=202605110001"></script>
