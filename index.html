@@ -536,11 +536,19 @@ document.addEventListener('click', function(e) {
     <div class="card" id="enemyFreqSection">
       <h3>🔭 敌方高频队伍分析</h3>
       <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">统计右侧（敌方）队伍出现频率，按出现次数从高到低排列。</div>
+      <!-- 搜索框与表格列对齐 -->
+      <div style="display:flex;align-items:center;margin-bottom:10px;gap:4px;white-space:nowrap;">
+        <div style="width:40px;"></div>
+        <div style="display:flex;align-items:center;width:60px;"><input type="text" id="efSearchGeneral" placeholder="🔍" oninput="renderEnemyFreq()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:180px;"><input type="text" id="efSearchTactic" placeholder="🔍 战法..." oninput="renderEnemyFreq()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:70px;"><input type="text" id="efSearchFormation" placeholder="🔍" oninput="renderEnemyFreq()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="width:80px;"></div>
+        <div style="width:100px;"></div>
+        <div style="width:80px;"></div>
+        <div style="width:70px;"></div>
+      </div>
       <div class="form-row" style="margin-bottom:10px;align-items:center;">
         <input type="text" id="efSearch" placeholder="🔍 搜索队伍..." oninput="renderEnemyFreq()" style="width:150px;">
-        <input type="text" id="efSearchGeneral" placeholder="🔍 武将..." oninput="renderEnemyFreq()" style="width:60px;margin-left:8px;">
-        <input type="text" id="efSearchTactic" placeholder="🔍 战法..." oninput="renderEnemyFreq()" style="width:180px;margin-left:4px;">
-        <input type="text" id="efSearchFormation" placeholder="🔍 阵型..." oninput="renderEnemyFreq()" style="width:70px;margin-left:4px;">
         <span id="efTotal" style="font-size:11px;color:var(--text3);margin-left:8px;"></span>
       </div>
       <div id="efTableWrap" style="overflow:auto;max-height:340px;width:100%;border-radius:8px;border:1px solid var(--border);">
@@ -562,15 +570,22 @@ document.addEventListener('click', function(e) {
     <div class="card">
       <h3>⚔️ 队伍克制关系分析</h3>
       <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">匹配规则：3武将相同(无序) 或 9战法相同(无序) → 同类型队伍。战损比 = 左战损兵力 / 右战损兵力 × 100%，低于 50% 表示优势明显。</div>
+      <!-- 搜索框与表格列对齐 -->
+      <div style="display:flex;align-items:center;margin-bottom:10px;gap:4px;white-space:nowrap;">
+        <div style="display:flex;align-items:center;width:60px;"><input type="text" id="wrSearchLeftGeneral" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:180px;"><input type="text" id="wrSearchLeftTactic" placeholder="🔍 战法..." oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:70px;"><input type="text" id="wrSearchLeftFormation" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="width:70px;"></div>
+        <div style="width:70px;"></div>
+        <div style="width:50px;"></div>
+        <div style="display:flex;align-items:center;width:60px;"><input type="text" id="wrSearchRightGeneral" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:180px;"><input type="text" id="wrSearchRightTactic" placeholder="🔍 战法..." oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:70px;"><input type="text" id="wrSearchRightFormation" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="width:80px;"></div>
+      </div>
       <div class="form-row" style="align-items:center;margin-bottom:10px;">
-        <input type="text" id="wrSearchLeftGeneral" placeholder="🔍 胜方武将..." oninput="renderWinRateTable()" style="width:60px;">
-        <input type="text" id="wrSearchLeftTactic" placeholder="🔍 胜方战法..." oninput="renderWinRateTable()" style="width:180px;margin-left:4px;">
-        <input type="text" id="wrSearchLeftFormation" placeholder="🔍 阵型..." oninput="renderWinRateTable()" style="width:70px;margin-left:4px;">
-        <select id="wrFilterLeft" onchange="renderWinRateTable()" style="margin-left:8px;"><option value="">全部胜方</option></select>
-        <select id="wrFilterRight" onchange="renderWinRateTable()" style="margin-left:4px;"><option value="">全部败方</option></select>
-        <input type="text" id="wrSearchRightGeneral" placeholder="🔍 败方武将..." oninput="renderWinRateTable()" style="width:60px;margin-left:8px;">
-        <input type="text" id="wrSearchRightTactic" placeholder="🔍 败方战法..." oninput="renderWinRateTable()" style="width:180px;margin-left:4px;">
-        <input type="text" id="wrSearchRightFormation" placeholder="🔍 阵型..." oninput="renderWinRateTable()" style="width:70px;margin-left:4px;">
+        <select id="wrFilterLeft" onchange="renderWinRateTable()"><option value="">筛选胜方队伍</option></select>
+        <select id="wrFilterRight" onchange="renderWinRateTable()" style="margin-left:8px;"><option value="">筛选败方队伍</option></select>
         <button class="btn btn-sm btn-secondary" onclick="exportWinRateCSV()" style="margin-left:8px;">📥 导出</button>
       </div>
       <div id="wrTableWrap" style="overflow:auto;max-height:70vh;width:100%;border-radius:8px;border:1px solid var(--border);"><table id="winRateTable" style="min-width:900px;"><thead><tr>
