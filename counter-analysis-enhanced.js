@@ -369,16 +369,28 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
 
 console.log('[counter-analysis-enhanced] 已加载 ✅');
 
+// 修复原函数中的 wrSearch 引用错误（如果不存在该元素）
+if (typeof document !== 'undefined') {
+  // 创建一个隐藏的 wrSearch 元素以防原函数报错
+  const existingWrSearch = document.getElementById('wrSearch');
+  if (!existingWrSearch) {
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.id = 'wrSearch';
+    hiddenInput.value = '';
+    document.body.appendChild(hiddenInput);
+    console.log('[counter-analysis-enhanced] 创建隐藏的 wrSearch 元素');
+  }
+}
+
 // 延迟覆盖所有原函数以确保在内联脚本执行后
 setTimeout(() => {
   // 覆盖 renderWinRateTable
-  if (typeof renderWinRateTable === 'function') {
-    window.renderWinRateTable = renderWinRateTableEnhanced;
-    console.log('[counter-analysis-enhanced] renderWinRateTable 已覆盖');
-  }
+  window.renderWinRateTable = renderWinRateTableEnhanced;
+  console.log('[counter-analysis-enhanced] renderWinRateTable 已覆盖');
+
   // 覆盖 renderCounterPick
   if (typeof renderCounterPick === 'function') {
-    const originalRenderCounterPick = renderCounterPick;
     window.renderCounterPick = renderCounterPickEnhanced;
     console.log('[counter-analysis-enhanced] renderCounterPick 已覆盖');
   }
@@ -391,8 +403,7 @@ setTimeout(() => {
   // 如果数据已加载，刷新所有表格
   if (typeof allRecords !== 'undefined' && allRecords.length > 0) {
     console.log('[counter-analysis-enhanced] 刷新表格...');
-    if (typeof renderWinRateTable === 'function') renderWinRateTable();
+    renderWinRateTable();
     if (typeof renderEnemyFreq === 'function') renderEnemyFreq();
-    // renderCounterPick 由 renderRestrictCards 调用，不需要单独刷新
   }
-}, 200);
+}, 100);
