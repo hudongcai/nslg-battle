@@ -257,4 +257,142 @@ setTimeout(() => {
   }
 }, 100);
 
+// 增强版 renderCounterPick - 使用竖向排列布局
+function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
+  const section = document.getElementById('counterSection');
+  const container = document.getElementById('counterCards');
+  if (typeof allRecords === 'undefined' || allRecords.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  // 统计右侧（敌方）队伍
+  const enemyMap = new Map();
+  allRecords.forEach(r => {
+    const key = typeof getTeamKey === 'function' ? getTeamKey(r.rightGenerals) : (r.rightGenerals || []).join(',');
+    if (!key || key === '未知') return;
+    if (!enemyMap.has(key)) enemyMap.set(key, {
+      generals: r.rightGenerals,
+      tactics: r.rightTactics,
+      formation: r.rightFormation || '',
+      count: 0, recordIds: []
+    });
+    const d = enemyMap.get(key);
+    d.count++;
+    d.recordIds.push(r.id);
+    if ((r.rightGenerals || []).filter(g => g).length > (d.generals || []).filter(g => g).length) {
+      d.generals = r.rightGenerals;
+      d.tactics = r.rightTactics;
+      d.formation = r.rightFormation || '';
+    }
+  });
+
+  const enemyList = [...enemyMap.values()].sort((a, b) => b.count - a.count);
+  if (enemyList.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  // 构建克制映射
+  const counterMap = new Map();
+  dominantPairs.forEach(d => {
+    const ek = typeof getTeamKey === 'function' ? getTeamKey(d.dominatedGens) : (d.dominatedGens || []).join(',');
+    if (!counterMap.has(ek)) counterMap.set(ek, []);
+    counterMap.get(ek).push({
+      team: d.dominant, generals: d.dominantGens, tactics: d.dominantTacs,
+      winRate: d.winRate, total: d.total, lossRate: d.lossRateVal,
+      recordIds: d.recordIds, type: 'counter'
+    });
+  });
+
+  const weakMap = new Map();
+  dominatedPairs.forEach(d => {
+    const ek = typeof getTeamKey === 'function' ? getTeamKey(d.dominantGens) : (d.dominantGens || []).join(',');
+    if (!weakMap.has(ek)) weakMap.set(ek, []);
+    weakMap.get(ek).push({
+      team: d.dominated, generals: d.dominatedGens, tactics: d.dominatedTacs,
+      winRate: d.winRate, total: d.total, lossRate: d.lossRateVal,
+      recordIds: d.recordIds, type: 'weak'
+    });
+  });
+
+  section.style.display = 'block';
+
+  // 生成克制推荐卡片 - 竖向排列布局
+  let html = '';
+  enemyList.slice(0, 5).forEach(enemy => {
+    const ek = typeof getTeamKey === 'function' ? getTeamKey(enemy.generals) : (enemy.generals || []).join(',');
+    const counters = counterMap.get(ek) || [];
+    const weaks = weakMap.get(ek) || [];
+
+    html += `<div style="background:var(--bg2);border-radius:8px;border:1px solid var(--border);margin-bottom:12px;overflow:hidden;">`;
+    html += `<div style="background:var(--bg3);padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">`;
+    html += `<span style="font-size:12px;font-weight:bold;color:var(--accent);">敌方高频队伍</span>`;
+    html += `<span style="font-size:11px;color:var(--text3);">出现 ${enemy.count} 次</span>`;
+    html += `</div>`;
+
+    // 敌方队伍信息 - 竖向排列
+    html += `<div style="padding:12px;border-bottom:1px solid var(--border);background:rgba(255,107,107,0.05);">`;
+    html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">敌方配置</div>`;
+    html += `<div style="display:flex;gap:16px;">`;
+    html += `<div style="flex:0 0 60px;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">武将</div>${verticalGeneralsList(enemy.generals)}</div>`;
+    html += `<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">战法</div>${verticalTacticsOnlyList(enemy.tactics)}</div>`;
+    html += `<div style="flex:0 0 70px;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">阵型</div><div style="font-size:12px;color:var(--text2);">${enemy.formation || '-'}</div></div>`;
+    html += `</div></div>`;
+
+    // 克制推荐
+    html += `<div style="padding:12px;">`;
+    if (counters.length > 0) {
+      html += `<div style="font-size:11px;color:var(--green);font-weight:bold;margin-bottom:8px;">✅ 推荐使用（克制该敌方）</div>`;
+      counters.slice(0, 3).forEach(c => {
+        html += `<div style="background:rgba(81,207,102,0.05);border-radius:6px;padding:10px;margin-bottom:8px;border-left:2px solid var(--green);">`;
+        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">`;
+        html += `<span style="font-weight:bold;font-size:12px;color:var(--blue);">${typeof escHtml === 'function' ? escHtml(c.team) : c.team}</span>`;
+        html += `<span style="font-size:11px;color:var(--green);font-weight:bold;">胜率 ${c.winRate.toFixed(0)}%</span>`;
+        html += `<span style="font-size:10px;color:var(--text3);">${c.total}场</span>`;
+        html += `</div>`;
+        // 竖向排列
+        html += `<div style="display:flex;gap:16px;">`;
+        html += `<div style="flex:0 0 60px;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">武将</div>${verticalGeneralsList(c.generals)}</div>`;
+        html += `<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">战法</div>${verticalTacticsOnlyList(c.tactics)}</div>`;
+        html += `</div>`;
+        html += `</div>`;
+      });
+    } else {
+      html += `<div style="font-size:11px;color:var(--text3);text-align:center;padding:8px;">暂无克制推荐数据</div>`;
+    }
+    html += `</div></div>`;
+  });
+
+  container.innerHTML = html;
+}
+
 console.log('[counter-analysis-enhanced] 已加载 ✅');
+
+// 延迟覆盖所有原函数以确保在内联脚本执行后
+setTimeout(() => {
+  // 覆盖 renderWinRateTable
+  if (typeof renderWinRateTable === 'function') {
+    window.renderWinRateTable = renderWinRateTableEnhanced;
+    console.log('[counter-analysis-enhanced] renderWinRateTable 已覆盖');
+  }
+  // 覆盖 renderCounterPick
+  if (typeof renderCounterPick === 'function') {
+    const originalRenderCounterPick = renderCounterPick;
+    window.renderCounterPick = renderCounterPickEnhanced;
+    console.log('[counter-analysis-enhanced] renderCounterPick 已覆盖');
+  }
+  // 覆盖 renderEnemyFreq
+  if (typeof renderEnemyFreq === 'function') {
+    window.renderEnemyFreq = renderEnemyFreqEnhanced;
+    console.log('[counter-analysis-enhanced] renderEnemyFreq 已覆盖');
+  }
+
+  // 如果数据已加载，刷新所有表格
+  if (typeof allRecords !== 'undefined' && allRecords.length > 0) {
+    console.log('[counter-analysis-enhanced] 刷新表格...');
+    if (typeof renderWinRateTable === 'function') renderWinRateTable();
+    if (typeof renderEnemyFreq === 'function') renderEnemyFreq();
+    // renderCounterPick 由 renderRestrictCards 调用，不需要单独刷新
+  }
+}, 200);
