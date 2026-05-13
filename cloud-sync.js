@@ -10,6 +10,16 @@ console.log('[cloud-sync.js] 脚本开始加载 v202605110101');
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const CLOUD_API_BASE = isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
 
+// JSON 安全解析（后端返回的 JSON 字段可能是字符串）
+function safeJSONParse(val) {
+  if (val === null || val === undefined) return null;
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch (e) { return null; }
+  }
+  return val;
+}
+
 // ========== 辅助函数：获取当前用户 ==========
 function getCurrentUserPhone() {
   return currentUser ? currentUser.phone : null;
@@ -342,10 +352,10 @@ async function cloudGetRecords(projectId) {
       rightPlayer: r.enemyName || r.enemy_name || '',
       leftAlliance: r.leftAlliance || r.left_alliance || '',
       rightAlliance: r.rightAlliance || r.right_alliance || '',
-      leftGenerals: r.leftGenerals || r.left_generals || [],
-      rightGenerals: r.rightGenerals || r.right_generals || [],
-      leftTactics: r.leftTactics || r.left_tactics || [],
-      rightTactics: r.rightTactics || r.right_tactics || [],
+      leftGenerals: safeJSONParse(r.leftGenerals || r.left_generals) || [],
+      rightGenerals: safeJSONParse(r.rightGenerals || r.right_generals) || [],
+      leftTactics: safeJSONParse(r.leftTactics || r.left_tactics) || [],
+      rightTactics: safeJSONParse(r.rightTactics || r.right_tactics) || [],
       leftFormation: r.leftFormation || r.left_formation || '',
       rightFormation: r.rightFormation || r.right_formation || '',
       leftLoss: (r.leftLoss !== undefined) ? r.leftLoss : ((r.left_loss !== undefined) ? r.left_loss : null),
