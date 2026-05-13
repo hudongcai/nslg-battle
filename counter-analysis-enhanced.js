@@ -30,6 +30,20 @@ function verticalGeneralsList(generals) {
   return generals.map(g => `<div style="padding:2px 0;font-size:12px;font-weight:bold;color:var(--cyan);">${g}</div>`).join('');
 }
 
+// 战法竖向列表（每行一个武将的战法）
+function verticalTacticsOnlyList(tactics) {
+  const tacs = tactics || [];
+  if (!tacs.length) return '<span style="color:var(--text3);">-</span>';
+  // 每3个战法一组
+  let groups = [];
+  for (let i = 0; i < tacs.length; i += 3) {
+    const group = [tacs[i] || '', tacs[i + 1] || '', tacs[i + 2] || ''].filter(t => t && t !== '未知');
+    const tStr = group.length ? group.map(t => `<span style="display:inline-block;background:rgba(74,144,217,0.15);color:var(--blue);padding:1px 4px;border-radius:3px;font-size:10px;margin-right:2px;">${t}</span>`).join('') : '<span style="color:var(--text3);font-size:10px;">-</span>';
+    groups.push(`<div style="padding:2px 0;height:20px;">${tStr}</div>`);
+  }
+  return groups.join('');
+}
+
 // 敌方高频排序状态
 let efSortField = 'count';
 let efSortDir = 'desc';
@@ -124,10 +138,10 @@ function renderEnemyFreqEnhanced() {
     const wrColor = wr >= 60 ? 'var(--green)' : wr >= 40 ? 'var(--accent)' : 'var(--red)';
 
     return `<tr>
-      <td style="text-align:center;font-weight:bold;color:${i < 3 ? 'var(--accent)' : 'var(--text2)'};">${i + 1}</td>
-      <td style="min-width:60px;vertical-align:top;">${verticalGeneralsList(d.generals)}</td>
-      <td style="min-width:180px;vertical-align:top;font-size:11px;line-height:1.4;">${verticalTeamRowHtml(d.generals, d.tactics)}</td>
-      <td style="text-align:center;color:var(--text2);vertical-align:top;">${d.formation || '-'}</td>
+      <td style="text-align:center;font-weight:bold;color:${i < 3 ? 'var(--accent)' : 'var(--text2)'};vertical-align:middle;">${i + 1}</td>
+      <td style="min-width:60px;vertical-align:middle;text-align:center;">${verticalGeneralsList(d.generals)}</td>
+      <td style="min-width:180px;vertical-align:middle;text-align:left;">${verticalTacticsOnlyList(d.tactics)}</td>
+      <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.formation || '-'}</td>
       <td style="text-align:center;font-weight:bold;font-size:14px;color:var(--blue);vertical-align:middle;">${d.count}</td>
       <td style="vertical-align:middle;">
         <div style="display:flex;align-items:center;gap:6px;">
@@ -152,17 +166,26 @@ function renderWinRateTableEnhanced() {
   let data = typeof computeWinRateData === 'function' ? computeWinRateData() : [];
   if (typeof cachedWinRateData !== 'undefined') cachedWinRateData = data;
 
-  const search = (document.getElementById('wrSearch')?.value || '').toLowerCase();
-  const searchGen = (document.getElementById('wrSearchGeneral')?.value || '').toLowerCase();
-  const searchTac = (document.getElementById('wrSearchTactic')?.value || '').toLowerCase();
-  const searchForm = (document.getElementById('wrSearchFormation')?.value || '').toLowerCase();
+  // 新的筛选框 ID
+  const searchLeftGen = (document.getElementById('wrSearchLeftGeneral')?.value || '').toLowerCase();
+  const searchLeftTac = (document.getElementById('wrSearchLeftTactic')?.value || '').toLowerCase();
+  const searchLeftForm = (document.getElementById('wrSearchLeftFormation')?.value || '').toLowerCase();
+  const searchRightGen = (document.getElementById('wrSearchRightGeneral')?.value || '').toLowerCase();
+  const searchRightTac = (document.getElementById('wrSearchRightTactic')?.value || '').toLowerCase();
+  const searchRightForm = (document.getElementById('wrSearchRightFormation')?.value || '').toLowerCase();
   const fL = document.getElementById('wrFilterLeft')?.value || '';
   const fR = document.getElementById('wrFilterRight')?.value || '';
 
-  if (search) data = data.filter(d => d.leftTeam.toLowerCase().includes(search) || d.rightTeam.toLowerCase().includes(search));
-  if (searchGen) data = data.filter(d => d.leftGenerals.some(g => g && g.toLowerCase().includes(searchGen)) || d.rightGenerals.some(g => g && g.toLowerCase().includes(searchGen)));
-  if (searchTac) data = data.filter(d => (d.leftTactics || []).some(t => t && t.toLowerCase().includes(searchTac)) || (d.rightTactics || []).some(t => t && t.toLowerCase().includes(searchTac)));
-  if (searchForm) data = data.filter(d => (d.leftFormation || '').toLowerCase().includes(searchForm) || (d.rightFormation || '').toLowerCase().includes(searchForm));
+  // 胜方筛选
+  if (searchLeftGen) data = data.filter(d => d.leftGenerals.some(g => g && g.toLowerCase().includes(searchLeftGen)));
+  if (searchLeftTac) data = data.filter(d => (d.leftTactics || []).some(t => t && t.toLowerCase().includes(searchLeftTac)));
+  if (searchLeftForm) data = data.filter(d => (d.leftFormation || '').toLowerCase().includes(searchLeftForm));
+
+  // 败方筛选
+  if (searchRightGen) data = data.filter(d => d.rightGenerals.some(g => g && g.toLowerCase().includes(searchRightGen)));
+  if (searchRightTac) data = data.filter(d => (d.rightTactics || []).some(t => t && t.toLowerCase().includes(searchRightTac)));
+  if (searchRightForm) data = data.filter(d => (d.rightFormation || '').toLowerCase().includes(searchRightForm));
+
   if (fL) data = data.filter(d => d.leftTeam === fL);
   if (fR) data = data.filter(d => d.rightTeam === fR);
 
@@ -191,7 +214,7 @@ function renderWinRateTableEnhanced() {
   if (!tbody) return;
 
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--text3);">暂无对战数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text3);">暂无对战数据</td></tr>';
   } else {
     tbody.innerHTML = data.map((d, di) => {
       const wrCls = d.winRate >= 60 ? 'wr-high' : d.winRate >= 40 ? 'wr-mid' : 'wr-low';
@@ -201,19 +224,15 @@ function renderWinRateTableEnhanced() {
       const lossColor = parseFloat(lossRatio) <= 50 ? 'var(--green)' : parseFloat(lossRatio) >= 100 ? 'var(--red)' : 'var(--accent)';
 
       return `<tr>
-        <td style="font-weight:bold;font-size:12px;text-align:center;vertical-align:middle;">${typeof escHtml === 'function' ? escHtml(d.leftTeam) : d.leftTeam}</td>
-        <td style="min-width:60px;vertical-align:top;">${verticalGeneralsList(d.leftGenerals)}</td>
-        <td style="min-width:180px;vertical-align:top;font-size:11px;line-height:1.4;">${verticalTeamRowHtml(d.leftGenerals, d.leftTactics)}</td>
+        <td style="min-width:60px;vertical-align:middle;text-align:center;">${verticalGeneralsList(d.leftGenerals)}</td>
+        <td style="min-width:180px;vertical-align:middle;text-align:left;">${verticalTacticsOnlyList(d.leftTactics)}</td>
         <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.leftFormation || ''}</td>
-        <td class="num" style="font-size:11px;color:${(d.avgLLoss || 0) > 3000 ? 'var(--red)' : 'var(--text2)'};vertical-align:middle;">${typeof fmtNum === 'function' ? fmtNum(Math.round(d.avgLLoss || 0)) : Math.round(d.avgLLoss || 0)}</td>
         <td style="text-align:center;vertical-align:middle;"><span class="wr ${wrCls}" style="font-size:12px;font-weight:900;">${d.winRate.toFixed(0)}%</span><span class="wr-bar ${barCls}" style="width:${barW}px;display:inline-block;"></span></td>
         <td class="num" style="font-weight:900;font-size:12px;color:${lossColor};vertical-align:middle;">${lossRatio}%</td>
-        <td class="num" style="font-size:11px;color:${(d.avgRLoss || 0) > 3000 ? 'var(--red)' : 'var(--text2)'};vertical-align:middle;">${typeof fmtNum === 'function' ? fmtNum(Math.round(d.avgRLoss || 0)) : Math.round(d.avgRLoss || 0)}</td>
-        <td style="font-weight:bold;font-size:12px;text-align:center;vertical-align:middle;">${typeof escHtml === 'function' ? escHtml(d.rightTeam) : d.rightTeam}</td>
-        <td style="min-width:60px;vertical-align:top;">${verticalGeneralsList(d.rightGenerals)}</td>
-        <td style="min-width:180px;vertical-align:top;font-size:11px;line-height:1.4;">${verticalTeamRowHtml(d.rightGenerals, d.rightTactics)}</td>
-        <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.rightFormation || ''}</td>
         <td class="num" style="color:var(--text3);font-size:11px;vertical-align:middle;">${d.total}</td>
+        <td style="min-width:60px;vertical-align:middle;text-align:center;">${verticalGeneralsList(d.rightGenerals)}</td>
+        <td style="min-width:180px;vertical-align:middle;text-align:left;">${verticalTacticsOnlyList(d.rightTactics)}</td>
+        <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.rightFormation || ''}</td>
         <td style="text-align:center;vertical-align:middle;"><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${typeof escHtml === 'function' ? escHtml(d.leftTeam) : d.leftTeam}','${typeof escHtml === 'function' ? escHtml(d.rightTeam) : d.rightTeam}')" style="color:var(--accent);text-decoration:underline;font-size:12px;">📋 溯源</a></td>
       </tr>`;
     }).join('');
