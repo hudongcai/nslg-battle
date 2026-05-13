@@ -3,6 +3,12 @@
  * 提供竖向排列布局和高级筛选功能
  */
 
+// 立即覆盖原函数（必须在其他代码之前执行）
+console.log('[counter-analysis-enhanced] 开始加载...');
+
+// 标记已加载
+window.__counterAnalysisEnhancedLoaded = true;
+
 // 武将竖向列表
 function verticalGeneralsList(generals) {
   if (!generals || generals.length === 0) return '<span style="color:var(--text3);">-</span>';
@@ -369,41 +375,41 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
 
 console.log('[counter-analysis-enhanced] 已加载 ✅');
 
-// 修复原函数中的 wrSearch 引用错误（如果不存在该元素）
-if (typeof document !== 'undefined') {
-  // 创建一个隐藏的 wrSearch 元素以防原函数报错
-  const existingWrSearch = document.getElementById('wrSearch');
-  if (!existingWrSearch) {
-    const hiddenInput = document.createElement('input');
-    hiddenInput.type = 'hidden';
-    hiddenInput.id = 'wrSearch';
-    hiddenInput.value = '';
-    document.body.appendChild(hiddenInput);
-    console.log('[counter-analysis-enhanced] 创建隐藏的 wrSearch 元素');
-  }
-}
+// 立即覆盖所有原函数（内联脚本已先执行，函数已存在）
+(function() {
+  // 保存原函数引用（调试用）
+  const originalFunctions = {
+    renderWinRateTable: typeof renderWinRateTable === 'function' ? renderWinRateTable : null,
+    renderEnemyFreq: typeof renderEnemyFreq === 'function' ? renderEnemyFreq : null,
+    renderCounterPick: typeof renderCounterPick === 'function' ? renderCounterPick : null
+  };
 
-// 延迟覆盖所有原函数以确保在内联脚本执行后
-setTimeout(() => {
+  console.log('[counter-analysis-enhanced] 原函数状态:', {
+    renderWinRateTable: originalFunctions.renderWinRateTable ? '存在' : '不存在',
+    renderEnemyFreq: originalFunctions.renderEnemyFreq ? '存在' : '不存在',
+    renderCounterPick: originalFunctions.renderCounterPick ? '存在' : '不存在'
+  });
+
   // 覆盖 renderWinRateTable
   window.renderWinRateTable = renderWinRateTableEnhanced;
   console.log('[counter-analysis-enhanced] renderWinRateTable 已覆盖');
 
-  // 覆盖 renderCounterPick
-  if (typeof renderCounterPick === 'function') {
-    window.renderCounterPick = renderCounterPickEnhanced;
-    console.log('[counter-analysis-enhanced] renderCounterPick 已覆盖');
-  }
   // 覆盖 renderEnemyFreq
-  if (typeof renderEnemyFreq === 'function') {
+  if (originalFunctions.renderEnemyFreq) {
     window.renderEnemyFreq = renderEnemyFreqEnhanced;
     console.log('[counter-analysis-enhanced] renderEnemyFreq 已覆盖');
   }
 
-  // 如果数据已加载，刷新所有表格
+  // 覆盖 renderCounterPick
+  if (originalFunctions.renderCounterPick) {
+    window.renderCounterPick = renderCounterPickEnhanced;
+    console.log('[counter-analysis-enhanced] renderCounterPick 已覆盖');
+  }
+
+  // 如果数据已加载，刷新表格
   if (typeof allRecords !== 'undefined' && allRecords.length > 0) {
-    console.log('[counter-analysis-enhanced] 刷新表格...');
+    console.log('[counter-analysis-enhanced] 检测到数据，刷新表格...');
     renderWinRateTable();
     if (typeof renderEnemyFreq === 'function') renderEnemyFreq();
   }
-}, 100);
+})();
