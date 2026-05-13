@@ -99,10 +99,63 @@
 
     const formTag = form ? `<span class="ca-form-badge">${escHtml(form)}</span>` : '';
 
-    return `<div class="ca-chip${isWinner ? ' ca-chip-winner' : ''}">
-      <div class="ca-chip-row1">${line1}${formTag ? `<span class="ca-chip-sep"></span>${formTag}` : ''}</div>
+    const borderColor = isWinner === true ? 'var(--green)' : isWinner === false ? 'var(--red)' : 'var(--border)';
+
+    return `<div class="ca-team" style="border-left:3px solid ${borderColor};padding-left:8px;">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap;">${line1}${formTag}</div>
       ${tacRow}
     </div>`;
+  }
+
+  // ==================== 竖向排列布局工具 ====================
+
+  // 武将和战法竖向排列（每行一个武将+对应战法）
+  function verticalTeamHtml(generals, tactics, showFormation, formation) {
+    const gens = normGens(generals);
+    const tacs = normTacs(tactics);
+    const form = (formation || '').trim();
+
+    if (!gens.length) return '<span class="ca-dim">—</span>';
+
+    let rows = [];
+    for (let i = 0; i < gens.length; i++) {
+      const g = gens[i];
+      // 每个武将有3个战法
+      const baseIdx = i * 3;
+      const gt = tacs.slice(baseIdx, baseIdx + 3);
+      const gName = `<b style="color:${heroColor(g)}">${escHtml(g)}</b>`;
+      const tStr = gt.length ? gt.map(t => `<span class="ca-tac" style="font-size:10px;padding:1px 4px;">${escHtml(t)}</span>`).join('') : '';
+      rows.push(`<div style="display:flex;gap:6px;align-items:center;padding:2px 0;border-bottom:1px solid rgba(128,128,128,0.1);">
+        <span style="min-width:60px;font-size:12px;">${gName}</span>
+        <span style="flex:1;">${tStr}</span>
+      </div>`);
+    }
+
+    let html = `<div class="ca-vertical-team" style="min-width:140px;">${rows.join('')}</div>`;
+    if (showFormation && form) {
+      html += `<div style="margin-top:4px;"><span class="ca-form-badge">${escHtml(form)}</span></div>`;
+    }
+    return html;
+  }
+
+  // 仅武将竖向排列（用于敌方高频）
+  function verticalGeneralsHtml(generals) {
+    const gens = normGens(generals);
+    if (!gens.length) return '<span class="ca-dim">—</span>';
+    return gens.map(g => `<div style="padding:2px 0;font-size:12px;"><b style="color:${heroColor(g)}">${escHtml(g)}</b></div>`).join('');
+  }
+
+  // 战法按武将分组竖向排列
+  function verticalTacticsHtml(tactics) {
+    const tacs = normTacs(tactics);
+    if (!tacs.length) return '<span class="ca-dim">—</span>';
+    // 每3个战法一组
+    let groups = [];
+    for (let i = 0; i < tacs.length; i += 3) {
+      const group = tacs.slice(i, i + 3);
+      groups.push(`<div style="padding:2px 0;">${group.map(t => `<span class="ca-tac" style="font-size:10px;padding:1px 4px;">${escHtml(t)}</span>`).join('')}</div>`);
+    }
+    return groups.join('');
   }
 
   // ==================== 图片溯源 ====================

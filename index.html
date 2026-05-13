@@ -505,15 +505,25 @@ document.addEventListener('click', function(e) {
     <div class="card">
       <h3>📋 数据底表 <span class="badge" id="dataCount">0 条</span></h3>
       <div class="form-row">
-        <input type="text" id="dataSearch" placeholder="🔍 搜索玩家/武将/同盟..." oninput="renderDataTable()">
+        <input type="text" id="dataSearch" placeholder="🔍 搜索玩家..." oninput="renderDataTable()" style="min-width:120px;">
         <select id="dataFilterResult" onchange="renderDataTable()"><option value="">全部结果</option><option value="胜">胜</option><option value="败">败</option><option value="平">平</option></select>
+        <input type="text" id="dataFilterAlliance" placeholder="🔍 同盟..." oninput="renderDataTable()" style="min-width:100px;">
+        <input type="text" id="dataFilterGeneral" placeholder="🔍 武将..." oninput="renderDataTable()" style="min-width:100px;">
+        <input type="text" id="dataFilterTactic" placeholder="🔍 战法..." oninput="renderDataTable()" style="min-width:100px;">
+        <input type="text" id="dataFilterFormation" placeholder="🔍 阵型..." oninput="renderDataTable()" style="min-width:80px;">
         <button class="btn btn-sm btn-secondary" onclick="exportDataCSV()">📥 导出CSV</button>
         <button class="btn btn-sm btn-danger" onclick="clearAllData()">🗑 清空</button>
       </div>
       <div style="overflow-x:auto;"><table id="dataTable"><thead><tr>
         <th>#</th><th>时间</th><th>结果</th>
-        <th>左玩家</th><th style="min-width:110px;">左同盟</th><th style="min-width:80px;">左武将</th><th style="min-width:240px;">左战法</th><th style="min-width:70px;">左阵型</th><th>左战损</th><th>左总兵</th><th>左战损率</th>
-        <th>右玩家</th><th style="min-width:110px;">右同盟</th><th style="min-width:80px;">右武将</th><th style="min-width:240px;">右战法</th><th style="min-width:70px;">右阵型</th><th>右战损</th><th>右总兵</th><th>右战损率</th>
+        <th>左玩家</th><th style="min-width:110px;">左同盟</th><th style="min-width:80px;">左武将</th><th style="min-width:240px;">左战法</th><th style="min-width:70px;">左阵型</th>
+        <th id="th-leftLoss" onclick="toggleDataSort('leftLoss')" style="min-width:70px;cursor:pointer;">左战损<span class="sort-arrow">↕</span></th>
+        <th id="th-leftTotal" onclick="toggleDataSort('leftTotal')" style="min-width:70px;cursor:pointer;">左总兵<span class="sort-arrow">↕</span></th>
+        <th id="th-leftLossRate" onclick="toggleDataSort('leftLossRate')" style="min-width:70px;cursor:pointer;">左战损率<span class="sort-arrow">↕</span></th>
+        <th>右玩家</th><th style="min-width:110px;">右同盟</th><th style="min-width:80px;">右武将</th><th style="min-width:240px;">右战法</th><th style="min-width:70px;">右阵型</th>
+        <th id="th-rightLoss" onclick="toggleDataSort('rightLoss')" style="min-width:70px;cursor:pointer;">右战损<span class="sort-arrow">↕</span></th>
+        <th id="th-rightTotal" onclick="toggleDataSort('rightTotal')" style="min-width:70px;cursor:pointer;">右总兵<span class="sort-arrow">↕</span></th>
+        <th id="th-rightLossRate" onclick="toggleDataSort('rightLossRate')" style="min-width:70px;cursor:pointer;">右战损率<span class="sort-arrow">↕</span></th>
         <th style="min-width:80px;">原图</th><th style="min-width:70px;">操作</th>
       </tr></thead><tbody id="dataTableBody"></tbody></table></div>
       <div class="pagination" id="dataPagination"></div>
@@ -527,17 +537,21 @@ document.addEventListener('click', function(e) {
       <h3>🔭 敌方高频队伍分析</h3>
       <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">统计右侧（敌方）队伍出现频率，按出现次数从高到低排列。</div>
       <div class="form-row" style="margin-bottom:10px;">
-        <input type="text" id="efSearch" placeholder="🔍 搜索武将..." oninput="renderEnemyFreq()" style="max-width:200px;">
+        <input type="text" id="efSearch" placeholder="🔍 搜索队伍..." oninput="renderEnemyFreq()" style="max-width:150px;">
+        <input type="text" id="efSearchGeneral" placeholder="🔍 武将..." oninput="renderEnemyFreq()" style="max-width:100px;">
+        <input type="text" id="efSearchTactic" placeholder="🔍 战法..." oninput="renderEnemyFreq()" style="max-width:100px;">
+        <input type="text" id="efSearchFormation" placeholder="🔍 阵型..." oninput="renderEnemyFreq()" style="max-width:80px;">
         <span id="efTotal" style="font-size:11px;color:var(--text3);margin-left:8px;"></span>
       </div>
       <div id="efTableWrap" style="overflow:auto;max-height:340px;width:100%;border-radius:8px;border:1px solid var(--border);">
         <table id="efTable" style="min-width:600px;">
           <thead><tr>
             <th style="min-width:40px;text-align:center;">排名</th>
-            <th style="min-width:140px;">敌方队伍</th>
-            <th style="min-width:200px;">战法配置</th>
-            <th style="min-width:80px;text-align:center;">出现次数</th>
-            <th style="min-width:100px;">出现占比</th>
+            <th style="min-width:60px;text-align:center;">武将</th>
+            <th style="min-width:180px;text-align:center;">战法配置</th>
+            <th style="min-width:70px;text-align:center;">阵型</th>
+            <th style="min-width:80px;text-align:center;" onclick="toggleEFSort('count')">出现次数<span class="sort-arrow">↕</span></th>
+            <th style="min-width:100px;text-align:center;">出现占比</th>
             <th style="min-width:80px;text-align:center;">我方胜/败/平</th>
             <th style="min-width:70px;text-align:center;">对阵胜率</th>
           </tr></thead>
@@ -549,22 +563,29 @@ document.addEventListener('click', function(e) {
       <h3>⚔️ 队伍克制关系分析</h3>
       <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">匹配规则：3武将相同(无序) 或 9战法相同(无序) → 同类型队伍。战损比 = 左战损兵力 / 右战损兵力 × 100%，低于 50% 表示优势明显。</div>
       <div class="form-row">
-        <input type="text" id="wrSearch" placeholder="🔍 搜索队伍/武将..." oninput="renderWinRateTable()">
+        <input type="text" id="wrSearch" placeholder="🔍 搜索队伍..." oninput="renderWinRateTable()" style="min-width:120px;">
         <select id="wrFilterLeft" onchange="renderWinRateTable()"><option value="">全部左侧</option></select>
         <select id="wrFilterRight" onchange="renderWinRateTable()"><option value="">全部右侧</option></select>
+        <input type="text" id="wrSearchGeneral" placeholder="🔍 武将..." oninput="renderWinRateTable()" style="min-width:100px;">
+        <input type="text" id="wrSearchTactic" placeholder="🔍 战法..." oninput="renderWinRateTable()" style="min-width:100px;">
+        <input type="text" id="wrSearchFormation" placeholder="🔍 阵型..." oninput="renderWinRateTable()" style="min-width:80px;">
         <button class="btn btn-sm btn-secondary" onclick="exportWinRateCSV()">📥 导出</button>
       </div>
       <div id="wrTableWrap" style="overflow:auto;max-height:70vh;width:100%;border-radius:8px;border:1px solid var(--border);"><table id="winRateTable" style="min-width:1400px;"><thead><tr>
-        <th data-sort="leftTeam" style="min-width:120px;">克制队伍<span class="sort-arrow">↕</span></th>
-        <th style="min-width:160px;">左战法配置</th>
-        <th data-sort="leftLossPct" style="min-width:70px;">左战损(兵)<span class="sort-arrow">↕</span></th>
-        <th data-sort="winRate" style="min-width:70px;">胜率<span class="sort-arrow">↕</span></th>
-        <th data-sort="lossRate" style="min-width:70px;">战损比<span class="sort-arrow">↕</span></th>
-        <th data-sort="rightLossPct" style="min-width:70px;">右战损(兵)<span class="sort-arrow">↕</span></th>
-        <th data-sort="rightTeam" style="min-width:120px;">被克制队伍<span class="sort-arrow">↕</span></th>
-        <th style="min-width:160px;">右战法配置</th>
-        <th data-sort="count" style="min-width:50px;">战报数<span class="sort-arrow">↕</span></th>
-        <th style="min-width:80px;">溯源</th>
+        <th data-sort="leftTeam" style="min-width:120px;text-align:center;">胜方队伍<span class="sort-arrow">↕</span></th>
+        <th style="min-width:60px;text-align:center;">胜方武将</th>
+        <th style="min-width:180px;text-align:center;">胜方战法</th>
+        <th style="min-width:70px;text-align:center;">胜方阵型</th>
+        <th data-sort="leftLossPct" style="min-width:70px;text-align:center;">左战损(兵)<span class="sort-arrow">↕</span></th>
+        <th data-sort="winRate" style="min-width:70px;text-align:center;">胜率<span class="sort-arrow">↕</span></th>
+        <th data-sort="lossRate" style="min-width:70px;text-align:center;">战损比<span class="sort-arrow">↕</span></th>
+        <th data-sort="rightLossPct" style="min-width:70px;text-align:center;">右战损(兵)<span class="sort-arrow">↕</span></th>
+        <th data-sort="rightTeam" style="min-width:120px;text-align:center;">败方队伍<span class="sort-arrow">↕</span></th>
+        <th style="min-width:60px;text-align:center;">败方武将</th>
+        <th style="min-width:180px;text-align:center;">败方战法</th>
+        <th style="min-width:70px;text-align:center;">败方阵型</th>
+        <th data-sort="count" style="min-width:50px;text-align:center;">战报数<span class="sort-arrow">↕</span></th>
+        <th style="min-width:80px;text-align:center;">溯源</th>
       </tr></thead><tbody id="winRateTableBody"></tbody></table></div>
     </div>
     <div class="card" id="restrictSection" style="display:none;padding:16px 12px;"><h3>🏆 克制关系总结</h3><div id="restrictCards" class="restrict-cards"></div></div>
@@ -899,6 +920,23 @@ function renderCounterPick(dominantPairs,dominatedPairs){
       return `<div style="display:flex;align-items:baseline;gap:4px;padding:1px 0;font-size:11px;line-height:1.5;"><span style="color:var(--cyan);font-weight:bold;white-space:nowrap;">${escHtml(g)}</span><span style="color:var(--text2);">${ts.length?ts.map(t=>escHtml(t)).join(' / '):'-'}</span></div>`;
     }).join('');
   }
+  // 竖向排列：武将单独列
+  function genGeneralsLines(generals){
+    if(!generals||generals.length===0)return'<div style="color:var(--text3);font-size:11px;">-</div>';
+    return generals.map(g=>`<div style="padding:2px 0;font-size:12px;font-weight:bold;color:var(--cyan);white-space:nowrap;">${escHtml(g)}</div>`).join('');
+  }
+  // 竖向排列：战法单独列
+  function genTacticsLines(tactics){
+    const tacs=tactics||[];
+    if(tacs.length===0)return'<div style="color:var(--text3);font-size:11px;">-</div>';
+    // 每3个战法一组
+    let groups=[];
+    for(let i=0;i<tacs.length;i+=3){
+      const group=[tacs[i]||'',tacs[i+1]||'',tacs[i+2]||''].filter(t=>t&&t!=='未知');
+      groups.push(group.length?group.map(t=>`<span style="display:inline-block;background:rgba(74,144,217,0.15);color:var(--blue);padding:1px 4px;border-radius:3px;font-size:10px;margin-right:2px;">${escHtml(t)}</span>`).join(''):'<span style="color:var(--text3);font-size:10px;">-</span>');
+    }
+    return groups.map(g=>`<div style="padding:2px 0;">${g}</div>`).join('');
+  }
   let html='';
   enemyList.forEach((enemy,idx)=>{
     const ek=getTeamKey(enemy.generals);
@@ -911,7 +949,11 @@ function renderCounterPick(dominantPairs,dominatedPairs){
     html+=`<div style="display:flex;gap:0;">`;
     html+=`<div style="flex:0 0 50%;width:50%;box-sizing:border-box;padding:12px;background:rgba(255,107,107,.04);border-right:1px solid var(--border);">`;
     html+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-weight:bold;font-size:13px;color:var(--red);">👹 ${escHtml(ek)}</span></div>`;
-    html+=`<div style="margin-bottom:4px;">${genLines(enemy.generals,enemy.tactics)}</div>`;
+    // 竖向排列：武将单独一列，战法单独一列
+    html+=`<div style="display:flex;gap:8px;margin-bottom:4px;">`;
+    html+=`<div style="flex:0 0 80px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">武将</div>${genGeneralsLines(enemy.generals)}</div>`;
+    html+=`<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">战法</div>${genTacticsLines(enemy.tactics)}</div>`;
+    html+=`</div>`;
     html+=`<div style="font-size:11px;color:var(--text2);">出现 <b style="color:var(--blue);">${enemy.count}</b> 场</div>`;
     html+=`</div>`;
     // 右侧：克制推荐
@@ -925,8 +967,13 @@ function renderCounterPick(dominantPairs,dominatedPairs){
           const wrColor=c.winRate>=80?'var(--green)':c.winRate>=60?'var(--green)':'var(--accent)';
           html+=`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 8px;margin-bottom:4px;background:rgba(81,207,102,.05);border-radius:6px;border-left:2px solid var(--green);">`;
           html+=`<div style="flex:1;min-width:0;">`;
-          html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span style="font-weight:bold;font-size:12px;color:var(--blue);">${escHtml(c.team)}</span><span style="font-size:11px;font-weight:bold;color:${wrColor};">胜率 ${c.winRate.toFixed(0)}%</span><span style="font-size:10px;color:var(--text3);">${c.total}场</span><span style="font-size:10px;color:var(--text2);background:rgba(81,207,102,.1);padding:0 4px;border-radius:3px;">战损比 ${c.lossRate}%</span></div>`;
-          html+=`<div style="margin-top:2px;">${genLines(c.generals,c.tactics)}</div>`;
+          html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;"><span style="font-weight:bold;font-size:12px;color:var(--blue);">${escHtml(c.team)}</span><span style="font-size:11px;font-weight:bold;color:${wrColor};">胜率 ${c.winRate.toFixed(0)}%</span><span style="font-size:10px;color:var(--text3);">${c.total}场</span></div>`;
+          // 竖向排列：武将单独一列，战法单独一列
+          html+=`<div style="display:flex;gap:8px;">`;
+          html+=`<div style="flex:0 0 80px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">武将</div>${genGeneralsLines(c.generals)}</div>`;
+          html+=`<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">战法</div>${genTacticsLines(c.tactics)}</div>`;
+          html+=`<div style="flex:0 0 60px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">战损比</div><div style="font-size:11px;color:var(--text2);background:rgba(81,207,102,.1);padding:2px 4px;border-radius:3px;">${c.lossRate}%</div></div>`;
+          html+=`</div>`;
           html+=`</div>`;
           html+=`<div style="flex-shrink:0;"><a href="javascript:void(0)" onclick="showTraceByRecords([${c.recordIds.join(',')}],'${escHtml(c.team)}','${escHtml(ek)}')" style="color:var(--accent);text-decoration:none;font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:3px;white-space:nowrap;">📋溯源</a></div>`;
           html+=`</div>`;
@@ -938,8 +985,13 @@ function renderCounterPick(dominantPairs,dominatedPairs){
           const wrColor=c.winRate<=20?'var(--red)':c.winRate<=35?'var(--red)':'var(--accent)';
           html+=`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 8px;margin-bottom:4px;background:rgba(255,107,107,.04);border-radius:6px;border-left:2px solid var(--red);">`;
           html+=`<div style="flex:1;min-width:0;">`;
-          html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span style="font-weight:bold;font-size:12px;color:var(--text);">${escHtml(c.team)}</span><span style="font-size:11px;font-weight:bold;color:${wrColor};">胜率 ${c.winRate.toFixed(0)}%</span><span style="font-size:10px;color:var(--text3);">${c.total}场</span><span style="font-size:10px;color:var(--text2);background:rgba(255,107,107,.1);padding:0 4px;border-radius:3px;">战损比 ${c.lossRate}%</span></div>`;
-          html+=`<div style="margin-top:2px;">${genLines(c.generals,c.tactics)}</div>`;
+          html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;"><span style="font-weight:bold;font-size:12px;color:var(--text);">${escHtml(c.team)}</span><span style="font-size:11px;font-weight:bold;color:${wrColor};">胜率 ${c.winRate.toFixed(0)}%</span><span style="font-size:10px;color:var(--text3);">${c.total}场</span></div>`;
+          // 竖向排列：武将单独一列，战法单独一列
+          html+=`<div style="display:flex;gap:8px;">`;
+          html+=`<div style="flex:0 0 80px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">武将</div>${genGeneralsLines(c.generals)}</div>`;
+          html+=`<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">战法</div>${genTacticsLines(c.tactics)}</div>`;
+          html+=`<div style="flex:0 0 60px;"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;">战损比</div><div style="font-size:11px;color:var(--text2);background:rgba(255,107,107,.1);padding:2px 4px;border-radius:3px;">${c.lossRate}%</div></div>`;
+          html+=`</div>`;
           html+=`</div>`;
           html+=`<div style="flex-shrink:0;"><a href="javascript:void(0)" onclick="showTraceByRecords([${c.recordIds.join(',')}],'${escHtml(ek)}','${escHtml(c.team)}')" style="color:var(--accent);text-decoration:none;font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:3px;white-space:nowrap;">📋溯源</a></div>`;
           html+=`</div>`;
@@ -1395,6 +1447,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data_heroes.js?v=202605081430"></script>
   <script src="data_tactics.js?v=202605081430"></script>
   <script src="counter-analysis.js?v=202605120002"></script>
+  <script src="counter-analysis-enhanced.js?v=202605130001"></script>
   <script src="user-system.js?v=202605111900"></script>
   <script src="project-system.js?v=202605121430"></script>
   <script src="role-system.js?v=202605110001"></script>

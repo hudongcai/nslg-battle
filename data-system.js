@@ -918,10 +918,19 @@ function getLossColor(rate) {
 }
 
 // ========== TAB 1: DATA TABLE ==========
+// 数据底表排序状态
+let dataSortField = null;
+let dataSortDir = 'desc';
+
 function getFilteredData() {
   let data = [...allRecords];
   const search = (document.getElementById('dataSearch')?.value || '').toLowerCase();
   const filterR = document.getElementById('dataFilterResult')?.value || '';
+  const filterAlliance = (document.getElementById('dataFilterAlliance')?.value || '').toLowerCase();
+  const filterGeneral = (document.getElementById('dataFilterGeneral')?.value || '').toLowerCase();
+  const filterTactic = (document.getElementById('dataFilterTactic')?.value || '').toLowerCase();
+  const filterFormation = (document.getElementById('dataFilterFormation')?.value || '').toLowerCase();
+
   if (search) {
     data = data.filter(r =>
       (r.leftPlayer || '').toLowerCase().includes(search) ||
@@ -933,7 +942,59 @@ function getFilteredData() {
     );
   }
   if (filterR) data = data.filter(r => r.result === filterR);
-  data.sort((a, b) => (b.id || 0) - (a.id || 0));
+
+  // 同盟关键词筛选
+  if (filterAlliance) {
+    data = data.filter(r =>
+      (r.leftAlliance || '').toLowerCase().includes(filterAlliance) ||
+      (r.rightAlliance || '').toLowerCase().includes(filterAlliance)
+    );
+  }
+
+  // 武将关键词筛选
+  if (filterGeneral) {
+    data = data.filter(r => {
+      const leftGens = getTeamKey(r.leftGenerals).toLowerCase();
+      const rightGens = getTeamKey(r.rightGenerals).toLowerCase();
+      return leftGens.includes(filterGeneral) || rightGens.includes(filterGeneral);
+    });
+  }
+
+  // 战法关键词筛选
+  if (filterTactic) {
+    data = data.filter(r => {
+      const leftTacs = (r.leftTactics || []).join(',').toLowerCase();
+      const rightTacs = (r.rightTactics || []).join(',').toLowerCase();
+      return leftTacs.includes(filterTactic) || rightTacs.includes(filterTactic);
+    });
+  }
+
+  // 阵型关键词筛选
+  if (filterFormation) {
+    data = data.filter(r =>
+      (r.leftFormation || '').toLowerCase().includes(filterFormation) ||
+      (r.rightFormation || '').toLowerCase().includes(filterFormation)
+    );
+  }
+
+  // 排序逻辑
+  if (dataSortField) {
+    data.sort((a, b) => {
+      let va, vb;
+      switch (dataSortField) {
+        case 'leftLoss': va = a.leftLoss || 0; vb = b.leftLoss || 0; break;
+        case 'rightLoss': va = a.rightLoss || 0; vb = b.rightLoss || 0; break;
+        case 'leftTotal': va = a.leftTotal || 0; vb = b.leftTotal || 0; break;
+        case 'rightTotal': va = a.rightTotal || 0; vb = b.rightTotal || 0; break;
+        case 'leftLossRate': va = a.leftLossRate || 0; vb = b.leftLossRate || 0; break;
+        case 'rightLossRate': va = a.rightLossRate || 0; vb = b.rightLossRate || 0; break;
+        default: va = a.id || 0; vb = b.id || 0;
+      }
+      return dataSortDir === 'asc' ? va - vb : vb - va;
+    });
+  } else {
+    data.sort((a, b) => (b.id || 0) - (a.id || 0));
+  }
   return data;
 }
 
@@ -946,6 +1007,8 @@ function renderDataTable() {
   const page = data.slice(start, start + DATA_PER_PAGE);
   const tbody = document.getElementById('dataTableBody');
   if (!tbody) return;
+  // 初始化表头排序指示器
+  updateDataTableHeaders();
   if (page.length === 0) {
     tbody.innerHTML = '<tr><td colspan="21" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
   } else {
@@ -982,6 +1045,38 @@ function renderDataTable() {
       <span style="color:var(--text2);font-size:11px;">${dataPage}/${totalPages}</span>
       <button ${dataPage >= totalPages ? 'disabled' : ''} onclick="dataPage++;renderDataTable()">▶</button>`;
   }
+}
+
+// 数据底表排序切换
+function toggleDataSort(field) {
+  if (dataSortField === field) {
+    dataSortDir = dataSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    dataSortField = field;
+    dataSortDir = 'desc';
+  }
+  // 更新表头显示
+  updateDataTableHeaders();
+  renderDataTable();
+}
+
+// 更新数据底表表头排序指示器
+function updateDataTableHeaders() {
+  const fields = ['leftLoss', 'leftTotal', 'leftLossRate', 'rightLoss', 'rightTotal', 'rightLossRate'];
+  fields.forEach(field => {
+    const el = document.getElementById('th-' + field);
+    if (el) {
+      const baseText = el.dataset.baseText || el.textContent.replace(/[▲▼↕]/g, '').trim();
+      el.dataset.baseText = baseText;
+      if (dataSortField === field) {
+        el.innerHTML = baseText + (dataSortDir === 'asc' ? ' ▲' : ' ▼');
+        el.style.color = 'var(--accent)';
+      } else {
+        el.innerHTML = baseText + ' <span class="sort-arrow">↕</span>';
+        el.style.color = '';
+      }
+    }
+  });
 }
 
 async function showRecordImage(id) {
