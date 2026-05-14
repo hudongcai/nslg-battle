@@ -572,14 +572,15 @@ app.get('/api/roles', async (req, res) => {
 app.post('/api/roles', async (req, res) => {
   try {
     const { id, name, permissions, isBuiltIn } = req.body;
-    
+
     const roleId = id || 'role_' + Date.now();
-    
-    const [result] = await pool.query(
-      'INSERT INTO roles (id, name, permissions, is_built_in) VALUES (?, ?, ?, ?)',
+
+    await pool.query(
+      `INSERT INTO roles (id, name, permissions, is_built_in) VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE name=VALUES(name), permissions=VALUES(permissions), is_built_in=VALUES(is_built_in)`,
       [roleId, name, JSON.stringify(permissions || []), isBuiltIn ? 1 : 0]
     );
-    
+
     res.json({ code: 200, data: { id: roleId } });
   } catch (err) {
     res.json({ code: 500, message: err.message });

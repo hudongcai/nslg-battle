@@ -291,12 +291,33 @@ async function cloudGetProjectMembers(projectId) {
   return data.code === 200 ? (data.data || []) : [];
 }
 
-// 添加项目成员（云端）
-// ⚠️ 注意：后端只处理 phone 和 role，其他字段已移除
-async function cloudAddProjectMember(projectId, phone, role = 'viewer') {
+// 添加/更新项目成员（云端）
+async function cloudAddProjectMember(projectId, phone, role = 'viewer', perms = {}) {
   const data = await cloudRequest(`/projects/${projectId}/members`, {
     method: 'POST',
-    body: { phone, role }  // 只发送后端实际处理的字段
+    body: {
+      phone, role,
+      can_view: perms.canView,
+      can_edit: perms.canEdit,
+      can_delete: perms.canDelete,
+      can_manage_members: perms.canMember,
+      granted_by: perms.grantedBy
+    }
+  });
+  return data.success;
+}
+
+// 更新项目成员权限（云端 PUT）
+async function cloudUpdateProjectMember(projectId, phone, perms = {}) {
+  const body = {};
+  if (perms.canView !== undefined) body.can_view = perms.canView;
+  if (perms.canEdit !== undefined) body.can_edit = perms.canEdit;
+  if (perms.canDelete !== undefined) body.can_delete = perms.canDelete;
+  if (perms.canMember !== undefined) body.can_manage_members = perms.canMember;
+  if (perms.grantedBy !== undefined) body.granted_by = perms.grantedBy;
+  const data = await cloudRequest(`/projects/${projectId}/members/${phone}`, {
+    method: 'PUT',
+    body
   });
   return data.success;
 }
@@ -685,6 +706,7 @@ window.cloudSync = {
   deleteProject: cloudDeleteProject,
   getProjectMembers: cloudGetProjectMembers,
   addProjectMember: cloudAddProjectMember,
+  updateProjectMember: cloudUpdateProjectMember,
   removeProjectMember: cloudRemoveProjectMember,
   getRecords: cloudGetRecords,
   createRecord: cloudCreateRecord,

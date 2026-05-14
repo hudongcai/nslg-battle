@@ -345,6 +345,10 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .log-badge-login{background:rgba(81,207,102,.12);color:var(--green);padding:1px 6px;border-radius:3px;font-size:11px;}
 .log-badge-action{background:rgba(240,180,41,.1);color:var(--accent);padding:1px 6px;border-radius:3px;font-size:11px;}
 .log-badge-delete{background:rgba(255,82,82,.1);color:#ff5252;padding:1px 6px;border-radius:3px;font-size:11px;}
+.rank-table{table-layout:fixed;min-width:750px;}
+.rank-table th,.rank-table td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rank-table th:nth-child(1),.rank-table td:nth-child(1),
+.rank-table th:nth-child(5),.rank-table td:nth-child(5){text-align:center;}
 </style>
 <script>
 // ===== 自定义角色下拉组件工具函数 =====
@@ -354,6 +358,7 @@ function rdToggle(wrapId) {
   if (!wrap) return;
   const menu = wrap.querySelector('.rd-menu');
   const trigger = wrap.querySelector('.rd-trigger');
+  if (!menu || !trigger) return;
   const isOpen = menu.classList.contains('open');
   document.querySelectorAll('.rd-menu.open').forEach(m => m.classList.remove('open'));
   document.querySelectorAll('.rd-trigger.open').forEach(t => t.classList.remove('open'));
@@ -403,7 +408,7 @@ document.addEventListener('click', function(e) {
 </head>
 <body>
 <div class="header">
-  <div><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 2026.05.04</span></h1></div>
+  <div><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 2026.5.14</span></h1></div>
   <div style="display:flex;gap:16px;align-items:center;margin-left:auto;">
     <div class="ocr-status" id="ocrStatus"><span class="ocr-dot" id="ocrDot"></span><span id="ocrText">OCR 待检测</span></div>
     <div id="headerStats" style="display:flex;gap:14px;">
@@ -673,6 +678,7 @@ var ALL_HEROES=WJ_DATA.map(expandWj);
 var ALL_TACTICS=ZF_DATA.map(expandZf);
 var HERO_MAP={};ALL_HEROES.forEach(h=>HERO_MAP[h.name]=h);
 var TACTIC_MAP={};ALL_TACTICS.forEach(t=>TACTIC_MAP[t.name]=t);
+const FACTIONS=[{key:'all',label:'全部',color:'#999'},{key:'魏',label:'魏',color:'#4a90d9'},{key:'蜀',label:'蜀',color:'#e74c3c'},{key:'吴',label:'吴',color:'#27ae60'},{key:'群',label:'群',color:'#9b59b6'},{key:'汉',label:'汉',color:'#f39c12'}];
 
 // ========== 自定义确认对话框 ==========
 window.confirmDialog = function(options){
@@ -1028,20 +1034,18 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
     <h3 style="margin:0 0 16px 0;color:var(--accent);font-size:15px;display:flex;align-items:center;gap:12px;">👥 用户管理
       <button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="showAddUserModal()">＋ 新增用户</button>
     </h3>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:13px;">
-        <thead><tr>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">头像</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">姓名</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">手机号</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">角色</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">积分</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">注册时间</th>
-          <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;width:200px;">操作</th>
-        </tr></thead>
-        <tbody id="userTableBody"></tbody>
-      </table>
-    </div>
+    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:13px;">
+      <thead><tr>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">头像</th>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">姓名</th>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">手机号</th>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">角色</th>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">积分</th>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;">注册时间</th>
+        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--accent);color:var(--accent);font-size:11px;width:200px;">操作</th>
+      </tr></thead>
+      <tbody id="userTableBody"></tbody>
+    </table>
   </div>
   </div>
 </div>
@@ -1383,8 +1387,6 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 </div>
   <script src="cloud-sync.js?v=202605112300"></script>
   <script src="data-system.js?v=202605110006"></script>
-  <script src="data_heroes.js?v=202605081430"></script>
-  <script src="data_tactics.js?v=202605081430"></script>
   <script src="counter-analysis.js?v=202605140001"></script>
   <script src="counter-analysis-enhanced.js?v=202605140001"></script>
   <script src="user-system.js?v=202605111900"></script>

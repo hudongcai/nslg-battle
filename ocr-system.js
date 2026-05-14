@@ -85,21 +85,22 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 
 【画面布局说明】
 - 画面分左右两半，中央有"胜"或"败"大字结果
-- 每侧顶部有两个独立区域：
-  ① 同盟名称区：单独显示该玩家所在同盟的名称（这里只有同盟名，没有玩家名）
-  ② 玩家名称区：单独显示玩家自己的名字（玩家名本身可能含有"丨"符号，这是玩家取名的一部分，不代表任何分隔，要完整保留）
+- 每侧顶部有两个**物理位置相距较远**的独立区域（不在同一行）：
+  ① 玩家名称区：位于页面上方，字体较大，单独显示玩家自己的名字
+  ② 同盟名称区：位于玩家区下方（中间有空白），字体较小/颜色不同，**只显示同盟名，没有玩家名**
   ③ 阵型标签：显示阵型名称（如"方圆阵"、"雁行阵"、"鱼鳞阵"、"锋矢阵"、"箕形阵"等）
+  **极其重要**：玩家名中若出现"丨"（如"风云丨天下"），这只是玩家的取名风格，"丨"左侧的文字是玩家名的一部分，**严禁**把"丨"左侧的文字当作同盟名填入同盟字段。同盟字段**只能**从画面上玩家名下方的同盟名称区域读取
 - 每侧中部：三位武将的头像卡片横向排列，头像下方有武将名字
 - 每侧底部：三列战法框，每列对应上方的武将，每个框内列出该武将的战法名称（战法名旁边可能有"×数字"表示叠加层数，忽略这些数字，只取战法名称）
 - 每侧顶部数字区：显示"战损:XXXX"（已损失兵力）和总兵力数字（通常格式为"XXXX/XXXXX"，斜线前为战损、斜线后为总兵）
 
 【识别规则】
-1. 同盟名：从同盟名称区域单独读取，不要从玩家名中拆分
+1. 同盟名：**只能**从画面中玩家名**下方**的同盟名称区域读取（字体较小，与玩家名区域不在同一行）。如果找不到独立的同盟名称区域，填"未知"。**严禁**从玩家名中提取或按"丨"拆分玩家名来获取同盟名
 2. 玩家名：从玩家名称区域单独读取，完整保留，即使含有"丨"也不要拆分（"丨"是玩家名的一部分）
 3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
 4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
 5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3
-6. 战法：每位武将下方的战法框中，每行一个战法名，忽略"×数字"，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
+6. 战法：每位武将下方的战法框中，每行一个战法名。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
 7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
 8. 无法识别的文字填"未知"，数字填0
 
@@ -131,7 +132,13 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 【结果】
 胜负：胜或败或平
 【日期】
-战斗日期：YYYY-MM-DD（无法识别则留空）`;
+战斗日期：YYYY-MM-DD（无法识别则留空）
+
+【正确与错误对照（极其重要）】
+假设玩家名区域显示：风云丨天下，同盟名区域显示：傲世天下
+✅ 正确输出：玩家：风云丨天下  同盟：傲世天下
+❌ 严禁输出：玩家：天下  同盟：风云  （这是拆分玩家名的错误行为！）
+核心原则：玩家名区域里写的什么就完整复制什么，同盟名去同盟区域找，两者绝对不能混用！`;
 
   try {
     const reqBody = {
@@ -285,7 +292,7 @@ function parseOCRResponse(text) {
     if (gm) { generalMap[parseInt(gm[1])] = val; continue; }
     const tm = key.match(/战法\s*(\d+)/);
     if (tm && !key.includes('战损')) {
-      tacticsMap[parseInt(tm[1])] = val.split(/[,，、]+/).map(t => t.trim()).filter(t => t && t !== '未知');
+      tacticsMap[parseInt(tm[1])] = val.split(/[,，、]+/).map(t => t.trim()).filter(t => t && t !== '未知' && t !== '影本').map(t => t.replace(/^影本[·.•]/, ''));
       continue;
     }
     if (key === '武将') {
@@ -295,7 +302,7 @@ function parseOCRResponse(text) {
       continue;
     }
     if (key === '战法') {
-      const tacts = val.split(/[,，、]+/).map(t => t.trim()).filter(t => t && t !== '未知');
+      const tacts = val.split(/[,，、]+/).map(t => t.trim()).filter(t => t && t !== '未知' && t !== '影本').map(t => t.replace(/^影本[·.•]/, ''));
       if (side === 'left') record.leftTactics = tacts;
       else if (side === 'right') record.rightTactics = tacts;
       continue;
@@ -306,10 +313,8 @@ function parseOCRResponse(text) {
       if (side === 'left') record.leftPlayer = name;
       else if (side === 'right') record.rightPlayer = name;
     } else if (key.includes('同盟')) {
-      // 同盟名来自独立区域，直接使用；防御性处理：如果模型仍写了"同盟丨玩家"格式则只取竖线前
+      // 同盟名来自独立区域，直接使用（丨是同盟名合法字符，不拆分）
       let allianceVal = val.trim();
-      const pipeRe = /[|｜丨]/;
-      if (pipeRe.test(allianceVal)) allianceVal = allianceVal.split(pipeRe)[0].trim();
       if (allianceVal === '无' || allianceVal === '未知') allianceVal = '';
       if (side === 'left') record.leftAlliance = allianceVal;
       else if (side === 'right') record.rightAlliance = allianceVal;
@@ -362,22 +367,57 @@ function parseOCRResponse(text) {
   if (record.rightLoss != null && record.rightTotal != null && record.rightTotal > 0)
     record.rightLossRate = (record.rightLoss / record.rightTotal) * 100;
 
-  // ========== 兜底：如果玩家名为空，尝试从原始文本直接提取 ==========
+  // ========== 兜底：修复模型拆分玩家名的三类错误 ==========
+  const pipeRe2 = /[|｜丨]/;
+
+  // 先从原始文本提取所有候选名字（含丨的优先用于修复拆分）
+  const namePattern = /([一-龥a-zA-Z0-9·•\-|]{2,15})/g;
+  const allMatches = [...rawText.matchAll(namePattern)].map(m => m[1]);
+  const excludeWords = ['左侧','右侧','结果','胜负','胜','败','平','未知','雁形阵','箕形阵','鱼鳞阵','方圆阵','长蛇阵','锋矢阵','虎翼阵','阵型','战法','武将','兵力','总兵','战损','同盟','玩家','玩家名','战斗日期'];
+  const candidates = [...new Set(allMatches)].filter(n => {
+    if (n.length < 2 || n.length > 15) return false;
+    if (excludeWords.some(w => n.includes(w))) return false;
+    if (/^\d+$/.test(n)) return false;
+    return true;
+  });
+  const fullNameCandidates = candidates.filter(n => pipeRe2.test(n));
+  const plainCandidates = candidates.filter(n => !pipeRe2.test(n));
+
+  ['left', 'right'].forEach(side => {
+    const ply = record[side + 'Player'];
+    const ally = record[side + 'Alliance'];
+
+    // Case A: 玩家名含丨，同盟名==丨前缀 → 清空同盟
+    if (ply && ally && pipeRe2.test(ply)) {
+      const prefix = ply.split(pipeRe2)[0].trim();
+      if (prefix === ally) record[side + 'Alliance'] = '';
+    }
+
+    // Case B: 玩家名不含丨（已被模型拆分），从原始文本找回完整名
+    // 模型输出"玩家：天下"+"同盟：风云"，但原始文本中仍有"风云丨天下"
+    if (ally && (!ply || !pipeRe2.test(ply))) {
+      const matchedFull = fullNameCandidates.find(fn => {
+        const parts = fn.split(pipeRe2);
+        return parts.length >= 2 && parts[0].trim() === ally;
+      });
+      if (matchedFull) {
+        record[side + 'Player'] = matchedFull;
+        record[side + 'Alliance'] = '';
+      }
+    }
+  });
+
+  // Case C: 玩家名为空，用候补名填充（含丨的优先，去重避免左右同名）
   if (!record.leftPlayer || !record.rightPlayer) {
-    // 匹配中文/英文/数字/·•/| 组成的人名（2~15个字符）
-    const namePattern = /([\u4E00-\u9FA5a-zA-Z0-9\u00B7\u2022\-|]{2,15})/g;
-    const allMatches = [...rawText.matchAll(namePattern)].map(m => m[1]);
-    // 去重后，排除已知的关键词
-    const excludeWords = ['左侧','右侧','结果','胜负','胜','败','平','未知','雁形阵','箕形阵','鱼鳞阵','方圆阵','长蛇阵','锋矢阵','虎翼阵','阵型','战法','武将','兵力','总兵','战损','同盟','玩家','玩家名','战斗日期'];
-    const candidates = [...new Set(allMatches)].filter(n => {
-      if (n.length < 2 || n.length > 15) return false;
-      if (excludeWords.some(w => n.includes(w))) return false;
-      // 排除纯数字
-      if (/^\d+$/.test(n)) return false;
-      return true;
-    });
-    if (!record.leftPlayer && candidates.length > 0) record.leftPlayer = candidates[0];
-    if (!record.rightPlayer && candidates.length > 1) record.rightPlayer = candidates[1];
+    const usedNames = new Set();
+    if (record.leftPlayer) usedNames.add(record.leftPlayer);
+    if (record.rightPlayer) usedNames.add(record.rightPlayer);
+    const pool = [...fullNameCandidates, ...plainCandidates].filter(n => !usedNames.has(n));
+    if (!record.leftPlayer && pool.length > 0) { record.leftPlayer = pool[0]; usedNames.add(pool[0]); }
+    if (!record.rightPlayer) {
+      const remaining = pool.filter(n => !usedNames.has(n));
+      if (remaining.length > 0) record.rightPlayer = remaining[0];
+    }
   }
 
   // 写入识别到的战斗日期（OCR 识别不到则为空，由调用方补默认值）

@@ -696,10 +696,12 @@ async function onLoginSuccess(){
   const topNav = document.getElementById('topNav');
   if(topNav) topNav.style.display='';
   // 清除之前退出时残留的 inline display 样式，确保 tab 内容能正常显示
-  // 注意：不能设成 ''，否则 CSS 的 .tab-content{display:none} 会重新生效
-  // 这里只清除 projectBar 等元素的残留样式，tab-content 的显示由 showTab() 控制
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.style.setProperty('display', 'none', 'important');
+    el.classList.remove('active');
+  });
   var mainTab = document.getElementById('tab-project');
-  if(mainTab) mainTab.style.display='block'; // 默认显示项目 tab
+  if(mainTab) mainTab.style.setProperty('display', 'block', 'important'); // 默认显示项目 tab
   // 设置用户角色样式
   if(currentUser.role==='super_admin'){
     document.body.classList.add('super-admin');
@@ -830,6 +832,11 @@ function doLogout(){
   currentUser=null;
   renderUserBar();
   updateNavByRole();
+  // 隐藏所有 tab-content
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.style.setProperty('display', 'none', 'important');
+    el.classList.remove('active');
+  });
   // 隐藏子导航
   const projectSubNav = document.getElementById('projectSubNav');
   const systemSubNav = document.getElementById('systemSubNav');
@@ -1203,8 +1210,8 @@ async function changeUserRole(phone, newRoleId){
         const userData = await cloudRequest('/users');
         const list = Array.isArray(userData.data) ? userData.data : ((userData.data && userData.data.list) || []);
         const cloudUser = list.find(u => u.phone === phone);
-        if (cloudUser && cloudUser.id) {
-          await cloudRequest(`/users/${cloudUser.id}`, {
+        if (cloudUser && cloudUser.phone) {
+          await cloudRequest(`/users/${cloudUser.phone}`, {
             method: 'PUT',
             body: { role_id: newRoleId }
           });

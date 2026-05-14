@@ -401,16 +401,40 @@ async function saveProjectPermissions(projectId) {
   proj.memberPhones = [...new Set(memberPhones)];
   await projDBPut(proj);
 
-  // 同步成员变更到云端（通过项目成员 API）
+  // 同步成员变更到云端（通过项目成员 API，含细粒度权限）
   if (window.cloudSync) {
     try {
       const cloudMembers = await window.cloudSync.getProjectMembers(projectId);
       const cloudPhones = (cloudMembers || []).map(m => m.phone);
 
-      // 添加新成员到云端
+      // 构建权限映射（包含成员，主复选框 disabled 者也在内）
+      const permGrants = {};
+      const allCloudPhones = new Set([...phones, ...memberPhones]);
+      for (const map of [permEdit, permDel, permMgr]) {
+        for (const phone of Object.keys(map)) {
+          if (map[phone]) allCloudPhones.add(phone);
+        }
+      }
+      for (const phone of allCloudPhones) {
+        permGrants[phone] = {
+          canView: (proj.memberPhones || []).includes(phone) || !!permView[phone],
+          canEdit: !!permEdit[phone],
+          canDelete: !!permDel[phone],
+          canMember: !!permMgr[phone],
+          grantedBy: currentUser.phone
+        };
+      }
+
+      // 添加新成员到云端（含权限字段）
       for (const phone of memberPhones) {
         if (phone !== proj.creator && !cloudPhones.includes(phone)) {
-          await window.cloudSync.addProjectMember(projectId, phone, 'viewer');
+          await window.cloudSync.addProjectMember(projectId, phone, 'viewer', permGrants[phone] || {});
+        }
+      }
+      // 更新已有成员的权限
+      for (const cm of cloudMembers || []) {
+        if (cm.phone && memberPhones.includes(cm.phone) && permGrants[cm.phone]) {
+          await window.cloudSync.updateProjectMember(projectId, cm.phone, permGrants[cm.phone]);
         }
       }
       // 从云端删除移除的成员
@@ -431,8 +455,20 @@ async function saveProjectPermissions(projectId) {
   }
 
   // 写入新权限：成员 OR 有任意显式权限的用户都写入 projAccess
-  for (const phone of phones) {
-    const isMember = !!permMember[phone];
+  // 合并所有在任意权限复选框中出现的 phone（包括成员/创建者，其主复选框可能 disabled 而不在 phones 中）
+  const allPermPhones = new Set([...phones]);
+  for (const map of [permView, permMember, permEdit, permDel, permMgr]) {
+    for (const phone of Object.keys(map)) {
+      if (map[phone]) allPermPhones.add(phone);
+    }
+  }
+  // 也加入项目当前的所有成员（成员自动有可见权限，需保留在 projAccess 中）
+  for (const phone of (proj.memberPhones || [])) {
+    allPermPhones.add(phone);
+  }
+
+  for (const phone of allPermPhones) {
+    const isMember = (proj.memberPhones || []).includes(phone);
     const hasAnyPerm = isMember || permView[phone] || permEdit[phone] || permDel[phone] || permMgr[phone];
     if (!hasAnyPerm) continue;
     await permDBPut({
@@ -441,7 +477,7 @@ async function saveProjectPermissions(projectId) {
       projectId,
       grantedBy: currentUser.phone,
       grantedAt: Date.now(),
-      canView: isMember || !!permView[phone], // 成员自动有可见权限
+      canView: isMember || !!permView[phone],
       canEdit: !!permEdit[phone],
       canDelete: !!permDel[phone],
       canMember: !!permMgr[phone]
