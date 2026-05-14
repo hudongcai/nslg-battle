@@ -1,20 +1,9 @@
-/**
+﻿/**
  * 克制分析模块增强功能
  * 提供竖向排列布局和高级筛选功能
  */
 
 // 立即覆盖原函数（必须在其他代码之前执行）
-console.log('[counter-analysis-enhanced] 开始加载...');
-
-// 标记已加载
-window.__counterAnalysisEnhancedLoaded = true;
-
-// 武将竖向列表
-function verticalGeneralsList(generals) {
-  if (!generals || generals.length === 0) return '<span style="color:var(--text3);">-</span>';
-  return generals.map(g => `<div style="padding:2px 0;font-size:12px;font-weight:bold;color:var(--cyan);">${g}</div>`).join('');
-}
-
 // 竖向排列队伍显示（每行一个武将+战法）
 function verticalTeamRowHtml(generals, tactics) {
   if (!generals || generals.length === 0) return '<span style="color:var(--text3);">-</span>';
@@ -34,20 +23,6 @@ function verticalTeamRowHtml(generals, tactics) {
 function verticalGeneralsList(generals) {
   if (!generals || generals.length === 0) return '<span style="color:var(--text3);">-</span>';
   return generals.map(g => `<div style="padding:2px 0;font-size:12px;font-weight:bold;color:var(--cyan);">${g}</div>`).join('');
-}
-
-// 战法竖向列表（每行一个武将的战法）
-function verticalTacticsOnlyList(tactics) {
-  const tacs = tactics || [];
-  if (!tacs.length) return '<span style="color:var(--text3);">-</span>';
-  // 每3个战法一组
-  let groups = [];
-  for (let i = 0; i < tacs.length; i += 3) {
-    const group = [tacs[i] || '', tacs[i + 1] || '', tacs[i + 2] || ''].filter(t => t && t !== '未知');
-    const tStr = group.length ? group.map(t => `<span style="display:inline-block;background:rgba(74,144,217,0.15);color:var(--blue);padding:1px 4px;border-radius:3px;font-size:10px;margin-right:2px;">${t}</span>`).join('') : '<span style="color:var(--text3);font-size:10px;">-</span>';
-    groups.push(`<div style="padding:2px 0;height:20px;">${tStr}</div>`);
-  }
-  return groups.join('');
 }
 
 // 敌方高频排序状态
@@ -132,7 +107,7 @@ function renderEnemyFreqEnhanced() {
   if (!tbody) return;
 
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
     return;
   }
 
@@ -145,8 +120,7 @@ function renderEnemyFreqEnhanced() {
 
     return `<tr>
       <td style="text-align:center;font-weight:bold;color:${i < 3 ? 'var(--accent)' : 'var(--text2)'};vertical-align:middle;">${i + 1}</td>
-      <td style="min-width:60px;vertical-align:middle;text-align:center;">${verticalGeneralsList(d.generals)}</td>
-      <td style="min-width:180px;vertical-align:middle;text-align:left;">${verticalTacticsOnlyList(d.tactics)}</td>
+      <td style="min-width:240px;vertical-align:middle;">${verticalTeamRowHtml(d.generals, d.tactics)}</td>
       <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.formation || '-'}</td>
       <td style="text-align:center;font-weight:bold;font-size:14px;color:var(--blue);vertical-align:middle;">${d.count}</td>
       <td style="vertical-align:middle;">
@@ -174,10 +148,10 @@ function renderWinRateTableEnhanced() {
 
   // 新的筛选框 ID
   const searchLeftGen = (document.getElementById('wrSearchLeftGeneral')?.value || '').toLowerCase();
-  const searchLeftTac = (document.getElementById('wrSearchLeftTactic')?.value || '').toLowerCase();
+  const searchLeftTac = searchLeftGen;
   const searchLeftForm = (document.getElementById('wrSearchLeftFormation')?.value || '').toLowerCase();
   const searchRightGen = (document.getElementById('wrSearchRightGeneral')?.value || '').toLowerCase();
-  const searchRightTac = (document.getElementById('wrSearchRightTactic')?.value || '').toLowerCase();
+  const searchRightTac = searchRightGen;
   const searchRightForm = (document.getElementById('wrSearchRightFormation')?.value || '').toLowerCase();
   const fL = document.getElementById('wrFilterLeft')?.value || '';
   const fR = document.getElementById('wrFilterRight')?.value || '';
@@ -220,7 +194,7 @@ function renderWinRateTableEnhanced() {
   if (!tbody) return;
 
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text3);">暂无对战数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text3);">暂无对战数据</td></tr>';
   } else {
     tbody.innerHTML = data.map((d, di) => {
       const wrCls = d.winRate >= 60 ? 'wr-high' : d.winRate >= 40 ? 'wr-mid' : 'wr-low';
@@ -230,14 +204,12 @@ function renderWinRateTableEnhanced() {
       const lossColor = parseFloat(lossRatio) <= 50 ? 'var(--green)' : parseFloat(lossRatio) >= 100 ? 'var(--red)' : 'var(--accent)';
 
       return `<tr>
-        <td style="min-width:60px;vertical-align:middle;text-align:center;">${verticalGeneralsList(d.leftGenerals)}</td>
-        <td style="min-width:180px;vertical-align:middle;text-align:left;">${verticalTacticsOnlyList(d.leftTactics)}</td>
+        <td style="min-width:240px;vertical-align:middle;">${verticalTeamRowHtml(d.leftGenerals, d.leftTactics)}</td>
         <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.leftFormation || ''}</td>
         <td style="text-align:center;vertical-align:middle;"><span class="wr ${wrCls}" style="font-size:12px;font-weight:900;">${d.winRate.toFixed(0)}%</span><span class="wr-bar ${barCls}" style="width:${barW}px;display:inline-block;"></span></td>
         <td class="num" style="font-weight:900;font-size:12px;color:${lossColor};vertical-align:middle;">${lossRatio}%</td>
         <td class="num" style="color:var(--text3);font-size:11px;vertical-align:middle;">${d.total}</td>
-        <td style="min-width:60px;vertical-align:middle;text-align:center;">${verticalGeneralsList(d.rightGenerals)}</td>
-        <td style="min-width:180px;vertical-align:middle;text-align:left;">${verticalTacticsOnlyList(d.rightTactics)}</td>
+        <td style="min-width:240px;vertical-align:middle;">${verticalTeamRowHtml(d.rightGenerals, d.rightTactics)}</td>
         <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.rightFormation || ''}</td>
         <td style="text-align:center;vertical-align:middle;"><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${typeof escHtml === 'function' ? escHtml(d.leftTeam) : d.leftTeam}','${typeof escHtml === 'function' ? escHtml(d.rightTeam) : d.rightTeam}')" style="color:var(--accent);text-decoration:underline;font-size:12px;">📋 溯源</a></td>
       </tr>`;
@@ -341,8 +313,7 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
     html += `<div style="padding:12px;border-bottom:1px solid var(--border);background:rgba(255,107,107,0.05);">`;
     html += `<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">敌方配置</div>`;
     html += `<div style="display:flex;gap:16px;">`;
-    html += `<div style="flex:0 0 60px;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">武将</div>${verticalGeneralsList(enemy.generals)}</div>`;
-    html += `<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">战法</div>${verticalTacticsOnlyList(enemy.tactics)}</div>`;
+    html += `<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">队伍配置</div>${verticalTeamRowHtml(enemy.generals, enemy.tactics)}</div>`;
     html += `<div style="flex:0 0 70px;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">阵型</div><div style="font-size:12px;color:var(--text2);">${enemy.formation || '-'}</div></div>`;
     html += `</div></div>`;
 
@@ -358,9 +329,7 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
         html += `<span style="font-size:10px;color:var(--text3);">${c.total}场</span>`;
         html += `</div>`;
         // 竖向排列
-        html += `<div style="display:flex;gap:16px;">`;
-        html += `<div style="flex:0 0 60px;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">武将</div>${verticalGeneralsList(c.generals)}</div>`;
-        html += `<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">战法</div>${verticalTacticsOnlyList(c.tactics)}</div>`;
+        html += `<div style="flex:1;"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;">队伍配置</div>${verticalTeamRowHtml(c.generals, c.tactics)}</div>`;
         html += `</div>`;
         html += `</div>`;
       });
@@ -375,41 +344,11 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
 
 console.log('[counter-analysis-enhanced] 已加载 ✅');
 
-// 立即覆盖所有原函数（内联脚本已先执行，函数已存在）
-(function() {
-  // 保存原函数引用（调试用）
-  const originalFunctions = {
-    renderWinRateTable: typeof renderWinRateTable === 'function' ? renderWinRateTable : null,
-    renderEnemyFreq: typeof renderEnemyFreq === 'function' ? renderEnemyFreq : null,
-    renderCounterPick: typeof renderCounterPick === 'function' ? renderCounterPick : null
-  };
-
-  console.log('[counter-analysis-enhanced] 原函数状态:', {
-    renderWinRateTable: originalFunctions.renderWinRateTable ? '存在' : '不存在',
-    renderEnemyFreq: originalFunctions.renderEnemyFreq ? '存在' : '不存在',
-    renderCounterPick: originalFunctions.renderCounterPick ? '存在' : '不存在'
-  });
-
-  // 覆盖 renderWinRateTable
-  window.renderWinRateTable = renderWinRateTableEnhanced;
-  console.log('[counter-analysis-enhanced] renderWinRateTable 已覆盖');
-
-  // 覆盖 renderEnemyFreq
-  if (originalFunctions.renderEnemyFreq) {
-    window.renderEnemyFreq = renderEnemyFreqEnhanced;
-    console.log('[counter-analysis-enhanced] renderEnemyFreq 已覆盖');
-  }
-
-  // 覆盖 renderCounterPick
-  if (originalFunctions.renderCounterPick) {
-    window.renderCounterPick = renderCounterPickEnhanced;
-    console.log('[counter-analysis-enhanced] renderCounterPick 已覆盖');
-  }
-
-  // 如果数据已加载，刷新表格
-  if (typeof allRecords !== 'undefined' && allRecords.length > 0) {
-    console.log('[counter-analysis-enhanced] 检测到数据，刷新表格...');
-    renderWinRateTable();
-    if (typeof renderEnemyFreq === 'function') renderEnemyFreq();
-  }
-})();
+// 立即覆盖所有原函数
+window.renderWinRateTable = renderWinRateTableEnhanced;
+if (typeof renderEnemyFreq === 'function') window.renderEnemyFreq = renderEnemyFreqEnhanced;
+if (typeof renderCounterPick === 'function') window.renderCounterPick = renderCounterPickEnhanced;
+if (typeof allRecords !== 'undefined' && allRecords.length > 0) {
+  renderWinRateTable();
+  if (typeof renderEnemyFreq === 'function') renderEnemyFreq();
+}

@@ -499,7 +499,7 @@ function exitProject(){
   }
   // 用 switchTab 正确切换到项目管理 tab（会自动隐藏其他 tab）
   if(typeof switchTab==='function'){
-    switchTab('project', document.getElementById('navProject'));
+    switchTab('project', document.getElementById('navProjectBtn'));
   } else {
     // fallback：直接操作
     document.querySelectorAll('.tab-content').forEach(t=>{ t.style.display='none'; t.classList.remove('active'); });
@@ -560,53 +560,13 @@ async function renderProjectSwitcher(){
   }
   switcher.style.display='none';
 }
-
-async function switchToProject(pid){
-  window.currentProjectId = pid;
-  renderProjectSwitcher();
-  if(typeof loadAllRecords==='function') await loadAllRecords();
-  // 如果当前在战报导入 tab，重新渲染
-  const tabData = document.getElementById('tab-data');
-  if(tabData && tabData.classList.contains('active')){
-    if(typeof renderDataTable==='function') renderDataTable();
-    if(typeof renderGallery==='function') renderGallery();
-  }
-}
-
 // ========== 加载项目列表 ==========
 async function loadProjects(){
   await renderProjectManage();
 }
 
-// ========== 修改原有 loadAllRecords 以支持项目过滤 ==========
-// 在原有 index.html 的 loadAllRecords 中，需要加入项目过滤逻辑
-// 通过包装原函数来实
-function getProjectFilteredIds(){
-  if(!window.currentProjectId) return null;
-  // 从 projDB 获取项目，返回 battleRecordIds
-  return projDBGet(window.currentProjectId).then(p=>p?p.battleRecordIds||[]:null);
-}
-
-// ========== 清除项目过滤（"全部"按钮回调）==========
-async function clearProjectFilter(){
-  window.currentProjectId = null;
-  renderProjectSwitcher();
-  if(typeof loadAllRecords === 'function'){ await loadAllRecords(); }
-  // 如果当前在 data/winrate  tab，重新渲染
-  const tabData = document.getElementById('tab-data');
-  const tabWin = document.getElementById('tab-winrate');
-  if(tabData && tabData.classList.contains('active')){
-    if(typeof renderDataTable === 'function') renderDataTable();
-    if(typeof renderGallery === 'function') renderGallery();
-  }
-  if(tabWin && tabWin.classList.contains('active')){
-    const el = document.getElementById('tab-winrate');
-    if(el && typeof createCounterAnalysisUI === 'function') createCounterAnalysisUI(el).catch(e => console.error('[createCounterAnalysisUI] 失败:', e));
-  }
-}
-
-// ========== 将战报关联到项目 ==========
-async function assignRecordToProject(recordId, projectId){
+// ========== 将战报关联到项目（OCR 自动绑定用）==========
+async function addBattleToProject(projectId, recordId){
   const proj = await projDBGet(projectId);
   if(!proj) return false;
   if(!proj.battleRecordIds) proj.battleRecordIds = [];
@@ -616,6 +576,7 @@ async function assignRecordToProject(recordId, projectId){
   }
   return true;
 }
+window.addBattleToProject = addBattleToProject;
 
 // ========== 显示项目管理首页 ==========
 async function showProjectHome(){

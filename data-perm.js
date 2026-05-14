@@ -2,7 +2,6 @@
    DATA PERM - 数据权限管理（重构版 V2）
    ========================================================== */
 
-console.log('[DataPerm] data-perm.js V2.3 开始加载');
 
 // ========== projAccess 新数据结构 ==========
 // {
@@ -405,7 +404,6 @@ async function saveProjectPermissions(projectId) {
   // 同步成员变更到云端（通过项目成员 API）
   if (window.cloudSync) {
     try {
-      console.log('[DataPerm] 同步权限变更到云端成员API:', projectId, memberPhones);
       const cloudMembers = await window.cloudSync.getProjectMembers(projectId);
       const cloudPhones = (cloudMembers || []).map(m => m.phone);
 
@@ -421,7 +419,6 @@ async function saveProjectPermissions(projectId) {
           await window.cloudSync.removeProjectMember(projectId, cm.phone);
         }
       }
-      console.log('[DataPerm] 云端成员同步完成');
     } catch (e) {
       console.error('[DataPerm] 云端同步失败（本地已保存）:', e);
     }
@@ -458,19 +455,6 @@ async function saveProjectPermissions(projectId) {
   document.querySelector('.dp-modal-overlay')?.remove();
   await renderDataPerm();
   alert('权限保存成功！');
-}
-
-// ========== 权限判断工具函数 ==========
-// 判断某用户是否对某项目有编辑权限
-async function canUserEditProject(phone, projectId) {
-  if (!phone || !projectId) return false;
-  const user = await userDBGet(phone);
-  if (user && user.role === 'super_admin') return true;
-  const proj = await projDBGet(projectId);
-  if (proj && proj.creator === phone) return true;
-  const all = await permDBGetAll();
-  const entry = all.find(a => a.phone === phone && (a.projectId == projectId || String(a.projectId) === String(projectId)));
-  return !!(entry && entry.canEdit);
 }
 
 // 判断某用户是否对某项目有删除权限
@@ -526,4 +510,3 @@ async function canUserDeleteProject(phone, projectId) {
   document.head.appendChild(style);
 })();
 
-console.log('[DataPerm] 数据权限模块 V2 已加载');

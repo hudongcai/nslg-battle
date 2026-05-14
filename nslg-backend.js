@@ -1,8 +1,6 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const PORT = 3000;
@@ -10,29 +8,6 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use((req, res, next) => {
-  req.setEncoding('utf8');
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  next();
-});
-
-// 请求日志中间件
-app.use((req, res, next) => {
-  if (req.method !== 'GET') {
-    const bodyStr = req.body ? JSON.stringify(req.body) : '{}';
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, (bodyStr || '').slice(0, 200));
-  }
-  next();
-});
-
-// 添加日志文件记录
-const logFile = path.join(__dirname, 'reset-password.log');
-function logReset(msg) {
-  const timestamp = new Date().toISOString();
-  const logMsg = `[${timestamp}] ${msg}`;
-  console.log(msg);
-  try { fs.appendFileSync(logFile, logMsg + '\n'); } catch(e) {}
-}
 
 // ========== Token 工具函数 ==========
 // token 格式：mock-token-{phone}-{timestamp}
@@ -273,12 +248,12 @@ app.delete('/api/users/:id', async (req, res) => {
   }
 });
 
-app.put('/api/users/:phone', async (req, res) => {
+app.put('/api/users/:id', async (req, res) => {
   try {
-    const { phone } = req.params;
+    const { id } = req.params;
     const { nickname, role_id, status, points } = req.body;
-    
-    const [userRows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
+
+    const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
     if (userRows.length === 0) {
       return res.status(404).json({ code: 404, message: '用户不存在' });
     }
@@ -299,7 +274,7 @@ app.put('/api/users/:phone', async (req, res) => {
       params.push(status);
     }
     if (points !== undefined) {
-      updates.push('points = ?');
+      updates.push('credit_balance = ?');
       params.push(points);
     }
     
@@ -307,7 +282,7 @@ app.put('/api/users/:phone', async (req, res) => {
       return res.json({ code: 400, message: '没有需要更新的字段' });
     }
     
-    params.push(phone);
+    params.push(id);
     
     await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE phone = ?`, params);
     
@@ -321,35 +296,16 @@ app.post('/api/users/:id/reset-password', async (req, res) => {
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
-
-    logReset(`[reset-password] 被调用 - ID: ${id} (类型: ${typeof id}), newPassword: ${newPassword}`);
-
     if (!newPassword || newPassword.length < 6) {
       return res.json({ code: 400, message: '密码至少6位' });
     }
-
-    const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
-    logReset(`[reset-password] 查询结果: ${userRows.length} 行`);
-
+    const [userRows] = await pool.query('SELECT id FROM users WHERE id = ?', [id]);
     if (userRows.length === 0) {
       return res.json({ code: 404, message: '用户不存在' });
     }
-
-    const targetUser = userRows[0];
-    logReset(`[reset-password] 目标用户: ${targetUser.phone} (ID: ${id})`);
-
-    const [result] = await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, id]);
-    logReset(`[reset-password] 更新结果 - 受影响行数: ${result.affectedRows}`);
-
-    // 验证更新后的数据
-    const [checkRows] = await pool.query('SELECT id, phone, password FROM users WHERE id = ?', [id]);
-    if (checkRows.length > 0) {
-      logReset(`[reset-password] 验证 - 用户 ${checkRows[0].phone} 的新密码: ${checkRows[0].password}`);
-    }
-
+    await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, id]);
     res.json({ code: 200, message: '密码重置成功' });
   } catch (err) {
-    logReset(`[reset-password] 错误: ${err.message}`);
     res.json({ code: 500, message: err.message });
   }
 });
@@ -630,41 +586,6 @@ app.post('/api/roles', async (req, res) => {
   }
 });
 
-app.put('/api/roles/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, permissions, isBuiltIn } = req.body;
-    
-    const updates = [];
-    const params = [];
-    
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-    if (permissions !== undefined) {
-      updates.push('permissions = ?');
-      params.push(JSON.stringify(permissions));
-    }
-    if (isBuiltIn !== undefined) {
-      updates.push('is_built_in = ?');
-      params.push(isBuiltIn ? 1 : 0);
-    }
-    
-    if (updates.length === 0) {
-      return res.json({ code: 400, message: '没有需要更新的字段' });
-    }
-    
-    params.push(id);
-    
-    await pool.query(`UPDATE roles SET ${updates.join(', ')} WHERE id = ?`, params);
-    
-    res.json({ code: 200, message: '更新成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
 app.delete('/api/roles/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -857,69 +778,6 @@ app.delete('/api/battles/:id', async (req, res) => {
 });
 
 // ========== 积分管理 API ==========
-app.get('/api/user_credits', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT * FROM users ORDER BY id');
-    res.json({
-      code: 200,
-      data: rows.map(u => ({
-        user_id: u.id,
-        phone: u.phone,
-        nickname: u.nickname || '',
-        balance: u.credit_balance || 0,
-        total_earned: u.credit_total_earned || 0,
-        total_consumed: u.credit_total_consumed || 0
-      }))
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
-app.get('/api/user_credits/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
-    if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
-    const u = rows[0];
-    res.json({
-      code: 200,
-      data: {
-        user_id: u.id,
-        phone: u.phone,
-        nickname: u.nickname || '',
-        balance: u.credit_balance || 0,
-        total_earned: u.credit_total_earned || 0,
-        total_consumed: u.credit_total_consumed || 0
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
-app.put('/api/user_credits/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { balance, total_earned, total_consumed } = req.body;
-    const [rows] = await pool.query('SELECT id FROM users WHERE id = ?', [userId]);
-    if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
-
-    const updates = [];
-    const params = [];
-    if (balance !== undefined)        { updates.push('credit_balance = ?');          params.push(balance); }
-    if (total_earned !== undefined)   { updates.push('credit_total_earned = ?');     params.push(total_earned); }
-    if (total_consumed !== undefined) { updates.push('credit_total_consumed = ?');   params.push(total_consumed); }
-    if (updates.length === 0) return res.json({ code: 400, message: '没有需要更新的字段' });
-
-    params.push(userId);
-    await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
-    res.json({ code: 200, message: '更新成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
 // 按手机号更新积分（前端调用）
 app.put('/api/user_credits', async (req, res) => {
   try {
@@ -950,65 +808,6 @@ app.put('/api/user_credits', async (req, res) => {
   }
 });
 
-// ========== 积分日志 API ==========
-app.get('/api/credit_logs', async (req, res) => {
-  try {
-    const { user_id, page = 1, pageSize = 50 } = req.query;
-    const offset = (page - 1) * pageSize;
-    
-    let query = `
-      SELECT cl.*, u.phone, u.nickname 
-      FROM credit_logs cl 
-      LEFT JOIN users u ON cl.user_id = u.id
-    `;
-    let params = [];
-    
-    if (user_id) {
-      query += ' WHERE cl.user_id = ?';
-      params.push(user_id);
-    }
-    
-    query += ' ORDER BY cl.created_at DESC LIMIT ?, ?';
-    params.push(offset, parseInt(pageSize));
-    
-    const [rows] = await pool.query(query, params);
-    
-    res.json({
-      code: 200,
-      data: rows.map(log => ({
-        id: log.id,
-        user_id: log.user_id,
-        phone: log.phone || '',
-        nickname: log.nickname || '',
-        change_amount: log.change_amount || 0,
-        balance_after: log.balance_after || 0,
-        type: log.type || '',
-        description: log.description || '',
-        related_id: log.related_id,
-        operator_id: log.operator_id,
-        created_at: log.created_at
-      }))
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
-app.post('/api/credit_logs', async (req, res) => {
-  try {
-    const { user_id, change_amount, balance_after, type, description, related_id, operator_id } = req.body;
-    
-    const [result] = await pool.query(
-      'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, related_id, operator_id, created_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-      [user_id, change_amount, balance_after, type, description, related_id, operator_id]
-    );
-    
-    res.json({ code: 200, data: { id: result.insertId } });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
 
 app.get('/api/db/tables', async (req, res) => {
   try {
@@ -1156,37 +955,7 @@ app.post('/api/gallery', requireActiveUser, async (req, res) => {
     res.json({ code: 500, message: err.message });
   }
 });
-
-// 获取项目图片列表（不返回大字段，仅用于判断是否有图）
-app.get('/api/gallery', async (req, res) => {
-  try {
-    const { projectId, battleId } = req.query;
-    let query = `SELECT g.id, g.project_id, g.battle_id, g.original_name, g.file_size, g.created_at,
-      u.phone as uploader_phone, u.nickname as uploader_name
-      FROM battle_gallery g LEFT JOIN users u ON g.uploaded_by = u.id
-      WHERE g.status=1`;
-    const params = [];
-    if (battleId) { query += ' AND g.battle_id=?'; params.push(battleId); }
-    else if (projectId) { query += ' AND g.project_id=?'; params.push(projectId); }
-    query += ' ORDER BY g.created_at DESC';
-    const [rows] = await pool.query(query, params);
-    res.json({ code: 200, data: rows });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
 // 获取单张图片数据
-app.get('/api/gallery/:id', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT id, battle_id, image_data FROM battle_gallery WHERE id=? AND status=1', [req.params.id]);
-    if (rows.length === 0) return res.json({ code: 404, message: '图片不存在' });
-    res.json({ code: 200, data: rows[0] });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
-});
-
 // 通过 battle_id 获取图片数据
 app.get('/api/gallery/by-battle/:battleId', async (req, res) => {
   try {

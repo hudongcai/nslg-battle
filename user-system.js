@@ -2,20 +2,6 @@
    USER SYSTEM - 用户登录、注册、用户管理
    ========================================================== */
 
-// 兼容：如果 role-system.js 未加载，提供 getRolePermissions 兜底实现
-if(typeof getRolePermissions==='undefined'){
-  window.getRolePermissions = async function(roleId){
-    const BUILTIN = [
-      {id:'super_admin', name:'超级管理员', permissions:{'projectManage':true,'library':true,'ranking':true,'peijiang':true,'yanwu':true,'systemConfig':true,'userManage':true,'syslog':true,'dataManage':true,'projectCreate':true,'dataImport':true,'winrateAnalysis':true}},
-      {id:'admin',        name:'管理员',        permissions:{'projectManage':true,'library':true,'ranking':true,'peijiang':true,'yanwu':true,'systemConfig':false,'userManage':false,'syslog':false,'dataManage':false,'projectCreate':true,'dataImport':true,'winrateAnalysis':true}},
-      {id:'member',       name:'普通成员',      permissions:{'projectManage':true,'library':true,'ranking':true,'peijiang':true,'yanwu':true,'systemConfig':false,'userManage':false,'syslog':false,'dataManage':false,'projectCreate':false,'dataImport':true,'winrateAnalysis':true}},
-    ];
-    const r = BUILTIN.find(x=>x.id===roleId);
-    return r ? r.permissions : BUILTIN[2].permissions;
-  };
-  console.warn('[user-system] getRolePermissions 兜底定义已生效');
-}
-
 // ========== 超级管理员默认账号 ==========
 const SUPER_ADMIN_PHONE = '13651810449';
 const SUPER_ADMIN_PWD   = 'hu6956521';
@@ -83,105 +69,6 @@ function openUserDB(){
   });
 }
 
-// ========== V1.0 新增：proj_members 表操作 ==========
-function projMemberDBAdd(rec){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      const tx = db.transaction(['proj_members'],'readwrite');
-      const req = tx.objectStore('proj_members').add(rec);
-      req.onsuccess = ()=>resolve(req.result);
-      req.onerror   = ()=>reject(req.error);
-    }).catch(reject);
-  });
-}
-function projMemberDBPut(rec){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      const tx = db.transaction(['proj_members'],'readwrite');
-      const req = tx.objectStore('proj_members').put(rec);
-      req.onsuccess = ()=>resolve();
-      req.onerror   = ()=>reject(req.error);
-    }).catch(reject);
-  });
-}
-function projMemberDBGetAll(){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      if(!db.objectStoreNames.contains('proj_members')){resolve([]);return;}
-      const tx = db.transaction(['proj_members'],'readonly');
-      const req = tx.objectStore('proj_members').getAll();
-      req.onsuccess = ()=>resolve(req.result||[]);
-      req.onerror   = ()=>resolve([]);
-    }).catch(()=>resolve([]));
-  });
-}
-function projMemberDBDelete(id){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      const tx = db.transaction(['proj_members'],'readwrite');
-      const req = tx.objectStore('proj_members').delete(id);
-      req.onsuccess = ()=>resolve();
-      req.onerror   = ()=>reject(req.error);
-    }).catch(reject);
-  });
-}
-
-// ========== 角色 DB 操作 ==========
-function roleDBGetAll(){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      if(!db.objectStoreNames.contains('roles')){resolve([]);return;}
-      const tx = db.transaction(['roles'],'readonly');
-      const req = tx.objectStore('roles').getAll();
-      req.onsuccess = ()=>resolve(req.result||[]);
-      req.onerror   = ()=>resolve([]);
-    }).catch(()=>resolve([]));
-  });
-}
-function roleDBGet(id){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      if(!db.objectStoreNames.contains('roles')){resolve(null);return;}
-      const tx = db.transaction(['roles'],'readonly');
-      const req = tx.objectStore('roles').get(id);
-      req.onsuccess = ()=>resolve(req.result||null);
-      req.onerror   = ()=>resolve(null);
-    }).catch(()=>resolve(null));
-  });
-}
-function roleDBPut(role){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      const tx = db.transaction(['roles'],'readwrite');
-      const req = tx.objectStore('roles').put(role);
-      req.onsuccess = ()=>resolve();
-      req.onerror   = ()=>reject(req.error);
-    }).catch(reject);
-  });
-}
-function roleDBDelete(id){
-  return new Promise((resolve,reject)=>{
-    openUserDB().then(db=>{
-      const tx = db.transaction(['roles'],'readwrite');
-      const req = tx.objectStore('roles').delete(id);
-      req.onsuccess = ()=>resolve();
-      req.onerror   = ()=>reject(req.error);
-    }).catch(reject);
-  });
-}
-
-// ========== 确保用户有 role 字段（迁移）==========
-async function migrateUserRoles(){
-  try{
-    const users = await userDBGetAll();
-    for(const u of users){
-      if(!u.role){
-        u.role = u.phone===SUPER_ADMIN_PHONE ? 'super_admin' : 'admin';
-        await userDBPut(u);
-      }
-    }
-  }catch(e){console.error('migrateUserRoles failed:',e);}
-}
 
 function userDBDelete(phone){
   return new Promise((resolve,reject)=>{
@@ -566,6 +453,9 @@ function hideLogin(){
   const mainApp = document.getElementById('mainApp');
   if(mainApp) mainApp.style.display = '';
 }
+function closeRegister(){
+  hideLogin();
+}
 
 // ========== 切换登录/注册主标签 ==========
 function switchAuthTab(tab){
@@ -587,25 +477,6 @@ function switchAuthTab(tab){
 }
 
 
-function showRegister(){
-  // 切换到注册标签（登录和注册在同一个页面中）
-  if(typeof switchAuthTab === 'function') switchAuthTab('register');
-  const loginPage = document.getElementById('loginPage');
-  if(loginPage) loginPage.style.display = 'flex';
-}
-function closeRegister(){
-  // 切换到登录标签
-  if(typeof switchAuthTab === 'function') switchAuthTab('login');
-}
-
-// ========== 退出登录 ==========
-function logout(){
-  if(!confirm('确定退出登录？')) return;
-  addSysLog('login','退出登录');
-  currentUser = null;
-  try{ localStorage.removeItem('nslg_session'); }catch(e){}
-  showLogin();
-}
 
 
 // ========== 密码登录 ==========
@@ -803,42 +674,8 @@ async function doRegPwd(){
 
 
 
-// ========== 登录成功 ==========
-// ========== 导航权限控制 ==========
-// ⚠️ 注意：updateNavByRole 已统一在 role-system.js 中定义（基于 RBAC 权限的精确版本）
-// 此处不再重复定义，避免覆盖 role-system.js 的正确实现
-// 如果 role-system.js 未加载，此处提供一个最小化兜底
-if (typeof updateNavByRole === 'undefined') {
-  function updateNavByRole(){
-    const navSystem    = document.getElementById('navSystemBtn');
-    const navProject   = document.getElementById('navProjectBtn');
-    const navLibrary   = document.getElementById('navLibraryBtn');
-    const navRanking   = document.getElementById('navRankingBtn');
-    const navPeijiang  = document.getElementById('navPeijiangBtn');
-    const navYanwu     = document.getElementById('navYanwuBtn');
-    if(!currentUser){
-      if(navProject)  navProject.style.display='none';
-      if(navSystem)   navSystem.style.display='none';
-      if(navLibrary)  navLibrary.style.display='none';
-      if(navRanking)  navRanking.style.display='none';
-      if(navPeijiang) navPeijiang.style.display='none';
-      if(navYanwu)    navYanwu.style.display='none';
-      document.getElementById('systemSubNav').style.display='none';
-      document.getElementById('pointsMallBtn').style.display='none';
-      return;
-    }
-    // 基础兜底：登录后显示主要导航（精确权限控制以 role-system.js 为准）
-    if(navProject)  navProject.style.display='inline-block';
-    if(navLibrary)  navLibrary.style.display='inline-block';
-    if(navRanking)  navRanking.style.display='inline-block';
-    if(navPeijiang) navPeijiang.style.display='inline-block';
-    if(navYanwu)    navYanwu.style.display='inline-block';
-    if(navSystem) navSystem.style.display = currentUser.role==='super_admin' ? 'inline-block' : 'none';
-    const mallBtn = document.getElementById('pointsMallBtn');
-    if(mallBtn) mallBtn.style.display='inline-block';
-    updateUserNavPoints();
-  }
-}
+// ========== 登录成功 ==========// ========== 导航权限控制 ==========
+// updateNavByRole 由 role-system.js 统一提供
 
 // 更新右上角积分显示
 function updateUserNavPoints(){
@@ -1080,29 +917,6 @@ async function renderUserManage(){
       '</div></td>'+
     '</tr>';
   }).join('');
-}
-// ========== 修改用户角色（旧版保留兼容） ==========
-async function changeUserRole(phone, newRoleId){
-  if(!confirm('确认修改该用户的角色？')) return;
-  try{
-    const u = await userDBGet(phone);
-    if(!u){alert('用户不存在');return;}
-    u.role = newRoleId;
-    await userDBPut(u);
-    // 同步到云端
-    try {
-      if (typeof cloudRequest === 'function') {
-        const userData = await cloudRequest('/users');
-        const list = Array.isArray(userData.data) ? userData.data : ((userData.data && userData.data.list) || []);
-        const cloudUser = list.find(x => x.phone === phone);
-        if (cloudUser && cloudUser.id) {
-          await cloudRequest(`/users/${cloudUser.id}`, { method: 'PUT', body: { role_id: newRoleId } });
-        }
-      }
-    } catch(syncErr) { console.warn('[changeUserRole] 云端同步失败:', syncErr.message); }
-    addSysLog('operation','修改用户角色: '+phone+' → '+newRoleId);
-    await renderUserManage();
-  }catch(e){alert('修改失败：'+e.message);}
 }
 
 async function resetUserPwd(phone){

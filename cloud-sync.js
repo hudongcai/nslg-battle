@@ -1,5 +1,3 @@
-console.log('[@@ cloud-sync.js 执行中 - 文件顶部 - 版本: v202605112300 @@]');
-console.log('[cloud-sync.js] 脚本开始加载 v202605110101');
 /**
  * 云端同步模块 - 封装所有云端 API 调用
  * 使用方式：在 index.html 中引入此文件，然后在其他 JS 中调用相关函数
@@ -25,10 +23,6 @@ function getCurrentUserPhone() {
   return currentUser ? currentUser.phone : null;
 }
 
-function getCurrentUserRole() {
-  return currentUser ? currentUser.role : null;
-}
-
 // ========== 辅助函数：获取 JWT Token ==========
 function getToken() {
   return localStorage.getItem('nslg_token') || '';
@@ -46,7 +40,6 @@ function setToken(token) {
 async function cloudRequest(path, options = {}) {
   const url = `${CLOUD_API_BASE}${path}`;
   const token = getToken();
-  console.log('[cloudRequest] 发起请求:', path, '| token存在:', !!token, '| options.method:', options.method || 'GET');
   const defaultOptions = {
     headers: {
       'Content-Type': 'application/json',
@@ -100,7 +93,6 @@ async function cloudRequest(path, options = {}) {
           if (currentUser && currentUser.phone) {
             try {
               await cloudLogin(currentUser.phone, currentUser.password || '');
-              console.log('[Cloud Sync] 自动重新登录成功，重试请求...');
               const newToken = getToken();
               if (newToken) {
                 finalOptions.headers['Authorization'] = 'Bearer ' + newToken;
@@ -183,7 +175,6 @@ async function cloudGetProjects() {
       list = data.list;  // 备选格式
     }
   }
-  console.log('[cloudGetProjects] 获取到', list.length, '个项目');
   // 将云端字段映射为本地格式，保持与本地项目数据结构兼容
   return list.map(p => ({
     id: p.id,
@@ -265,7 +256,6 @@ async function cloudUpdateUserPoints(phone, points, options = {}) {
 
 // 创建项目（云端）
 async function cloudCreateProject(project) {
-  console.log('[cloudCreateProject] 被调用, project.id:', project.id, 'project.name:', project.name);
   // 统一字段名：前端用 desc/visibility/creator，后端用 description/is_public/creator_phone
   const body = {
     id:             project.id,
@@ -275,7 +265,6 @@ async function cloudCreateProject(project) {
     creator_phone:  project.creator_phone || project.creator || '',
   };
   const data = await cloudRequest('/projects', { method: 'POST', body });
-  console.log('[cloudCreateProject] 返回:', data);
   return data.success ? data.data : null;
 }
 
@@ -417,7 +406,6 @@ async function cloudCreateRecord(record) {
           uploader_phone: record.uploaderPhone || record.user_phone || ''
         }
       });
-      console.log('[Cloud] 图片已同步到 battle_gallery, battle_id:', result.id);
     } catch (e) {
       console.warn('[Cloud] 图片同步失败（不影响战报）:', e.message);
     }
@@ -428,7 +416,6 @@ async function cloudCreateRecord(record) {
 // 更新战报（云端）
 // 注意：后端路由是 /battles，不是 /records
 async function cloudUpdateRecord(recordId, recordData) {
-  console.log('[cloudUpdateRecord] 被调用, recordId:', recordId, '| recordData keys:', Object.keys(recordData));
   // 后端 PUT 接收 snake_case，前端存 camelCase，此处统一转换
   const body = {
     battle_date:    (recordData.battleDate || new Date().toISOString()).split('T')[0],
@@ -455,7 +442,6 @@ async function cloudUpdateRecord(recordId, recordData) {
     method: 'PUT',
     body
   });
-  console.log('[cloudUpdateRecord] 返回:', result);
   return result.success || result.code === 200;
 }
 
@@ -488,7 +474,6 @@ async function cloudLogin(phone, password) {
 
 // 创建用户（注册）
 async function cloudCreateUser(phone, name, password, role = 'member', avatar = '') {
-  console.log('[cloudCreateUser] 被调用, phone:', phone, 'name:', name, 'role:', role);
   // 注意：此接口不需要 token，所以不能用 cloudRequest（会自动加 Authorization 头）
   const res = await fetch(`${CLOUD_API_BASE}/auth/register`, {
     method: 'POST',
@@ -496,41 +481,41 @@ async function cloudCreateUser(phone, name, password, role = 'member', avatar = 
     body: JSON.stringify({ phone, nickname: name, password, role, avatar })
   });
   const data = await res.json();
-  console.log('[cloudCreateUser] 返回:', data);
   return data.code === 200;
 }
 
 // ========== 战报管理（云端）==========
 // 注意：所有创建/更新调用统一走 cloudCreateRecord / cloudUpdateRecord
-// 字段规范：projectId, battleDate, attackerName, enemyName, result, description
 
-// 获取战报列表（云端）
-// 后端返回格式：{ code:200, data:{ list:[], total, page, pageSize } }
-async function cloudGetBattles(projectId) {
-  const params = projectId ? `?projectId=${projectId}` : '';
-  const data = await cloudRequest(`/battles${params}`);
-  // 兼容两种返回格式：data.data.list 或 data.data
-  if (data && data.code === 200 && data.data) {
-    return Array.isArray(data.data) ? data.data : (data.data.list || []);
+const MERGE_MAP = {
+  leftPlayer: ['leftPlayer', 'attackerName'], rightPlayer: ['rightPlayer', 'enemyName'],
+  result: ['result'], leftAlliance: ['leftAlliance'], rightAlliance: ['rightAlliance'],
+  leftFormation: ['leftFormation'], rightFormation: ['rightFormation'],
+  description: ['description'], leftGenerals: ['leftGenerals'], rightGenerals: ['rightGenerals'],
+  leftTactics: ['leftTactics'], rightTactics: ['rightTactics'],
+  leftLoss: ['leftLoss'], rightLoss: ['rightLoss'], leftTotal: ['leftTotal'], rightTotal: ['rightTotal'],
+  leftLossRate: ['leftLossRate'], rightLossRate: ['rightLossRate'], imageBase64: ['imageBase64'],
+};
+
+async function fetchGalleryImage(cloudId) {
+  try {
+    const data = await cloudRequest(`/gallery/by-battle/${cloudId}`);
+    if (data.code === 200 && data.data && data.data.image_data) return data.data.image_data;
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function mergeRecord(localRec, cloudRec) {
+  for (const [cloudKey, localKeys] of Object.entries(MERGE_MAP)) {
+    const cloudVal = cloudRec[cloudKey];
+    if (!cloudVal && cloudVal !== 0) continue;
+    for (const localKey of localKeys) {
+      if (!localRec[localKey] || localRec[localKey] === '') {
+        localRec[localKey] = cloudVal;
+        break;
+      }
+    }
   }
-  return [];
-}
-
-// 更新战报（云端）
-async function cloudUpdateBattle(battleId, updates) {
-  const data = await cloudRequest(`/battles/${battleId}`, {
-    method: 'PUT',
-    body: updates
-  });
-  return data.code === 200;
-}
-
-// 删除战报（云端）
-async function cloudDeleteBattle(battleId) {
-  const data = await cloudRequest(`/battles/${battleId}`, {
-    method: 'DELETE'
-  });
-  return data.code === 200;
 }
 
 // ========== 同步策略 ==========
@@ -550,7 +535,6 @@ async function syncCloudToLocal() {
   // 修复：无 token 时跳过云端同步，避免 401 错误
   const token = getToken();
   if (!token) {
-    console.log('[Sync] 无有效 token，跳过云端同步，仅使用本地数据');
     return false;
   }
 
@@ -565,19 +549,8 @@ async function syncCloudToLocal() {
     for (const proj of cloudProjects) {
       await projDBPut(proj);
     }
-    console.log('[Sync] 项目同步完成，共', cloudProjects.length, '个');
 
-    // 2. 同步数据权限（projAccess）
-    try {
-      // 从云端获取当前用户的所有项目权限
-      // 注意：后端 /users/:id/permissions 返回的是角色权限对象，不是项目权限数组
-      // 项目权限通过 /projects/:id/members 获取，此处暂时跳过
-      console.log('[Sync] 数据权限同步：跳过（项目权限通过项目成员接口获取）');
-    } catch (e) {
-      console.warn('[Sync] 数据权限同步失败（不影响其他数据）:', e);
-    }
-
-    // 3. 同步战报列表（增量同步：只同步有差异的战报）
+    // 2. 同步战报列表（增量同步：只同步有差异的战报）
     // 核心逻辑：云端记录（可能缺字段）不应覆盖本地有值记录
     try {
       const cloudRecords = await cloudGetRecords();
@@ -593,51 +566,10 @@ async function syncCloudToLocal() {
           if (matched) {
             // 已有 cloudId 关联：直接用本地记录，用云端数据补全空字段
             localRec = matched;
-            // 合并字段：云端有值 && 本地无值 → 用云端值
-            // rec 的字段名是 leftPlayer/rightPlayer 格式（cloudGetRecords 映射后的）
-            const mergeMap = {
-              leftPlayer:      ['leftPlayer', 'attackerName'],
-              rightPlayer:     ['rightPlayer', 'enemyName'],
-              result:          ['result'],
-              leftAlliance:    ['leftAlliance'],
-              rightAlliance:   ['rightAlliance'],
-              leftFormation:   ['leftFormation'],
-              rightFormation:  ['rightFormation'],
-              description:     ['description'],
-              leftGenerals:    ['leftGenerals'],
-              rightGenerals:   ['rightGenerals'],
-              leftTactics:     ['leftTactics'],
-              rightTactics:    ['rightTactics'],
-              leftLoss:        ['leftLoss'],
-              rightLoss:       ['rightLoss'],
-              leftTotal:       ['leftTotal'],
-              rightTotal:      ['rightTotal'],
-              leftLossRate:    ['leftLossRate'],
-              rightLossRate:   ['rightLossRate'],
-              imageBase64:     ['imageBase64'],
-            };
-            for (const [cloudKey, localKeys] of Object.entries(mergeMap)) {
-              const cloudVal = rec[cloudKey];
-              if (!cloudVal && cloudVal !== 0) continue;
-              // 本地可能用不同的字段名，遍历所有可能的本地字段名
-              for (const localKey of localKeys) {
-                if (!localRec[localKey] || localRec[localKey] === '') {
-                  localRec[localKey] = cloudVal;
-                  break; // 找到一个本地字段写入即可
-                }
-              }
-            }
-            // 本地无图片时从云端图库补拉
+            mergeRecord(localRec, rec);
             if (!localRec.imageBase64 && localRec.cloudId) {
-              try {
-                const galleryData = await cloudRequest(`/gallery/by-battle/${localRec.cloudId}`);
-                if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
-                  localRec.imageBase64 = galleryData.data.image_data;
-                  console.log('[Sync] 3.1 从云端图库补拉图片, battle_id:', localRec.cloudId);
-                }
-              } catch (e) { /* 无图片不影响同步 */ }
+              localRec.imageBase64 = await fetchGalleryImage(localRec.cloudId) || null;
             }
-            // 不动 localRec.id（IndexedDB 主键），只更新同步标记
             localRec._synced = true;
             localRec._syncTime = Date.now();
             await dbPutLocal(localRec);
@@ -657,69 +589,21 @@ async function syncCloudToLocal() {
             });
 
             if (bizMatch) {
-              // 找到本地对应记录：合并云端数据，保留本地图片/详细字段
               localRec = bizMatch;
               localRec.cloudId = rec.id;
-              // 合并字段（同上）
-              const mergeMap = {
-                leftPlayer:      ['leftPlayer', 'attackerName'],
-                rightPlayer:     ['rightPlayer', 'enemyName'],
-                result:          ['result'],
-                leftAlliance:    ['leftAlliance'],
-                rightAlliance:   ['rightAlliance'],
-                leftFormation:   ['leftFormation'],
-                rightFormation:  ['rightFormation'],
-                description:     ['description'],
-                leftGenerals:    ['leftGenerals'],
-                rightGenerals:   ['rightGenerals'],
-                leftTactics:     ['leftTactics'],
-                rightTactics:    ['rightTactics'],
-                leftLoss:        ['leftLoss'],
-                rightLoss:       ['rightLoss'],
-                leftTotal:       ['leftTotal'],
-                rightTotal:      ['rightTotal'],
-                leftLossRate:    ['leftLossRate'],
-                rightLossRate:   ['rightLossRate'],
-                imageBase64:     ['imageBase64'],
-              };
-              for (const [cloudKey, localKeys] of Object.entries(mergeMap)) {
-                const cloudVal = rec[cloudKey];
-                if (!cloudVal && cloudVal !== 0) continue;
-                for (const localKey of localKeys) {
-                  if (!localRec[localKey] || localRec[localKey] === '') {
-                    localRec[localKey] = cloudVal;
-                    break;
-                  }
-                }
-              }
-              // 本地无图片时从云端图库补拉
+              mergeRecord(localRec, rec);
               if (!localRec.imageBase64 && localRec.cloudId) {
-                try {
-                  const galleryData = await cloudRequest(`/gallery/by-battle/${localRec.cloudId}`);
-                  if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
-                    localRec.imageBase64 = galleryData.data.image_data;
-                  }
-                } catch (e) { /* 无图片不影响同步 */ }
+                localRec.imageBase64 = await fetchGalleryImage(localRec.cloudId) || null;
               }
-              // 保留本地 ID（IndexedDB 主键不变），只更新 cloudId
               localRec._synced = true;
               localRec._syncTime = Date.now();
               await dbPutLocal(localRec);
-              // 不再写入重复记录（cloudId 已关联，无需再用云端 ID 写入）
             } else {
-              // 3.3 本地完全没有 → 直接写入云端记录，并从 gallery 拉图片
               if (!rec.imageBase64 && rec.id) {
-                try {
-                  const galleryData = await cloudRequest(`/gallery/by-battle/${rec.id}`);
-                  if (galleryData.code === 200 && galleryData.data && galleryData.data.image_data) {
-                    rec.imageBase64 = galleryData.data.image_data;
-                    console.log('[Sync] 从云端图库拉取图片, battle_id:', rec.id);
-                  }
-                } catch (e) { /* 无图片不影响同步 */ }
+                rec.imageBase64 = await fetchGalleryImage(rec.id) || null;
               }
               rec._synced = true;
               rec._syncTime = Date.now();
-              // 案例3.3：云端新记录写入本地，需保留 cloudId 引用
               rec.cloudId = rec.id;
               await dbPutLocal(rec);
             }
@@ -730,7 +614,6 @@ async function syncCloudToLocal() {
           console.warn('[Sync] 战报同步失败（跳过）:', rec.id, e);
         }
       }
-      console.log('[Sync] 战报同步完成，共', syncCount, '/', cloudRecords.length, '条');
 
       // 4. 清理本地孤立记录：有 cloudId 但云端已删除的记录
       try {
@@ -741,21 +624,16 @@ async function syncCloudToLocal() {
           if (local.cloudId && !cloudIdSet.has(local.cloudId)) {
             await dbDeleteLocal(local.id);
             deletedCount++;
-            console.log('[Sync] 清理本地孤立记录:', local.id, '(cloudId:', local.cloudId, '已不在云端)');
           }
         }
-        if (deletedCount > 0) console.log('[Sync] 已清理', deletedCount, '条本地孤立记录');
 
         // 5. 汇总：打印最终本地 IndexedDB 中的记录情况（便于调试）
         const finalLocal = await dbGetAll();
-        console.log('[Sync] === 同步后 IndexedDB 汇总 ===');
-        console.log('[Sync] 总记录数:', finalLocal.length, '| 云端记录数:', cloudRecords.length);
         const byProject = {};
         for (const r of finalLocal) {
           const pid = r.projectId || 'none';
           byProject[pid] = (byProject[pid] || 0) + 1;
         }
-        console.log('[Sync] 按项目分布:', JSON.stringify(byProject));
       } catch (e) {
         console.warn('[Sync] 清理孤立记录失败（不影响主流程）:', e);
       }
@@ -800,35 +678,6 @@ async function cloudGetMyAccess() {
   }
 }
 
-// 角色同步：从云端拉取所有角色（数据库为真相之源）
-async function cloudGetRoles() {
-  try {
-    const data = await cloudRequest('/roles');
-    // 后端返回 { success: true, data: [...] }
-    if (data && (data.success === true || data.code === 200)) {
-      return data.data || [];
-    }
-    return [];
-  } catch(e) {
-    console.error('[cloudGetRoles] 失败:', e);
-    return [];
-  }
-}
-
-// 角色同步：推送单个角色到云端
-async function cloudSaveRole(role) {
-  try {
-    await cloudRequest('/roles', {
-      method: 'POST',
-      body: JSON.stringify(role),
-    });
-  } catch(e) {
-    console.error('[cloudSaveRole] 失败:', e);
-  }
-}
-
-// 导出给全局使用
-console.log('[cloud-sync.js] 正在挂载 window.cloudSync, 当前 cloudSync 存在?', !!window.cloudSync, '| 版本: v202605112300');
 window.cloudSync = {
   getProjects: cloudGetProjects,
   createProject: cloudCreateProject,
@@ -845,23 +694,13 @@ window.cloudSync = {
   login: cloudLogin,
   createUser: cloudCreateUser,
   syncToLocal: syncCloudToLocal,
-  // 通用 API 请求函数
   request: cloudRequestAPI,
-  // Token 管理
   setToken: setToken,
   getToken: getToken,
-  // 数据权限
   getMyAccess: cloudGetMyAccess,
-  // 角色同步
-  getRoles: cloudGetRoles,
-  // 用户同步
   getUsers: cloudGetUsers,
-  saveRole: cloudSaveRole,
-  // 存储统计
   getStorageStats: cloudGetStorageStats,
-  // 积分同步
   updateUserPoints: cloudUpdateUserPoints,
-  // 数据库查看（仅超管）
   getDBTables: cloudGetDBTables,
   queryTable: cloudQueryTable,
   describeTable: cloudDescribeTable,

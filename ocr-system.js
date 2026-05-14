@@ -34,10 +34,8 @@ let ocrPausedByUser = false;      // 标记是否为用户主动暂停导致的�
 // ========== 初始化 ==========
 function initOCR() {
   if (!OCR_CONFIG.enabled) {
-    console.log('[OCR] 已关闭（当前环境：' + location.hostname + '）');
     return;
   }
-  console.log('[OCR] 初始化...');
   showOCRSection();
   setupOCRListeners();
   updateOCRStatus('ok', 'OCR 就绪');
@@ -149,7 +147,6 @@ async function callOCRAPI(base64Data, externalSignal = null) {
     };
 
     const apiEndpoint = getOcrEndpoint();
-    console.log('[OCR] 请求地址:', apiEndpoint);
     const ocrToken = typeof getToken === 'function' ? getToken() : '';
     const resp = await fetch(apiEndpoint, {
       method: 'POST',
@@ -214,7 +211,6 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 
 // ========== 解析 OCR 返回 ==========
 function parseOCRResponse(text) {
-  console.log('[OCR 原始返回]\n' + text);
   const record = {
     time: new Date().toLocaleString('zh-CN'),
     result: '',
@@ -485,22 +481,6 @@ function removeQueueItem(idx) {
   if (ocrQueue.length === 0 && !ocrRunning) {
     const queueArea = document.getElementById('queueArea');
     if (queueArea) queueArea.style.display = 'none';
-  }
-}
-
-// 批量删除所有已取消/失败的项
-function batchRemoveQueue() {
-  const before = ocrQueue.length;
-  ocrQueue = ocrQueue.filter(q => q.status === 'processing' || q.status === 'done');
-  const removed = before - ocrQueue.length;
-  if (removed > 0) {
-    renderOCRQueue();
-    const queueCount = document.getElementById('queueCount');
-    if (queueCount) queueCount.textContent = ocrQueue.length;
-    if (ocrQueue.length === 0 && !ocrRunning) {
-      const queueArea = document.getElementById('queueArea');
-      if (queueArea) queueArea.style.display = 'none';
-    }
   }
 }
 

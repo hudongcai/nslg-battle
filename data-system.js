@@ -5,8 +5,6 @@
 // ========== 全局状态 ==========
 let db = null;
 let allRecords = [];
-let batchQueue = [];
-let batchPaused = false;
 let batchRunning = false;
 let dataPage = 1;
 const DATA_PER_PAGE = 20;
@@ -24,170 +22,9 @@ function openDB() {
       // v1: records
       if (!d.objectStoreNames.contains('records'))
         d.createObjectStore('records', { keyPath: 'id', autoIncrement: true });
-      // v3 (V1.0 新增): gallery, ocr_tasks, teams, yanwu
-      if (!d.objectStoreNames.contains('gallery'))
-        d.createObjectStore('gallery', { keyPath: 'id', autoIncrement: true });
-      if (!d.objectStoreNames.contains('ocr_tasks'))
-        d.createObjectStore('ocr_tasks', { keyPath: 'id', autoIncrement: true });
-      if (!d.objectStoreNames.contains('teams'))
-        d.createObjectStore('teams', { keyPath: 'id', autoIncrement: true });
-      if (!d.objectStoreNames.contains('yanwu'))
-        d.createObjectStore('yanwu', { keyPath: 'id', autoIncrement: true });
     };
     req.onsuccess = () => { db = req.result; resolve(db); };
     req.onerror = () => reject(req.error);
-  });
-}
-
-// ========== V1.0 新增：gallery 表操作 ==========
-function galleryAdd(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['gallery'], 'readwrite');
-    const req = tx.objectStore('gallery').add(rec);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function galleryPut(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['gallery'], 'readwrite');
-    const req = tx.objectStore('gallery').put(rec);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-function galleryGet(id) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['gallery'], 'readonly');
-    const req = tx.objectStore('gallery').get(id);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function galleryGetAll() {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['gallery'], 'readonly');
-    const req = tx.objectStore('gallery').getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function galleryDelete(id) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['gallery'], 'readwrite');
-    const req = tx.objectStore('gallery').delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-// ========== V1.0 新增：ocr_tasks 表操作 ==========
-function ocrTaskAdd(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['ocr_tasks'], 'readwrite');
-    const req = tx.objectStore('ocr_tasks').add(rec);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function ocrTaskPut(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['ocr_tasks'], 'readwrite');
-    const req = tx.objectStore('ocr_tasks').put(rec);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-function ocrTaskGet(id) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['ocr_tasks'], 'readonly');
-    const req = tx.objectStore('ocr_tasks').get(id);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-// ========== V1.0 新增：teams 表操作 ==========
-function teamAdd(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['teams'], 'readwrite');
-    const req = tx.objectStore('teams').add(rec);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function teamPut(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['teams'], 'readwrite');
-    const req = tx.objectStore('teams').put(rec);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-function teamGetAll() {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['teams'], 'readonly');
-    const req = tx.objectStore('teams').getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function teamDelete(id) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['teams'], 'readwrite');
-    const req = tx.objectStore('teams').delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-// ========== V1.0 新增：yanwu 表操作 ==========
-function yanwuAdd(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['yanwu'], 'readwrite');
-    const req = tx.objectStore('yanwu').add(rec);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function yanwuPut(rec) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['yanwu'], 'readwrite');
-    const req = tx.objectStore('yanwu').put(rec);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-function yanwuGetAll() {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['yanwu'], 'readonly');
-    const req = tx.objectStore('yanwu').getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror   = () => reject(req.error);
-  });
-}
-function yanwuDelete(id) {
-  return new Promise((resolve, reject) => {
-    if (!db) return reject(new Error('DB not open'));
-    const tx = db.transaction(['yanwu'], 'readwrite');
-    const req = tx.objectStore('yanwu').delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
   });
 }
 
@@ -522,20 +359,6 @@ function updateOcrStatus(status, text) {
   if (txt) txt.textContent = text;
 }
 updateOcrStatus('ok', 'OCR 就绪');
-
-// ========== 隐藏所有子导航 ==========
-function hideAllSubNav() {
-  const projectSubNav = document.getElementById('projectSubNav');
-  const systemSubNav = document.getElementById('systemSubNav');
-  if (projectSubNav) projectSubNav.style.display = 'none';
-  if (systemSubNav) systemSubNav.style.display = 'none';
-  // 清除所有子导航按钮的 active 状态
-  document.querySelectorAll('.nav').forEach(nav => {
-    if (nav.id !== 'topNav') {
-      nav.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-    }
-  });
-}
 
 // ========== TAB SWITCHING ==========
 // 属于项目模块的 tab 列表（需要在这些 tab 下显示 projectSubNav 和 projectBar）
@@ -1482,7 +1305,8 @@ function renderDBDataTable(data) {
 
   // 判断列类型辅助函数
   function isJsonCol(name) {
-    const jsonCols = JSON_FIELDS[dbViewerCurrentTable] || [];
+    const knownJsonCols = { battle_records: ['left_generals','right_generals','left_tactics','right_tactics'], roles: ['permissions'] };
+    const jsonCols = knownJsonCols[dbViewerCurrentTable] || [];
     return jsonCols.includes(name) || columns.find(c=>c.field===name && c.type.startsWith('json'));
   }
 

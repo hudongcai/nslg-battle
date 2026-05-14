@@ -3,7 +3,7 @@
  * 包含全部战法的属性、类型、效果、适用武将信息
  * 用于克制分析和战法库展示
  */
-const ALL_TACTICS = [
+var ALL_TACTICS = [
   // ===== 主动战法（指挥/主动） =====
   { id: 't001', name: '八阵图', type: '主动', rarity: 'SSR', effect: 'control', desc: '布置八卦阵，使敌方全体陷入混乱状态2回合', applicableFactions: ['蜀'], heroMatch: ['诸葛亮'], cooldown: 3 },
   { id: 't002', name: '火烧连营', type: '主动', rarity: 'SSR', effect: 'dot', desc: '对敌方全体造成持续火焰伤害，每回合损失最大生命值15%', applicableFactions: ['吴'], heroMatch: ['陆逊','周瑜'], cooldown: 3 },

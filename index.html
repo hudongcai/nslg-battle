@@ -4,8 +4,6 @@
 <link rel="icon" href="data:,">
 <meta charset="utf-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>真武团的三谋队伍克制分析工具</title>
 <style>
@@ -80,10 +78,6 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .pagination button{background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:5px 12px;border-radius:7px;cursor:pointer;font-size:11px;}
 .pagination button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
 .pagination button:disabled{opacity:.4;cursor:not-allowed;}
-.counter-row{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap;}
-.counter-card{background:linear-gradient(135deg,var(--card),rgba(26,32,56,.6));border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;min-width:120px;flex:1;text-align:center;}
-.counter-card .c-num{font-size:26px;font-weight:bold;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.counter-card .c-label{font-size:10px;color:var(--text2);margin-top:3px;}
 .restrict-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;width:100%;}.restrict-group-title{grid-column:1/-1;font-size:13px;font-weight:bold;padding:6px 0 4px;border-bottom:1px solid var(--border);margin-top:6px;}.restrict-group-title:first-child{margin-top:0;}
 .restrict-card{padding:16px;border-radius:10px;line-height:1.8;}
 .rc-strong{background:linear-gradient(135deg,rgba(81,207,102,.06),rgba(81,207,102,.02));color:var(--green);border:1px solid rgba(81,207,102,.15);}
@@ -124,7 +118,6 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .points-insufficient-panel .pi-btns{display:flex;gap:12px;justify-content:center;}
 .points-insufficient-panel .pi-btns .btn{flex:1;max-width:140px;justify-content:center;padding:10px 16px;font-size:13px;}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
-.qi-del:hover{background:rgba(255,82,82,.25);transform:scale(1.15);}
 .image-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:10000;cursor:pointer;animation:fadeIn .2s;}
 .image-modal img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 48px rgba(0,0,0,.6);}
 @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
@@ -201,7 +194,6 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .lib-sub-tab:hover{color:var(--text);background:var(--bg4);}
 .lib-sub-tab.active{background:linear-gradient(135deg,var(--accent),#e09422);color:#0c0f1a;}
 .lib-sub-content{animation:fadeUp .25s ease;}
-#ocrStatus{display:none;}
 
 /* ========== 积分商城样式 ========== */
 .mall-header {
@@ -318,11 +310,6 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .login-card button:hover{filter:brightness(1.1);}
 .login-card button:active{transform:scale(.98);}
 .login-card .sms-row{display:flex;gap:8px;margin-bottom:12px;}
-.login-card .sms-row input{flex:1;margin-bottom:0;}
-.login-card .sms-row button{width:auto;padding:9px 14px;white-space:nowrap;font-size:13px;margin-top:0;}
-.login-tabs{display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid var(--border);}
-.login-tabs .tab-btn{background:none;border:none;color:var(--text2);padding:8px 18px;cursor:pointer;font-size:13px;transition:all .2s;border-bottom:2px solid transparent;}
-.login-tabs .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:bold;}
 .auth-switch{text-align:center;margin-top:14px;font-size:12px;color:var(--text3);}
 .auth-switch a{color:var(--accent);cursor:pointer;font-weight:bold;margin-left:4px;}
 .auth-switch a:hover{text-decoration:underline;}
@@ -334,15 +321,6 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .login-tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border);}
 .login-tabs .tab-btn{background:none;border:none;color:var(--text2);padding:8px 16px;cursor:pointer;font-size:13px;transition:all .2s;border-bottom:2px solid transparent;}
 .login-tabs .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:bold;}
-.login-panel{display:none;min-height:180px;width:100%;box-sizing:border-box;}
-.login-panel.active{display:block;animation:fadeUp .25s ease;}
-.user-table{width:100%;border-collapse:collapse;margin-top:10px;}
-.user-table th,.user-table td{border:1px solid #ddd;padding:6px 10px;font-size:13px;}
-.user-table th{background:#f0f0f0;}
-.project-card{background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:14px 18px;margin-bottom:12px;}
-.project-card h4{margin:0 0 6px 0;}
-.project-actions button{margin-right:6px;padding:4px 12px;border-radius:5px;border:1px solid #ccc;background:#fff;cursor:pointer;}
-.project-actions button:hover{background:#e9ecef;}
 /* === 项目大色块卡片 === */
 .project-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding:20px 40px;}
 @media(max-width:1200px){.project-grid{grid-template-columns:repeat(3,1fr);}}
@@ -367,7 +345,6 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .log-badge-login{background:rgba(81,207,102,.12);color:var(--green);padding:1px 6px;border-radius:3px;font-size:11px;}
 .log-badge-action{background:rgba(240,180,41,.1);color:var(--accent);padding:1px 6px;border-radius:3px;font-size:11px;}
 .log-badge-delete{background:rgba(255,82,82,.1);color:#ff5252;padding:1px 6px;border-radius:3px;font-size:11px;}
-#navProject,#navUser{display:none;}
 </style>
 <script>
 // ===== 自定义角色下拉组件工具函数 =====
@@ -457,7 +434,6 @@ document.addEventListener('click', function(e) {
   <button id="subUserManage" onclick="switchTab('user',this)">👥 用户管理</button>
   <button id="subDataPerm" onclick="switchTab('dataperm',this)">🔐 数据权限</button>
   <button id="subDataManage" onclick="switchTab('datamgmt',this)">📦 数据管理</button>
-  <button id="subCloudService" onclick="switchTab('cloudservice',this)" style="display:none;">☁️ 云端服务</button>
   <button id="subSysLog" onclick="switchTab('syslog',this)">📋 系统日志</button>
 </div>
 
@@ -555,8 +531,7 @@ document.addEventListener('click', function(e) {
         <table id="efTable" style="min-width:600px;">
           <thead><tr>
             <th style="min-width:40px;text-align:center;">排名</th>
-            <th style="min-width:60px;text-align:center;">武将</th>
-            <th style="min-width:180px;text-align:center;">战法配置</th>
+            <th style="min-width:240px;text-align:center;">队伍配置</th>
             <th style="min-width:70px;text-align:center;">阵型</th>
             <th style="min-width:80px;text-align:center;" onclick="toggleEFSort('count')">出现次数<span class="sort-arrow">↕</span></th>
             <th style="min-width:100px;text-align:center;">出现占比</th>
@@ -572,14 +547,12 @@ document.addEventListener('click', function(e) {
       <div style="font-size:10px;color:var(--text3);margin-bottom:10px;">匹配规则：3武将相同(无序) 或 9战法相同(无序) → 同类型队伍。战损比 = 左战损兵力 / 右战损兵力 × 100%，低于 50% 表示优势明显。</div>
       <!-- 搜索框与表格列对齐 -->
       <div style="display:flex;align-items:center;margin-bottom:10px;gap:4px;white-space:nowrap;">
-        <div style="display:flex;align-items:center;width:60px;"><input type="text" id="wrSearchLeftGeneral" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
-        <div style="display:flex;align-items:center;width:180px;"><input type="text" id="wrSearchLeftTactic" placeholder="🔍 战法..." oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:240px;"><input type="text" id="wrSearchLeftGeneral" placeholder="🔍 武将/战法..." oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
         <div style="display:flex;align-items:center;width:70px;"><input type="text" id="wrSearchLeftFormation" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
         <div style="width:70px;"></div>
         <div style="width:70px;"></div>
         <div style="width:50px;"></div>
-        <div style="display:flex;align-items:center;width:60px;"><input type="text" id="wrSearchRightGeneral" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
-        <div style="display:flex;align-items:center;width:180px;"><input type="text" id="wrSearchRightTactic" placeholder="🔍 战法..." oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
+        <div style="display:flex;align-items:center;width:240px;"><input type="text" id="wrSearchRightGeneral" placeholder="🔍 武将/战法..." oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
         <div style="display:flex;align-items:center;width:70px;"><input type="text" id="wrSearchRightFormation" placeholder="🔍" oninput="renderWinRateTable()" style="width:100%;font-size:11px;padding:4px 6px;"></div>
         <div style="width:80px;"></div>
       </div>
@@ -588,15 +561,13 @@ document.addEventListener('click', function(e) {
         <select id="wrFilterRight" onchange="renderWinRateTable()" style="margin-left:8px;"><option value="">筛选败方队伍</option></select>
         <button class="btn btn-sm btn-secondary" onclick="exportWinRateCSV()" style="margin-left:8px;">📥 导出</button>
       </div>
-      <div id="wrTableWrap" style="overflow:auto;max-height:70vh;width:100%;border-radius:8px;border:1px solid var(--border);"><table id="winRateTable" style="min-width:900px;"><thead><tr>
-        <th data-sort="leftTeam" style="min-width:60px;text-align:center;">胜方武将<span class="sort-arrow">↕</span></th>
-        <th style="min-width:180px;text-align:center;">胜方战法</th>
+      <div id="wrTableWrap" style="overflow:auto;max-height:70vh;width:100%;border-radius:8px;border:1px solid var(--border);"><table id="winRateTable" style="min-width:750px;"><thead><tr>
+        <th data-sort="leftTeam" style="min-width:240px;text-align:center;">胜方队伍<span class="sort-arrow">↕</span></th>
         <th style="min-width:70px;text-align:center;">胜方阵型</th>
         <th data-sort="winRate" style="min-width:70px;text-align:center;">胜率<span class="sort-arrow">↕</span></th>
         <th data-sort="lossRate" style="min-width:70px;text-align:center;">战损比<span class="sort-arrow">↕</span></th>
         <th data-sort="count" style="min-width:50px;text-align:center;">场次<span class="sort-arrow">↕</span></th>
-        <th data-sort="rightTeam" style="min-width:60px;text-align:center;">败方武将<span class="sort-arrow">↕</span></th>
-        <th style="min-width:180px;text-align:center;">败方战法</th>
+        <th data-sort="rightTeam" style="min-width:240px;text-align:center;">败方队伍<span class="sort-arrow">↕</span></th>
         <th style="min-width:70px;text-align:center;">败方阵型</th>
         <th style="min-width:80px;text-align:center;">溯源</th>
       </tr></thead><tbody id="winRateTableBody"></tbody></table></div>
@@ -698,13 +669,10 @@ const WJ_DATA=[{"n":"郝昭","f":"魏","s":"千机重城","b":"盾","wl":"92","z
 const ZF_DATA=[{"n":"岿然不动","d":"我军全体每消耗2次抵御，我军全体获得1层据守：统率提升12->13.33点，可叠加3次，持续到回合结束。回合结束时，恢复我军兵力最低单体兵力（治疗率30%->33.33%，受智力和统率影响），每持有1层据守，治疗率提升20%->20%","ty":"指挥","tx":"防御","c":"orange","sj":"s14","k":"gui_ran_bu_dong","wjj":false,"gl":"100%"},{"n":"睿虑合图","d":"我军前排受到伤害后，使我军随机2人奇谋提升1%->1.11%（受智力影响），可叠加15次，持续到战斗结束","ty":"指挥","tx":"辅助","c":"orange","sj":"s12","k":"rui_lv_he_tu","wjj":false,"gl":"100%"},{"n":"恩威并行","d":"战斗开始前3回合，自带战法造成治疗后（攻心和倒戈无效），令目标受到伤害降低1.5%->1.67%（受智力和统率影响），可叠加6次，持续到战斗结束；第4回合起，每回合行动时，对敌军随机两人造成25%->27.78%谋略伤害（额外受全队累积治疗量影响）","ty":"指挥","tx":"防御","c":"orange","sj":"s13","k":"en_wei_bing_xing","wjj":false,"gl":"100%"},{"n":"未雨绸缪","d":"获得1层抵御，且奇谋几率和奇谋伤害提升4%->4.44%（受智力影响，自身每存在1种功能性增益状态，额外提升1%->1.11%，最多可提升8次），持续2回合，然后对敌军随机两人造成70%->77.78%谋略伤害","ty":"主动","tx":"谋略","c":"orange","sj":"s13","k":"wei_yu_chou_mou","wjj":false,"gl":"60%"},{"n":"诱敌深入","d":"嘲讽全体敌军,持续1回合,并获得2.5%→2.7%(受先攻影响)当前兵力的伏兵。伏兵:功能性增益状态，数量上限1500,回合结束时消失,受到伤害时，消耗伏兵抵挡其中50%的伤害,并使伤害来源产生等额逃兵","ty":"主动","tx":"防御","c":"orange","sj":"s12","k":"you_di_shen_ru","wjj":false,"gl":"70%"},{"n":"风助火势","d":"对敌军全体施加风暴和火攻，持续1回合,若目标已持有风暴状态,则额外使其武力降低10→11.1点(受武力影响)持续1回合;若目标已持有火攻状态，则额外使其智力降低10→11.1点(受智力影响),持续1回合","ty":"主动","tx":"文武","c":"orange","sj":"s12","k":"feng_zhu_huo_shi","wjj":false,"gl":"70%"},{"n":"瞋目横矛","d":"战斗开始时,使我军随机单体(优先前排)获得横矛:造成伤害后,有25%→27.7%概率(受横矛持有者武力影响)对目标施加畏惧(每回合每名敌军最多触发1次)持续1回合,若目标已持有畏惧,则兵刃伤害提升1%→1.1%(受横矛持有者武力影响),可叠加","ty":"指挥","tx":"辅助","c":"orange","sj":"s12","k":"chen_mu_heng_mao","wjj":false,"gl":"100%"},{"n":"掠阵破军","d":"提升自身7.5%→8.3%破甲(受规避率影响),每回合结束时，对敌军全体造成25%→27.7%的伤害(伤害类型由武力和智力最高决定，本回合内自身每成功规避一次，额外提升10%系数，最高可提升50%)","ty":"被动","tx":"文武","c":"orange","sj":"s11","k":"lve_zhen_po_jun","wjj":false,"gl":"100%"},{"n":"及锋而试","d":"提升自身10%→11.1%兵刃伤害，持续2回合，然后对敌军随机两人造成80%→88.8%兵刃伤害，目标存在属性降低状态，该次伤害系数额外提升30%","ty":"主动","tx":"兵刃","c":"orange","sj":"s11","k":"ji_feng_er_shi","wjj":false,"gl":"60%"},{"n":"调和阴阳","d":"自身与随机友方单体受到兵刃或谋略伤害前，有35%概率令得目标造成的该类伤害降低1.5%→1.6%，持续2回合可叠加10次，同时恢复其兵力(治疗率12.5%→13.8%，受智力影响)，每回合最多触发3次。我军每存在一名女性武将，该次治疗率额外提升10%","ty":"指挥","tx":"防御","c":"orange","sj":"s11","k":"tiao_he_yin_yang","wjj":false,"gl":"100%"},{"n":"蹈锋饮血","d":"受到伤害后，有27.5%→30.5%概率提升自身2.5→2.7点武力(受武力影响),可叠加15次，持续到战斗结束，并对伤害来源施加畏惧，持续2回合，若目标已持有畏惧效果则额外使其受到伤害提升4%4.4%，可加2次，持续2回合。每回合最多触发4次","ty":"被动","tx":"兵刃","c":"orange","sj":"s10","k":"dao_feng_yin_xue","wjj":false,"gl":"100%"},{"n":"践墨随敌","d":"战斗前3回合，自身受到伤害后，30%→33.3%概率降低伤害来源25→27.7点武力(受智力影响)，25→27.7点智力(受统率影响)，可叠加3次，持续到回合结束","ty":"被动","tx":"防御","c":"orange","sj":"s10","k":"jian_mo_sui_di","wjj":false,"gl":"100%"},{"n":"机变无穷","d":"自带战法造成伤害后,有30%→33.3%概率(受智力影响)提升5%→5.5%谋略伤害，可叠加，持续到回合结束，并对随机敌军造成30%→33.3%谋略伤害。每回合最多触发4次","ty":"被动","tx":"谋略","c":"orange","sj":"s10","k":"ji_bian_wu_qiong","wjj":false,"gl":"100%"},{"n":"潜龙在渊","d":"战斗开始前3回合，自身无法进行普通攻击。第4、6、8回合结束时，分别对敌军全体造成170%->188.8%、190%->211.1%、210%->233.3%的伤害（伤害类型由武力和智力最高决定）","ty":"指挥","tx":"文武","c":"orange","sj":"s9","k":"qian_long_zai_yuan","wjj":false,"gl":"100%"},{"n":"御敌临前","d":"使自身和一名随机队友受到伤害降低10%→11.1%(受先攻影响),持续1回合，若自身为前排，额外恢复自身兵力(治疗率60%→66.6%，受智力和先攻影响","ty":"主动","tx":"防御","c":"orange","sj":"s9","k":"yu_di_lin_qian","wjj":false,"gl":"75%"},{"n":"虎步连环","d":"普通攻击后，对敌军随机两人造成55%→61.1%兵刃伤害并有30%→33.3%概率使目标随机获得1种控制状态，持续1回合，每个目标独立判定","ty":"追击","tx":"兵刃","c":"orange","sj":"s9","k":"hu_bu_lian_huan","wjj":false,"gl":"50%"},{"n":"神略制变","d":"前4回合发动时，恢复我军随机两人兵力(治疗率55%→61.1%，受智力影响)后4回合发动时，对敌军随机两人造成80%→88.8%谋略伤害","ty":"主动","tx":"谋略","c":"orange","sj":"s8","k":"mou_lue_zhi_bian","wjj":false,"gl":"100%"},{"n":"惩前毖后","d":"每个回合开始时，对敌军随机两人造成45%→50%谋略伤害(额外受全队累积治疗量影响)。每个回合结束时，恢复我军前排兵力(治疗率25%→27.7%，受智力影响)","ty":"指挥","tx":"谋略","c":"orange","sj":"s8","k":"cheng_qian_bi_hou","wjj":false,"gl":"100%"},{"n":"万军辟易","d":"普通攻击后，对敌军全体造成70%→77.7%兵刃伤害，偶数回合发动时额外对敌军兵力最低单体造成50%55.5%兵刃伤害，若上个回合没有发动，该次战法伤害提升50%","ty":"追击","tx":"兵刃","c":"orange","sj":"s8","k":"wan_jun_bi_yi","wjj":false,"gl":"35%"},{"n":"谋而后动","d":"普通攻击后,对敌军全体造成20%→22.2%谋略伤害，有50%概率(受智力影响)额外再发动一次谋而后动(无法再次发动)，谋而后动的伤害系数每回合提升6%→6.6%","ty":"追击","tx":"谋略","c":"orange","sj":"s7","k":"mou_er_hou_dong","wjj":false,"gl":"75%"},{"n":"黄天惑心","d":"对敌方全体造成70%→77.7%的谋略伤害，并施加妖术持续2回合，若目标已持有妖术状态则额外使其造成伤害降低8%→8.8%，持续1回合","ty":"主动","tx":"谋略","c":"orange","sj":"s7","k":"huang_tian_huo_xin","wjj":false,"gl":"55%"},{"n":"断戈夺锋","d":"对敌军随机两人造成110%→122.2%兵刃伤害，并有37.5%→41.6%概率施加缴械，持续1回合","ty":"主动","tx":"兵刃","c":"orange","sj":"s7","k":"duan_ge_duo_feng","wjj":false,"gl":"50%"},{"n":"空城计","d":"战斗开始前3回合，敌我全体主动战法发动率降低7%->7.7%（受智力影响）第4回合开始时，我军智力最高单体造成谋略伤害提升8%->8.8%（受智力影响），我军智力最低单体受到谋略伤害降低8%->8.8％（受智力影响）","ty":"指挥","tx":"辅助","c":"orange","sj":"s6","k":"kong_cheng_ji","wjj":false,"gl":"100%"},{"n":"步步为营","d":"每回合开始时，有60%概率使自身及随机友军单体受到的伤害降低12%->13.3%（受统率影响），持续1回合，每回合触发概率提升5%->5.5%，每个武将独立判断","ty":"指挥","tx":"防御","c":"orange","sj":"s6","k":"bu_bu_wei_ying","wjj":false,"gl":"100%"},{"n":"智破千军","d":"普通攻击后，对敌军随机两人造成90%->100%谋略伤害，并有17.5%->19.4%（受智力影响）令该次伤害额外提升20%，每个目标独立判定","ty":"追击","tx":"谋略","c":"orange","sj":"s6","k":"zhi_po_qian_jun","wjj":false,"gl":"50%"},{"n":"挫锐折锋","d":"战斗开始前3回合，敌军武力最高单体造成兵刃伤害降低12.5%-13.8%（受统率影响），敌军智力最高单体造成谋略伤害降低12.5% 13.8%（受统率影响）","ty":"指挥","tx":"辅助","c":"orange","sj":"s5","k":"cuo_rui_zhe_feng","wjj":false,"gl":"100%"},{"n":"运智铺谋","d":"普通攻击后，谋略伤害提升3.5%->3.8%，可叠加5次。造成谋略伤害后，有25%->27.7%概率对敌军随机单体造成1次普通攻击，每个回合最多触发1次","ty":"被动","tx":"辅助","c":"orange","sj":"s5","k":"yun_zhi_fu_mou","wjj":false,"gl":"100%"},{"n":"十面埋伏","d":"对敌军全体造成75%->83.3%兵刃伤害，并有75%概率施加断粮，持续1回合","ty":"主动","tx":"兵刃","c":"orange","sj":"s5","k":"shi_mian_mai_fu","wjj":false,"gl":"45%"},{"n":"折冲御侮","d":"战斗开始前3回合，我军随机两人受到伤害降低12%->13.3%（受智力影响），并在第4回合开始时为我军全体恢复兵力（治疗率180%->200%，受智力影响）","ty":"指挥","tx":"防御","c":"orange","sj":"s4","k":"zhe_chong_yu_hui","wjj":false,"gl":"100%"},{"n":"洗筋伐髓","d":"回合开始时，使自身造成伤害提升5%->5.5%，可叠加3次，持续到战斗结束。\n回合行动时，有55%概率使自身获得以下效果：恢复自身兵力（治疗率100%一111.1%，受最高属性影响）：受到伤害降低10%一11.1%，持续1回合，每个效果独立判断","ty":"被动","tx":"辅助","c":"orange","sj":"s4","k":"xi_jin_fa_sui","wjj":false,"gl":"100%"},{"n":"经天纬地","d":"准备1回合，对敌军全体造成130%->144.4%谋略伤害，并有40%->44.4%概率使目标随机获得1种控制状态，持续2回合","ty":"主动","tx":"谋略","c":"orange","sj":"s4","k":"jing_tian_wei_di","wjj":false,"gl":"45%"},{"n":"文韬武略","d":"普通攻击后，对敌军智力最低单体造成80%->88.8%谋略伤害，对敌军统率最低单体造成80%->88.8%兵刃伤害","ty":"追击","tx":"文武","c":"orange","sj":"s4","k":"wen_tao_wu_lue","wjj":false,"gl":"32%"},{"n":"缮甲厉兵","d":"自身反击率提升25%一27.7%，成功普通攻击后，使自身受到兵刃伤害降低2.5%-2.7%，持续2回合，可叠加4次","ty":"被动","tx":"兵刃","c":"orange","sj":"s3","k":"shan_jia_li_bing","wjj":false,"gl":"100%"},{"n":"同舟共济","d":"每个回合行动时恢复自身和随机一名队友兵力（治疗率45％->50％，受智力和统率影响）","ty":"指挥","tx":"治疗","c":"orange","sj":"s3","k":"tong_zhou_gong_ji","wjj":false,"gl":"100%"},{"n":"金城汤池","d":"回合开始时我军全体有40%-44.4%概率获得1层抵御，每个回合概率降低12％","ty":"指挥","tx":"防御","c":"orange","sj":"s3","k":"jin_cheng_tang_chi","wjj":false,"gl":"100%"},{"n":"明其虚实","d":"夺取敌军随机两人10->11.1点智力、统率（受智力影响），持续2回合，并造成70%->77.7%谋略伤害","ty":"主动","tx":"谋略","c":"orange","sj":"s3","k":"ming_qi_xu_shi","wjj":false,"gl":"45%"},{"n":"烈火张天","d":"对敌军全体施加火攻，持续2回合，并造成45%一50%谋略和兵刃伤害","ty":"主动","tx":"文武","c":"orange","sj":"s3","k":"lie_huo_zhang_tian","wjj":false,"gl":"50%"},{"n":"冲锐巧变","d":"对敌军随机单体造成180%-360%兵刃伤害，并使自身下一次释放的准备战法跳过一定回合准备。","ty":"主动","tx":"兵刃","c":"orange","sj":"s3","k":"chong_rui_qiao_bian","wjj":false,"gl":"22%"},{"n":"摧坚克难","d":"提升自身20%会心几率，每个回合行动结束时对敌军随机两人造成55％兵刃伤害","ty":"被动","tx":"兵刃","c":"orange","sj":"s2","k":"cui_jian_ke_nan","wjj":false,"gl":"100%"},{"n":"胜敌益强","d":"造成兵刃伤害后提升自身8点武力，可叠加8次，造成谋略伤害后提升自身8点智力，可叠加8次","ty":"被动","tx":"文武","c":"orange","sj":"s2","k":"sheng_di_yi_sao","wjj":false,"gl":"100%"},{"n":"知人善任","d":"使我军智力最高单体受到伤害降低12.5%(受智力影响），持续2回合，并获得1层抵御","ty":"主动","tx":"防御","c":"orange","sj":"s2","k":"zhi_ren_shan_ren","wjj":false,"gl":"75%"},{"n":"三军夺气","d":"普通攻击后，使攻击目标武力、智力、统率降低15点，持续2回合，最多可叠加5次","ty":"追击","tx":"辅助","c":"orange","sj":"s2","k":"san_jun_qi_qi","wjj":false,"gl":"55%"},{"n":"乘间投隙","d":"普通攻击后，对敌军随机单体施加混乱，持续1回合，并造成60%谋略伤害,若目标已处于混乱状态，则对其友军随机单体造成50%谋略伤害","ty":"追击","tx":"谋略","c":"orange","sj":"s2","k":"cheng_jian_tou_xi","wjj":false,"gl":"60%"},{"n":"韬光养晦","d":"自带主动战法发动率提升3%(受智力影响），每个回合开始时使自身造成谋略伤害提升4%，可叠加，持续到战斗结束","ty":"被动","tx":"谋略","c":"orange","sj":"s2","k":"tao_guang_yang_hui","wjj":false,"gl":"100%"},{"n":"奇正相生","d":"第2回合起，回合开始时，有65%概率恢复我军随机两人兵力(治疗率为75%，受智力影响），回合结束时，有65%概率对敌军随机两人造成75%谋略伤害","ty":"指挥","tx":"治疗","c":"orange","sj":"s2","k":"qi_zheng_xiang_sheng","wjj":false,"gl":"100%"},{"n":"固若金汤","d":"自身统率提升7.5%，第2回合起，每个回合开始时有30%概率(受统率影响）嘲讽敌军随机两人，持续2回合","ty":"指挥","tx":"防御","c":"orange","sj":"s2","k":"gu_ruo_jin_tang","wjj":false,"gl":"100%"},{"n":"任人唯贤","d":"提升我军随机两人7.5%造成伤害,12.5点统率，持续2回合","ty":"主动","tx":"辅助","c":"purple","sj":"s2","k":"ren_ren_wei_xian","wjj":false,"gl":"60%"},{"n":"穷追不舍","d":"每个回合行动时有60%概率对持有异常状态的敌军造成60%兵刃伤害，每个目标独立判定","ty":"被动","tx":"兵刃","c":"purple","sj":"s2","k":"qiong_zhui_bu_she","wjj":false,"gl":"100%"},{"n":"清风驱疾","d":"驱散我军随机两人1种负面状态，并恢复其兵力(治疗率90%，受智力影","ty":"主动","tx":"治疗","c":"orange","sj":"s1","k":"qing_feng_qu_ji","wjj":false,"gl":"60%"},{"n":"文武双全","d":"对敌军武力最高单体造成110%谋略伤害，对敌军智力最高单体造成110%兵刃伤害","ty":"主动","tx":"文武","c":"orange","sj":"s1","k":"wen_wu_shuang_quan","wjj":false,"gl":"65%"},{"n":"万夫莫当","d":"普通攻击后，有60%概率对攻击目标的两名队友造成该次普通攻击50％的传递伤害，若自身武力高于目标，则额外造成15%兵刃伤害","ty":"被动","tx":"兵刃","c":"orange","sj":"s1","k":"wan_fu_mo_dang","wjj":false,"gl":"100%"},{"n":"伏兵四起","d":"对敌军随机单体造成50%至70%兵刃伤害，施放4次","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"fu_bing_si_qi","wjj":false,"gl":"50%"},{"n":"断敌粮道","d":"回合开始时，对敌军单体施加断粮，持续2回合。回合结束时，对持有断粮状态的敌军造成55%谋略伤害","ty":"指挥","tx":"谋略","c":"orange","sj":"s1","k":"duan_di_liang_dao","wjj":false,"gl":"100%"},{"n":"料事如神","d":"对敌军随机两人造成90%谋略伤害，并有50%概率施加技穷，持续1回合","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"liao_shi_ru_shen","wjj":false,"gl":"45%"},{"n":"洞若观火","d":"恢复我军随机单体兵力(治疗率130%，受智力影响），并使其获得清醒，持续2回合","ty":"主动","tx":"治疗","c":"orange","sj":"s1","k":"dong_ruo_guan_huo","wjj":false,"gl":"50%"},{"n":"破阵驰围","d":"准备1回合，使敌军随机单体受到伤害提升15%，持续2回合。然后对其造成220%兵刃伤害","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"po_zhen_chi_wei","wjj":false,"gl":"60%"},{"n":"运筹帷幄","d":"降低敌军随机两人15武力，智力，统率，先攻(受智力影响），持续2回合","ty":"主动","tx":"辅助","c":"orange","sj":"s1","k":"yun_chou_wei_wo","wjj":false,"gl":"45%"},{"n":"铁骑横冲","d":"普通攻击后，提升自身10%会心几率，持续2回合，然后对当前目标造成200%兵刃伤害。无论是否发动，该伤害系数每回合降低25%","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"tie_qi_heng_chong","wjj":false,"gl":"40%"},{"n":"横扫千军","d":"普通攻击后，对敌军全体造成60%兵刃伤害，成功释放后下一次横扫千军伤害系数提升12%，可叠加5次，持续到战斗结束","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"heng_sao_qian_jun","wjj":false,"gl":"45%"},{"n":"舍生取义","d":"战斗开始前2回合，我军全体连击率提升15%，我军武力最高单体获得清醒，自身获得震慑，持续2回合","ty":"指挥","tx":"辅助","c":"orange","sj":"s1","k":"she_sheng_qu_yi","wjj":false,"gl":"100%"},{"n":"指点乾坤","d":"令我军武力最高单体对敌军全体造成40%兵刃伤害，令我军智力最高单体对敌军全体造成40%谋略伤害","ty":"主动","tx":"文武","c":"orange","sj":"s1","k":"zhi_dian_qian_kun","wjj":false,"gl":"50%"},{"n":"水淹七军","d":"准备1回合，对敌军全体施加洪水，持续2回合，并造成130%兵刃伤害，并施加技穷或缴械中的一种，持续1回合","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"shui_yan_qi_jun","wjj":false,"gl":"40%"},{"n":"出其不意","d":"对敌军随机单体造成175%谋略伤害，若目标持有负面状态该次伤害值提升25%","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"chu_qi_bu_yi","wjj":false,"gl":"55%"},{"n":"奇门遁甲","d":"准备1回合，对敌军全体造成125%谋略伤害，并有12.5%概率施加震慑，持续1回合，目标每多一种异常状态，谋略伤害系数提升25%，震慑概率提升8%，可提升5次","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"qi_men_dun_jia","wjj":false,"gl":"40%"},{"n":"五雷轰顶","d":"准备1回合，对敌军随机单体造成80%谋略伤害，施放5次，每次命中持有洪水状态的目标时，额外对其造成20%谋略伤害","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"wu_lei_hong_ding","wjj":false,"gl":"50%"},{"n":"任人择势","d":"第3回合起，两名队友每回合有40%概率使下一次伤害必定触发会心和奇谋，且该次会心和奇谋伤害提升20%","ty":"指挥","tx":"辅助","c":"orange","sj":"s1","k":"ren_ren_ze_shi","wjj":false,"gl":"100%"},{"n":"坚如磐石","d":"嘲讽全体敌军，并使自身受到伤害降低15%，持续2回合","ty":"主动","tx":"防御","c":"orange","sj":"s1","k":"jian_ru_pan_shi","wjj":false,"gl":"55%"},{"n":"无难之志","d":"提升两名队友22.5%连击率和20%倒戈，持续2回合","ty":"主动","tx":"辅助","c":"orange","sj":"s1","k":"wu_nan_zhi_zhi","wjj":false,"gl":"38.5%"},{"n":"斩将夺旗","d":"对统率最低的敌军单体造成110%兵刃伤害，并施加断粮，持续2回合，若目标已持有断粮状态,则额外造成40%兵刃伤害","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"zhan_jiang_duo_qi","wjj":false,"gl":"55%"},{"n":"势如破竹","d":"提升自身20%会心几率，持续2回合，然后对敌军全体造成70%兵刃伤害","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"shi_ru_po_zhu","wjj":false,"gl":"27.5%"},{"n":"上智为间","d":"使敌军随机单体混乱，持续1回合，并造成150%谋略伤害","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"shang_zhi_wei_jian","wjj":false,"gl":"45%"},{"n":"锐不可当","d":"提升自身8%破甲和17.5%造成伤害","ty":"被动","tx":"辅助","c":"orange","sj":"s1","k":"rui_bu_ke_dang","wjj":false,"gl":"100%"},{"n":"烈火焚营","d":"对敌军全体造成40%谋略伤害，并施加火攻状态，持续2回合。再进行3次焚营：对敌军随机单体造成40%谋略伤害。若目标处于风暴状态,焚营的伤害值提升30%","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"lie_huo_fen_ying","wjj":false,"gl":"45%"},{"n":"风卷残云","d":"对敌军随机两人造成90%兵刃伤害，若目标处于风暴状态，则该次伤害提升25%。若自身处于风暴状态，则自身规避率提升5%，持续2回合","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"feng_juan_can_yun","wjj":false,"gl":"60%"},{"n":"威名显赫","d":"提升自身30%倒戈，持续2回合。然后对敌军随机两人造成110%兵刃伤害","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"wei_ming_xian_he","wjj":false,"gl":"27.5%"},{"n":"忘私相助","d":"自身受到伤害前，有50%概率恢复两名队友兵力(治疗率25%，受智力和统率影响）","ty":"被动","tx":"治疗","c":"orange","sj":"s1","k":"wang_si_xiang_zhu","wjj":false,"gl":"100%"},{"n":"青囊急救","d":"驱散我军兵力最低单体3种负面状态，并恢复其兵力(治疗率130%，受智力影响）","ty":"主动","tx":"治疗","c":"orange","sj":"s1","k":"qing_nang_ji_jiu","wjj":false,"gl":"55%"},{"n":"巧利天灾","d":"对除自身外的敌我全体目标造成70%谋略伤害 若为敌军目标且处于火攻状态，则有35%概率施加混乱，持续1回合若 为敌军目标且处于洪水状态，则有35%概率施加缴械，持续1回合 若为敌军目标且处于风暴状态，则有35%概率施加技穷，持续1回合","ty":"主动","tx":"谋略","c":"orange","sj":"s1","k":"qiao_li_tian_zai","wjj":false,"gl":"50%"},{"n":"狂风大作","d":"第2和第4回合开始时，敌我全体会陷入风暴状态，持续2回合。奇数回合开始时，有60%概率对敌军全体造成50%谋略伤害。偶数回合开始时，有60%概率对敌军随机单体造成140%谋略伤害","ty":"指挥","tx":"谋略","c":"orange","sj":"s1","k":"kuang_feng_da_zuo","wjj":false,"gl":"100%"},{"n":"战八方","d":"对敌军全体造成65%兵刃伤害，并施加畏惧，持续2回合","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"zhan_ba_fang","wjj":false,"gl":"55%"},{"n":"趁火打劫","d":"准备1回合，对敌军随机两人造成110%谋略和兵刃伤害，若目标处于火攻状态，则额外施加混乱状态，持续2回合","ty":"主动","tx":"文武","c":"orange","sj":"s1","k":"chen_huo_da_jie","wjj":false,"gl":"50%"},{"n":"披坚执锐","d":"战斗开始时，使我军随机单体(优先前排)获得披坚：行动前恢复自身兵力(治疗率40%，受目标智力统率影响)，受到兵刃伤害降低10%使我军武力最高单体获得执锐：普通攻击后，有50%概率对敌军随机单体造成1次50%兵刃伤害","ty":"指挥","tx":"辅助","c":"orange","sj":"s1","k":"pi_jian_zhi_rui","wjj":false,"gl":"100%"},{"n":"以静制动","d":"奇数回合，自身无法进行普通攻击，受到兵刃伤害，普通攻击伤害，追击战法伤害减少15% 偶数回合，自身无法发动主动战法，受到谋略伤害，主动战法伤害减少15%","ty":"被动","tx":"防御","c":"orange","sj":"s1","k":"yi_jing_zhi_dong","wjj":false,"gl":"100%"},{"n":"攻其不备","d":"普通攻击后，对攻击目标造成140%兵刃伤害，并施加技穷，持续1回合。若目标已处于技穷状态则有50%概率施加震慑，持续1回合","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"gong_qi_bu_bei","wjj":false,"gl":"40%"},{"n":"计袭粮仓","d":"普通攻击后，对攻击目标造成150%谋略伤害，并施加断粮，持续2回合，若目标已持有断粮状态则额外对其造成50%谋略伤害","ty":"追击","tx":"谋略","c":"orange","sj":"s1","k":"ji_xi_liang_cang","wjj":false,"gl":"45%"},{"n":"千里突袭","d":"普通攻击后，对先攻最低的敌军单体造成140%（额外受双方先攻差值影响)兵刃伤害，若目标为后排额外造成50%兵刃伤害","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"qian_li_tu_xi","wjj":false,"gl":"40%"},{"n":"辕门射戟","d":"普通攻击后，对敌军随机单体造成100%兵刃伤害。若自身为后排，则有75%概率提升自身5%主动战法发动率，持续2回合，可叠加3次","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"yuan_men_she_ji","wjj":false,"gl":"70%"},{"n":"轻装驰援","d":"普通攻击后，对我军随机两人施加1层抵御，并使其受到伤害降低10%，持续2回合","ty":"追击","tx":"防御","c":"orange","sj":"s1","k":"qing_zhuang_chi_yuan","wjj":false,"gl":"27.5%"},{"n":"破军袭敌","d":"准备1回合，对敌军全体造成150%兵刃伤害","ty":"主动","tx":"兵刃","c":"orange","sj":"s1","k":"po_jun_xi_di","wjj":false,"gl":"50%"},{"n":"乘虚而入","d":"普通攻击后，对敌军随机单体造成140%兵刃伤害，若目标持有虚弱状态,则该次伤害值提升30%，若未持有虛弱状态，则有65%概率施加虛弱，持续1回合","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"cheng_xu_er_ru","wjj":false,"gl":"40%"},{"n":"兵贵神速","d":"普通攻击后，提升自身15点先攻，持续2回合，并对敌军随机两人造成90%兵刃伤害(额外受先攻影响）","ty":"追击","tx":"兵刃","c":"orange","sj":"s1","k":"bing_gui_shen_su","wjj":false,"gl":"40%"},{"n":"横征暴敛","d":"战斗中，施加负面效果后恢复自身兵力(治疗率20%，受智力和统率影响），并使自身受到伤害降低5%，持续2回合，可叠加4次","ty":"被动","tx":"防御","c":"orange","sj":"s1","k":"heng_cheng_bao_lian","wjj":false,"gl":"100%"},{"n":"勇冠三军","d":"自身倒戈提升15%，普通攻击之后，使自身造成兵刃伤害提升3%，可叠加6次，累积进行3次普通攻击之后，对敌军随机单体造成100%兵刃伤害","ty":"被动","tx":"兵刃","c":"orange","sj":"s1","k":"yong_guan_san_jun","wjj":false,"gl":"100%"},{"n":"百战不殆","d":"我军统率/智力/武力最高单体受到伤害时，有60%概率对应提升3.5点统率/智力/武力，可叠加8次，持续到战斗结束，可对同一目标生效","ty":"指挥","tx":"辅助","c":"orange","sj":"s1","k":"bai_zhan_bu_dai","wjj":false,"gl":"100%"},{"n":"王佐之才","d":"自身奇谋提升10%(受智力影响)，造成谋略伤害后有50%概率提升自身5点智力，持续2回合，可叠加4次","ty":"被动","tx":"辅助","c":"orange","sj":"s1","k":"wang_zuo_zhi_cai","wjj":false,"gl":"100%"},{"n":"蓄势待发","d":"每回合开始时提升两名队友3.5%造成伤害，可叠加，持续到战斗结束","ty":"指挥","tx":"辅助","c":"orange","sj":"s1","k":"xu_shi_dai_fa","wjj":false,"gl":"100%"},{"n":"临阵突袭","d":"普通攻击后，降低目标15点统率，持续2回合，然后对其造成125%兵刃伤害","ty":"追击","tx":"兵刃","c":"purple","sj":"s1","k":"lin_zhen_tu_xi","wjj":false,"gl":"40%"},{"n":"疾行侧击","d":"对敌军随机单体造成75%兵刃伤害，并施加畏惧，持续2回合，施放2次","ty":"主动","tx":"兵刃","c":"purple","sj":"s1","k":"ji_xing_ce_ji","wjj":false,"gl":"60%"},{"n":"决水破敌","d":"对敌军随机两人造成50%谋略伤害，若目标处于洪水状态。则额外造成30%谋略伤害，否则施加洪水，持续2回合","ty":"主动","tx":"谋略","c":"purple","sj":"s1","k":"jue_shui_po_di","wjj":false,"gl":"60%"},{"n":"束手无策","d":"对敌军随机单体造成100%谋略伤害，并施加技穷，持续1回合","ty":"主动","tx":"谋略","c":"purple","sj":"s1","k":"shu_shou_wu_ce","wjj":false,"gl":"45%"},{"n":"坚壁清野","d":"嘲讽敌军全体，并提升自身18点统率，持续2回合","ty":"主动","tx":"防御","c":"purple","sj":"s1","k":"jian_bi_qing_ye","wjj":false,"gl":"50%"},{"n":"计逐穷寇","d":"造成谋略伤害后，有30%概率对敌军随机单体造成1次普通攻击，每回合最多触发1次","ty":"被动","tx":"谋略","c":"purple","sj":"s1","k":"ji_zhu_qiong_kou","wjj":false,"gl":"100%"},{"n":"避其锐气","d":"战斗开始前4回合，自身及随机友军单体受到伤害减少13%","ty":"指挥","tx":"防御","c":"purple","sj":"s1","k":"bi_qi_rui_qi","wjj":false,"gl":"100%"},{"n":"铸甲销戈","d":"战斗开始前3回合，我军全体在回合开始时有32.5%概率获得1层抵御","ty":"指挥","tx":"防御","c":"purple","sj":"s1","k":"zhu_jia_xiao_ge","wjj":false,"gl":"100%"},{"n":"乱敌方阵","d":"普通攻击后，对攻击目标造成110%兵刃伤害。并施加混乱，持续1回合","ty":"追击","tx":"兵刃","c":"purple","sj":"s1","k":"luan_di_fang_zhen","wjj":false,"gl":"35%"},{"n":"咏歌尝酒","d":"恢复我军随机两人兵力(治疗率65%，受智力影响），并提升其8点统率，持续2回合","ty":"主动","tx":"治疗","c":"purple","sj":"s1","k":"yong_ge_chang_jiu","wjj":false,"gl":"65%"},{"n":"克敌如风","d":"对敌军随机单体造成120%兵刃伤害(优先选择后排），并施加风暴,持续2回合。若目标已处于风暴状态则额外降低其12.5点先攻，持续2回合","ty":"主动","tx":"兵刃","c":"purple","sj":"s1","k":"ke_di_ru_feng","wjj":false,"gl":"50%"},{"n":"奇计迭出","d":"普通攻击后，对敌军随机单体造成125%谋略伤害，优先选择敌军后排","ty":"追击","tx":"谋略","c":"purple","sj":"s1","k":"qi_ji_die_chu","wjj":false,"gl":"40%"},{"n":"来好息师","d":"每回合结束时，恢复我军前排全体兵力(治疗率45%，受智力影响）","ty":"被动","tx":"治疗","c":"purple","sj":"s1","k":"lai_hao_xi_shi","wjj":false,"gl":"100%"},{"n":"谈笑诛心","d":"敌军被施加负面状态时，有60%概率对敌军随机单体造成55%谋略伤害，每回合最多触发2次","ty":"被动","tx":"谋略","c":"purple","sj":"s1","k":"tan_xiao_zhu_xin","wjj":false,"gl":"100%"},{"n":"火羽","d":"对敌军全体造成75%兵刃伤害，并施加火攻，持续2回合","ty":"主动","tx":"兵刃","c":"purple","sj":"s1","k":"huo_yu","wjj":false,"gl":"40%"},{"n":"以战养战","d":"武力提升10点，普通攻击后，恢复自身兵力(治疗率55%，受智力和武力影响）","ty":"被动","tx":"治疗","c":"purple","sj":"s1","k":"yi_zhan_yang_zhan","wjj":false,"gl":"100%"},{"n":"上兵伐谋","d":"回合开始时，对敌军随机单体造成60%谋略伤害，上兵伐谋伤害会随着回合数增加，每回合提升伤害10%","ty":"指挥","tx":"谋略","c":"purple","sj":"s1","k":"shang_bing_fa_mou","wjj":false,"gl":"100%"},{"n":"迎敌","d":"准备1回合，提升自身10%破甲，持续2回合，然后对敌军单体造成220％兵刃伤害，优先选择前排目标","ty":"主动","tx":"兵刃","c":"purple","sj":"s1","k":"ying_di","wjj":false,"gl":"50%"},{"n":"夜袭","d":"普通攻击后，对敌军随机两人造成60%兵刃伤害，若自身先攻大于目标则额外造成25%兵刃伤害","ty":"追击","tx":"兵刃","c":"purple","sj":"s1","k":"ye_gun","wjj":false,"gl":"45%"},{"n":"揭竿而起","d":"对敌军随机两人造成75%兵刃伤害，并对目标施加断粮，持续1回合","ty":"主动","tx":"兵刃","c":"purple","sj":"s1","k":"jie_gan_er_qi","wjj":false,"gl":"45%"},{"n":"文治武功","d":"每个回合行动时有60%概率对敌军随机两人造成50%兵刃和谋略伤害","ty":"指挥","tx":"文武","c":"purple","sj":"s1","k":"wen_qia_wu_gong","wjj":false,"gl":"100%"},{"n":"骁勇之姿","d":"自身连击率提升30%，造成伤害提升5%","ty":"被动","tx":"辅助","c":"purple","sj":"s1","k":"xiao_yong_zhi_zi","wjj":false,"gl":"100%"},{"n":"筹划良策","d":"提升自身10点智力，持续2回合，对敌军随机两人造成80%谋略伤害","ty":"主动","tx":"谋略","c":"purple","sj":"s1","k":"deng_hua_liang_ce","wjj":false,"gl":"50%"},{"n":"屈人之兵","d":"对敌军随机两人施加缴械，持续1回合，若目标已持有缴械，则使其造成伤害降低7.5%，持续2回合","ty":"主动","tx":"防御","c":"purple","sj":"s1","k":"qu_ren_zhi_bing","wjj":false,"gl":"22%"},{"n":"如沐春风","d":"每个回合行动时恢复自身兵力(治疗率70%，受智力和统率影响）","ty":"被动","tx":"治疗","c":"purple","sj":"s1","k":"ru_mu_chun_feng","wjj":false,"gl":"100%"},{"n":"强袭","d":"普通攻击后，对敌军随机单体造成该次普通攻击40%的传递伤害","ty":"被动","tx":"兵刃","c":"purple","sj":"s1","k":"qiang_xi","wjj":false,"gl":"100%"},{"n":"如有神助","d":"主动战法发动率提升4%，主动战法伤害提升7.5%","ty":"被动","tx":"辅助","c":"purple","sj":"s1","k":"ru_you_shen_zhu","wjj":false,"gl":"100%"},{"n":"一计决胜","d":"准备1回合，对敌军随机两人造成110%谋略伤害，并施加虛弱状态,持续2回合，若目标已持有虛弱状态，则额外造成25%谋略伤害","ty":"主动","tx":"谋略","c":"purple","sj":"s1","k":"yi_ji_jue_sheng","wjj":false,"gl":"35%"},{"n":"临危勇烈","d":"自身反击率提升20%，受到普通攻击伤害降低10%","ty":"被动","tx":"兵刃","c":"purple","sj":"s1","k":"lin_wei_yong_lie","wjj":false,"gl":"100%"}];
 function expandWj(w){return{name:w.n,faction:w.f,skill:w.s,type:w.b,stats:{wl:+w.wl,zl:+w.zl,ts:+w.ts,xg:+w.xg},tags:w.t||[],color:w.c,season:w.sj,key:w.k,bonds:(w.jb||[]).map(j=>({name:j.n,member:j.m,desc:j.d})),suggest_skills:w.ss||[]};}
 function expandZf(z){return{name:z.n,desc:z.d,type:z.ty,trait:z.tx,color:z.c,season:z.sj,key:z.k,isHeroSkill:z.wjj,rate:z.gl};}
-const ALL_HEROES=WJ_DATA.map(expandWj);
-const ALL_TACTICS=ZF_DATA.map(expandZf);
-const HERO_MAP={};ALL_HEROES.forEach(h=>HERO_MAP[h.name]=h);
-const TACTIC_MAP={};ALL_TACTICS.forEach(t=>TACTIC_MAP[t.name]=t);
-
-// ========== OCR STATUS ==========
-// (updateOcrStatus 由 data-system.js 定义，此处不重复)
+var ALL_HEROES=WJ_DATA.map(expandWj);
+var ALL_TACTICS=ZF_DATA.map(expandZf);
+var HERO_MAP={};ALL_HEROES.forEach(h=>HERO_MAP[h.name]=h);
+var TACTIC_MAP={};ALL_TACTICS.forEach(t=>TACTIC_MAP[t.name]=t);
 
 // ========== 自定义确认对话框 ==========
 window.confirmDialog = function(options){
@@ -763,9 +731,6 @@ window.confirmDialog = function(options){
   });
 }
 
-// ========== TAB SWITCHING ==========
-// (switchTab / switchLibSub 由 index.html 后续脚本定义，此处不重复)
-
 // ========== GLOBAL STATS ==========
 // (updateGlobalStats / getTeamKey 等由 data-system.js 定义，此处不重复)
 function getTacticsDisplay(generals,tactics){if(!generals||generals.length===0)return'-';let html='<div style="display:flex;flex-direction:column;gap:3px;">';for(let i=0;i<Math.min(3,generals.length);i++){const base=i*3;const fm=tactics?.[base]||'';const t1=tactics?.[base+1]||'';const t2=tactics?.[base+2]||'';const parts=[fm,t1,t2].filter(t=>t&&t!=='未知');html+=`<div style="display:flex;align-items:baseline;gap:4px;white-space:nowrap;"><span style="color:var(--blue);font-weight:bold;font-size:11px;min-width:40px;">${escHtml(generals[i])}</span><span style="color:var(--text2);font-size:10px;">${parts.length?parts.map(t=>escHtml(t)).join(' / '):'-'}</span></div>`;}html+='</div>';return html;}
@@ -813,7 +778,7 @@ function renderEnemyFreq(){
     const key=getTeamKey(r.rightGenerals);
     if(!key||key==='未知')return;
     if(search&&!key.toLowerCase().includes(search))return;
-    if(!map.has(key))map.set(key,{generals:r.rightGenerals,tactics:r.rightTactics,count:0,wins:0,losses:0,draws:0,recordIds:[]});
+    if(!map.has(key))map.set(key,{generals:r.rightGenerals,tactics:r.rightTactics,formation:r.rightFormation||'',count:0,wins:0,losses:0,draws:0,recordIds:[]});
     const d=map.get(key);
     d.count++;
     d.recordIds.push(r.id);
@@ -823,7 +788,7 @@ function renderEnemyFreq(){
     else d.draws++;
     // 如果该record的generals比已存的更完整，更新一下
     if((r.rightGenerals||[]).filter(g=>g).length>(d.generals||[]).filter(g=>g).length){
-      d.generals=r.rightGenerals;d.tactics=r.rightTactics;
+      d.generals=r.rightGenerals;d.tactics=r.rightTactics;d.formation=r.rightFormation||'';
     }
   });
   const totalRecords=allRecords.length||1;
@@ -843,8 +808,8 @@ function renderEnemyFreq(){
     const wrColor=wr>=60?'var(--green)':wr>=40?'var(--accent)':'var(--red)';
     return `<tr>
       <td style="text-align:center;font-weight:bold;color:${i<3?'var(--accent)':'var(--text2)'};">${i+1}</td>
-      <td style="white-space:nowrap;font-weight:bold;font-size:12px;">${getTeamDisplay(d.generals)}</td>
-      <td style="font-size:11px;line-height:1.6;">${getTacticsDisplay(d.generals,d.tactics)}</td>
+      <td style="min-width:240px;vertical-align:middle;">${typeof verticalTeamRowHtml==='function'?verticalTeamRowHtml(d.generals,d.tactics):(getTeamDisplay(d.generals)+'<br>'+getTacticsDisplay(d.generals,d.tactics))}</td>
+      <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.formation||'-'}</td>
       <td style="text-align:center;font-weight:bold;font-size:14px;color:var(--blue);">${d.count}</td>
       <td>
         <div style="display:flex;align-items:center;gap:6px;">
@@ -1007,7 +972,7 @@ function renderCounterPick(dominantPairs,dominatedPairs){
   });
   container.innerHTML=html;
 }
-function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch').value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});if(typeof addSysLog==='function')addSysLog('operation','导出克制关系CSV: '+data.length+' 条');downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
+function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch')?.value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});if(typeof addSysLog==='function')addSysLog('operation','导出克制关系CSV: '+data.length+' 条');downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
 
 // ========== DOUBAO API ==========
 // OCR 请求地址：优先使用云端 API，fallback 到本地 /api/ocr
@@ -1046,8 +1011,6 @@ function onPeijiangChange(){const names=[document.getElementById('pjG1').value,d
 // ========== TAB 7: YANWU ==========
 function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,document.getElementById('ywM2').value,document.getElementById('ywM3').value].filter(n=>n);const enNames=[document.getElementById('ywE1').value,document.getElementById('ywE2').value,document.getElementById('ywE3').value].filter(n=>n);const myHeroes=myNames.map(n=>HERO_MAP[n]).filter(Boolean);const enHeroes=enNames.map(n=>HERO_MAP[n]).filter(Boolean);const result=document.getElementById('ywResult');if(myHeroes.length===0){result.innerHTML='';return;}let html=`<div style="padding:14px;background:rgba(240,180,41,.06);border:1px solid var(--border);border-radius:10px;">`;html+=`<h4 style="color:var(--accent);margin-bottom:10px;">我方队伍分析</h4>`;html+=`<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">`;myHeroes.forEach(h=>{html+=`<div style="padding:8px 12px;background:var(--bg);border-radius:7px;border:1px solid var(--border);"><div style="color:var(--blue);font-weight:bold;">${escHtml(h.name)} <span style="font-size:10px;color:var(--text3);">(${h.faction}·${h.type})</span></div><div style="font-size:10px;color:var(--accent);margin-top:3px;">自带: ${escHtml(h.skill)}</div><div style="font-size:10px;color:var(--text2);">武${h.stats.wl} 智${h.stats.zl} 统${h.stats.ts} 先${h.stats.xg}</div></div>`;});html+=`</div>`;const myTags=new Set(myHeroes.flatMap(h=>h.tags));const myFactions=new Set(myHeroes.map(h=>h.faction));html+=`<div style="font-size:12px;color:var(--text2);">`;html+=`<div>标签覆盖: ${[...myTags].slice(0,5).map(t=>`<span class="tag tag-type">${escHtml(t)}</span>`).join(' ')||'无'}</div>`;html+=`<div>阵营: ${[...myFactions].join(', ')}</div>`;const myBonds=[];const myNameSet=new Set(myNames);ALL_HEROES.forEach(h=>{(h.bonds||[]).forEach(b=>{if(b.member&&b.member.length>0&&b.member.every(m=>myNameSet.has(m))){const k=b.name;if(!myBonds.find(x=>x.name===k))myBonds.push(b);}});});if(myBonds.length>0)html+=`<div style="margin-top:6px;">缘分: ${myBonds.map(b=>`<span class="tag tag-trait">🔗${escHtml(b.name)}</span>`).join(' ')}</div>`;html+=`</div>`;if(enHeroes.length>0){html+=`<h4 style="color:var(--red);margin:12px 0 10px;">敌方分析</h4>`;html+=`<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">`;enHeroes.forEach(h=>{html+=`<div style="padding:8px 12px;background:var(--bg);border-radius:7px;border:1px solid rgba(255,107,107,.15);"><div style="color:var(--red);font-weight:bold;">${escHtml(h.name)} <span style="font-size:10px;color:var(--text3);">(${h.faction}·${h.type})</span></div><div style="font-size:10px;color:var(--accent);margin-top:3px;">自带: ${escHtml(h.skill)}</div></div>`;});html+=`</div>`;const myMaxWl=Math.max(...myHeroes.map(h=>h.stats.wl));const enMaxWl=Math.max(...enHeroes.map(h=>h.stats.wl));const myMaxZl=Math.max(...myHeroes.map(h=>h.stats.zl));const enMaxZl=Math.max(...enHeroes.map(h=>h.stats.zl));html+=`<div style="font-size:11px;color:var(--text2);margin-top:6px;">`;html+=`武力对比: 我方最高 ${myMaxWl} vs 敌方最高 ${enMaxWl} ${myMaxWl>=enMaxWl?'✅':'⚠️'}<br>`;html+=`智力对比: 我方最高 ${myMaxZl} vs 敌方最高 ${enMaxZl} ${myMaxZl>=enMaxZl?'✅':'⚠️'}`;html+=`</div>`;}html+=`</div>`;result.innerHTML=html;}
 
-// ========== INIT（已迁移到 dataInit，由 appInit 统一调用） ==========
-// 此函数仅作兼容保留，不再自动执行
 </script>
 
 <!-- 登录弹窗 -->
@@ -1388,7 +1351,6 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
       <div style="font-size:12px;color:var(--text3);text-align:center;">点击下方按钮将跳转至微信支付</div>
       <input type="hidden" id="rechargePkgId">
       <input type="hidden" id="rechargePkgPoints">
-      <input type="hidden" id="rechargePkgPriceHidden">
       <button class="btn btn-primary" onclick="startRecharge()" style="padding:12px;font-size:14px;">微信支付 · 立即充值</button>
       <button class="btn btn-secondary" onclick="closeRechargeModal()" style="padding:10px;font-size:13px;">取消</button>
     </div>
@@ -1403,7 +1365,6 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
         <img id="qrCodeImg" style="width:180px;height:180px;display:block;" alt="微信支付二维码">
       </div>
       <div style="font-size:12px;color:var(--text2);text-align:center;">请使用微信扫码支付<br>支付完成后点击下方"已完成支付"按钮</div>
-      <div style="font-size:11px;color:var(--text3);" id="orderId"></div>
       <button class="btn btn-primary" onclick="confirmPayment()" style="padding:12px;font-size:14px;width:100%;">✅ 已完成支付</button>
       <button class="btn btn-secondary" onclick="closeRechargeModal()" style="padding:10px;font-size:13px;">取消</button>
     </div>
@@ -1420,37 +1381,12 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
     </div>
   </div>
 </div>
-
-<!-- ========== 截图工具弹窗 ========== -->
-<div id="toolModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:10001;justify-content:center;align-items:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:90%;max-width:420px;overflow:hidden;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);">
-      <h3 style="margin:0;color:var(--accent);font-size:16px;">🖥️ 截图工具 · 包月</h3>
-      <button onclick="closeToolModal()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="padding:24px;display:flex;flex-direction:column;gap:16px;align-items:center;text-align:center;">
-      <div style="font-size:32px;">🔧</div>
-      <div style="font-size:18px;font-weight:bold;color:var(--text);">截图工具包月套餐</div>
-      <div style="font-size:28px;font-weight:bold;color:#ff5252;">¥18 <span style="font-size:14px;color:var(--text3);font-weight:normal;">/月</span></div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.8;">
-        ✅ 电脑端截图工具永久下载<br>
-        ✅ 多显示器支持 + 截图反馈<br>
-        ✅ 批量处理战报截图
-      </div>
-      <div style="font-size:12px;color:var(--accent);background:rgba(240,180,41,.1);border:1px solid rgba(240,180,41,.2);border-radius:8px;padding:10px 16px;width:100%;">
-        ⚠️ 购买后请联系管理员获取 <b>序列号</b><br>序列号用于激活截图工具权限
-      </div>
-      <button class="btn btn-secondary" onclick="closeToolModal()" style="width:100%;padding:10px;font-size:13px;">暂不需要</button>
-    </div>
-  </div>
-</div>
-
   <script src="cloud-sync.js?v=202605112300"></script>
   <script src="data-system.js?v=202605110006"></script>
   <script src="data_heroes.js?v=202605081430"></script>
   <script src="data_tactics.js?v=202605081430"></script>
-  <script src="counter-analysis.js?v=202605120002"></script>
-  <script src="counter-analysis-enhanced.js?v=202605130009"></script>
+  <script src="counter-analysis.js?v=202605140001"></script>
+  <script src="counter-analysis-enhanced.js?v=202605140001"></script>
   <script src="user-system.js?v=202605111900"></script>
   <script src="project-system.js?v=202605121430"></script>
   <script src="role-system.js?v=202605110001"></script>
@@ -1458,85 +1394,42 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data-perm.js?v=202605111120"></script>
   <script src="points-mall.js?v=202605081430"></script>
 <script>
-// 全局兜底：确保 getRolePermissions 始终有定义
-if(typeof getRolePermissions==='undefined'){
-  window.getRolePermissions = async function(roleId){
-    const BUILTIN = [
-      {id:'super_admin', permissions:{'projectManage':true,'library':true,'ranking':true,'peijiang':true,'yanwu':true,'systemConfig':true,'rolemanage':true,'userManage':true,'dataperm':true,'dataManage':true,'cloudService':true,'syslog':true,'projCreate':true,'projEdit':true,'projDelete':true,'projMember':true,'projVisibilityToggle':true,'dataImport':true,'dataBatchSelect':true,'dataRecordDelete':true,'dataTableDelete':true,'dataExport':true,'winrateAnalysis':true}},
-      {id:'admin',        permissions:{'projectManage':true,'library':true,'ranking':true,'peijiang':true,'yanwu':true,'systemConfig':false,'rolemanage':false,'userManage':false,'dataperm':false,'dataManage':false,'cloudService':false,'syslog':false,'projCreate':true,'projEdit':true,'projDelete':false,'projMember':true,'projVisibilityToggle':false,'dataImport':true,'dataBatchSelect':true,'dataRecordDelete':true,'dataTableDelete':true,'dataExport':true,'winrateAnalysis':true}},
-      {id:'member',       permissions:{'projectManage':true,'library':false,'ranking':false,'peijiang':false,'yanwu':false,'systemConfig':false,'rolemanage':false,'userManage':false,'dataperm':false,'dataManage':false,'cloudService':false,'syslog':false,'projCreate':false,'projEdit':false,'projDelete':false,'projMember':false,'projVisibilityToggle':false,'dataImport':false,'dataBatchSelect':false,'dataRecordDelete':false,'dataTableDelete':false,'dataExport':false,'winrateAnalysis':false}},
-    ];
-    const r = BUILTIN.find(x=>x.id===roleId);
-    return r ? r.permissions : BUILTIN[2].permissions;
-  };
-  console.warn('[inline v2026050715] getRolePermissions 兜底已定义');
-}
-// tab 切换统一由 data-system.js 的 switchTab 处理，此处不再重复定义
-// onLoginSuccess/updateNavByRole 已在 user-system.js 中定义，此处不再重复
 async function appInit(){
-  console.log('[AppInit v202605022120] 启动...');
   // 初始化角色系统（种子内置角色，不依赖登录态）
   if(typeof roleSystemInit==='function'){
     try{
-      console.log('[AppInit] 调用 roleSystemInit...');
       await roleSystemInit();
-      console.log('[AppInit] roleSystemInit 完成');
-    }catch(e){console.error('roleSystemInit failed:',e);}
-  }else{
-    console.error('[AppInit] roleSystemInit 未定义!');
+    }catch(e){}
   }
   // 检查登录态
   if(typeof checkLoginState==='function'){
     try{
-      console.log('[AppInit] 调用 checkLoginState...');
       await checkLoginState();
-      console.log('[AppInit] checkLoginState 完成');
-    }catch(e){console.error('checkLoginState failed:',e);showLogin();}
+    }catch(e){showLogin();}
   }else{
-    console.error('[AppInit] checkLoginState 未定义!');showLogin();return;
+    showLogin();return;
   }
   // 检查登录态后再初始化数据（确保 currentUser 已设置）
   if(typeof dataInit==='function'){
     try{
-      console.log('[AppInit] 调用 dataInit...');
       await dataInit();
-      console.log('[AppInit] dataInit 完成');
-    }catch(e){console.error('dataInit failed:',e);}
-  }else{
-    console.error('[AppInit] dataInit 未定义!');
+    }catch(e){}
   }
-  console.log('[AppInit] 全部完成');
   document.body.addEventListener('dragover',function(e){if(e.dataTransfer&&e.dataTransfer.files.length>0)e.preventDefault();});
   document.body.addEventListener('drop',function(e){if(e.dataTransfer&&e.dataTransfer.files.length>0){e.preventDefault();if(document.getElementById('tab-data')&&document.getElementById('tab-data').classList.contains('active'))handleBatchUpload(e.dataTransfer.files);}});
 }
 appInit();
 </script>
-<script src="diagnose.js?v=202605030030"></script>
 <script>
 (function() {
     var ma = document.getElementById('mainApp');
-    if (!ma) { console.error('[DOM Fix] ❌ mainApp NOT FOUND!'); return; }
-    console.log('[DOM Fix] mainApp found, current children:', ma.children.length);
-
-    // 自动修复：将所有 .tab-content 移入 mainApp
+    if (!ma) return;
     var tabs = document.querySelectorAll('.tab-content');
-    console.log('[DOM Fix] Found', tabs.length, '.tab-content elements');
-    var moved = 0;
     tabs.forEach(function(tab) {
         if (tab.parentNode.id !== 'mainApp') {
-            console.log('[DOM Fix] Moving', tab.id, 'from', (tab.parentNode.id || tab.parentNode.tagName), '→ mainApp');
             tab.parentNode.removeChild(tab);
             ma.appendChild(tab);
-            moved++;
         }
-    });
-    console.log('[DOM Fix] ✅ Done. Moved', moved, 'tab(s) into mainApp. mainApp children now:', ma.children.length);
-
-    // 最终验证
-    console.log('[DOM Fix] Final check:');
-    document.querySelectorAll('.tab-content').forEach(function(el) {
-        var ok = el.parentNode.id === 'mainApp' ? '✅' : '❌';
-        console.log(' ', ok, el.id, '→ parent:', el.parentNode.id || el.parentNode.tagName);
     });
 })();
 </script>

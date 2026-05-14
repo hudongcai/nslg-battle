@@ -3,7 +3,7 @@
  * 包含全部武将的属性、阵营、品质、技能信息
  * 用于克制分析和武将库展示
  */
-const ALL_HEROES = [
+var ALL_HEROES = [
   // ===== 群雄 =====
   { id: 'h001', name: '吕布', faction: '群', rarity: 'SSR', specialty: '骑兵', skills: ['无双战神','天下无双'], counter: ['张辽','关羽'], weakTo: ['貂蝉'], desc: '武力巅峰，输出极高但需要保护' },
   { id: 'h002', name: '貂蝉', faction: '群', rarity: 'SSR', specialty: '辅助', skills: ['闭月羞花','倾国倾城'], counter: ['吕布','董卓'], weakTo: ['王允','荀彧'], desc: '控制型辅助，可削弱敌方' },

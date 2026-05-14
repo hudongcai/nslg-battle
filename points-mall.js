@@ -2,7 +2,6 @@
    积分商城 - 前端逻辑（联系管理员版）
    ========================================================== */
 
-console.log('[PointsMall] 积分商城模块加载（联系管理员版 v2026050401）');
 
 // ========== 套餐配置 ==========
 const POINTS_PACKAGES = [
@@ -130,7 +129,6 @@ async function renderPointsMall() {
     `;
 
     content.innerHTML = html;
-    console.log('[PointsMall] 渲染完成，当前积分:', points);
   } catch (e) {
     content.innerHTML = `<div style="padding:40px;text-align:center;color:#ff5252;">❌ 加载失败：${e.message}</div>`;
   }
@@ -176,6 +174,12 @@ function closeRechargeModal() {
   const modal = document.getElementById('rechargeModal');
   if (modal) modal.style.display = 'none';
 }
+function startRecharge() {
+  alert('充值功能暂未开放，请联系管理员获取积分');
+}
+function confirmPayment() {
+  alert('充值功能暂未开放，请联系管理员获取积分');
+}
 
 // ========== 截图工具联系管理员弹窗 ==========
 function openToolContact() {
@@ -211,4 +215,3 @@ function openToolContact() {
   addSysLog('action', `用户查看截图工具联系页`);
 }
 
-console.log('[PointsMall] 积分商城模块加载完成（联系管理员版 v2026050401）');

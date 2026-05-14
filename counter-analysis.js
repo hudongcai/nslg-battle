@@ -53,6 +53,89 @@
     return f ? f.color : '#ccc';
   }
 
+  // ---- 克制关系 Tab 排序 ----
+  let caSortField = 'total';
+  let caSortDir = 'desc';
+
+  function caToggleSort(field) {
+    if (caSortField === field) caSortDir = caSortDir === 'asc' ? 'desc' : 'asc';
+    else { caSortField = field; caSortDir = 'desc'; }
+    renderCounterAnalysis();
+  }
+
+  function caSortArrow(field) {
+    if (caSortField !== field) return '<span class="ca-sort-arrow">↕</span>';
+    return `<span class="ca-sort-arrow ca-sort-active">${caSortDir === 'asc' ? '▲' : '▼'}</span>`;
+  }
+
+  function caFilterData(data) {
+    const w = (document.getElementById('caSearchWinner')?.value || '').trim().toLowerCase();
+    const l = (document.getElementById('caSearchLoser')?.value || '').trim().toLowerCase();
+    if (!w && !l) return data;
+    return data.filter(d => {
+      if (w) {
+        const wg = normGens(d.left.generals).map(s => s.toLowerCase());
+        const wt = normTacs(d.left.tactics).map(s => s.toLowerCase());
+        const wf = (d.left.formation || '').toLowerCase();
+        if (!wg.some(s => s.includes(w)) && !wt.some(s => s.includes(w)) && !wf.includes(w)) return false;
+      }
+      if (l) {
+        const lg = normGens(d.right.generals).map(s => s.toLowerCase());
+        const lt = normTacs(d.right.tactics).map(s => s.toLowerCase());
+        const lf = (d.right.formation || '').toLowerCase();
+        if (!lg.some(s => s.includes(l)) && !lt.some(s => s.includes(l)) && !lf.includes(l)) return false;
+      }
+      return true;
+    });
+  }
+
+  function caSortData(data) {
+    return [...data].sort((a, b) => {
+      let va, vb;
+      switch (caSortField) {
+        case 'total': va = a.total; vb = b.total; break;
+        case 'leftWR': va = a.leftWR; vb = b.leftWR; break;
+        case 'lossRate': va = a.lossRate; vb = b.lossRate; break;
+        default: return 0;
+      }
+      return caSortDir === 'asc' ? va - vb : vb - va;
+    });
+  }
+
+  window.caClearFilters = function () {
+    const ids = ['caSearchWinner', 'caSearchLoser'];
+    ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    renderCounterAnalysis();
+  };
+
+  // ---- 克制推荐 Tab 排序 ----
+  let caRecSortField = 'winRate';
+  let caRecSortDir = 'desc';
+
+  window.caRecToggleSort = function (field) {
+    if (caRecSortField === field) caRecSortDir = caRecSortDir === 'asc' ? 'desc' : 'asc';
+    else { caRecSortField = field; caRecSortDir = 'desc'; }
+    renderCounterRecommendations();
+  };
+
+  function caRecSortArrow(field) {
+    if (caRecSortField !== field) return '<span class="ca-sort-arrow">↕</span>';
+    return `<span class="ca-sort-arrow ca-sort-active">${caRecSortDir === 'asc' ? '▲' : '▼'}</span>`;
+  }
+
+  function caRecSortCounters(counters) {
+    return [...counters].sort((a, b) => {
+      let va, vb;
+      switch (caRecSortField) {
+        case 'winRate': va = a.winRate; vb = b.winRate; break;
+        case 'lossRate': va = a.lossRate; vb = b.lossRate; break;
+        case 'total': va = a.total; vb = b.total; break;
+        default: return 0;
+      }
+      return caRecSortDir === 'asc' ? va - vb : vb - va;
+    });
+  }
+
   async function ensureRecords() {
     if (typeof loadAllRecords === 'function') {
       try { await loadAllRecords(); } catch (e) {}
@@ -82,80 +165,39 @@
     return f ? `<span class="ca-form-badge">${escHtml(f)}</span>` : '<span class="ca-dim">—</span>';
   }
 
-  // 两行队伍芯片：第一行武将+阵型，第二行战法，整体加盒子强关联
-  function teamChip(generals, tactics, formation, isWinner) {
+  // 竖排队伍芯片：左列武将，中列战法，右列阵型，可选额外列（上下居中）
+  function teamChip(generals, tactics, formation, isWinner, extra) {
     const gens = normGens(generals);
     const tacs = normTacs(tactics);
     const form = (formation || '').trim();
-
-    const line1 = gens.length
-      ? gens.map(g => `<b style="color:${heroColor(g)}">${escHtml(g)}</b>`)
-            .join('<span class="ca-dot">·</span>')
-      : '<span class="ca-dim">—</span>';
-
-    const tacRow = tacs.length
-      ? `<div class="ca-tacs">${tacs.map(t => `<span class="ca-tac">${escHtml(t)}</span>`).join('')}</div>`
-      : '';
-
-    const formTag = form ? `<span class="ca-form-badge">${escHtml(form)}</span>` : '';
-
     const borderColor = isWinner === true ? 'var(--green)' : isWinner === false ? 'var(--red)' : 'var(--border)';
 
-    return `<div class="ca-team" style="border-left:3px solid ${borderColor};padding-left:8px;">
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap;">${line1}${formTag}</div>
-      ${tacRow}
-    </div>`;
-  }
+    let html = `<div class="ca-team" style="border-left:3px solid ${borderColor};padding-left:8px;">`;
 
-  // ==================== 竖向排列布局工具 ====================
-
-  // 武将和战法竖向排列（每行一个武将+对应战法）
-  function verticalTeamHtml(generals, tactics, showFormation, formation) {
-    const gens = normGens(generals);
-    const tacs = normTacs(tactics);
-    const form = (formation || '').trim();
-
-    if (!gens.length) return '<span class="ca-dim">—</span>';
-
-    let rows = [];
-    for (let i = 0; i < gens.length; i++) {
-      const g = gens[i];
-      // 每个武将有3个战法
-      const baseIdx = i * 3;
-      const gt = tacs.slice(baseIdx, baseIdx + 3);
-      const gName = `<b style="color:${heroColor(g)}">${escHtml(g)}</b>`;
-      const tStr = gt.length ? gt.map(t => `<span class="ca-tac" style="font-size:10px;padding:1px 4px;">${escHtml(t)}</span>`).join('') : '';
-      rows.push(`<div style="display:flex;gap:6px;align-items:center;padding:2px 0;border-bottom:1px solid rgba(128,128,128,0.1);">
-        <span style="min-width:60px;font-size:12px;">${gName}</span>
-        <span style="flex:1;">${tStr}</span>
-      </div>`);
+    if (!gens.length) {
+      html += '<span class="ca-dim">—</span>';
+    } else {
+      html += '<table class="ca-gen-table">';
+      for (let i = 0; i < gens.length; i++) {
+        const base = i * 3;
+        const gt = [tacs[base] || '', tacs[base + 1] || '', tacs[base + 2] || ''].filter(t => t && t !== '未知');
+        const tStr = gt.length
+          ? gt.map(t => `<span class="ca-tac">${escHtml(t)}</span>`).join('<span class="ca-tac-sep">/</span>')
+          : '<span class="ca-dim">—</span>';
+        html += `<tr class="ca-gen-row">
+          <td class="ca-gen-name"><b style="color:${heroColor(gens[i])}">${escHtml(gens[i])}</b></td>
+          <td class="ca-gen-tacs">${tStr}</td>`;
+        if (i === 0) {
+          if (form) html += `<td class="ca-gen-form" rowspan="${gens.length}"><span class="ca-form-badge">${escHtml(form)}</span></td>`;
+          if (extra) html += `<td class="${extra.cls || 'ca-gen-extra'}" rowspan="${gens.length}">${extra.html}</td>`;
+        }
+        html += `</tr>`;
+      }
+      html += '</table>';
     }
 
-    let html = `<div class="ca-vertical-team" style="min-width:140px;">${rows.join('')}</div>`;
-    if (showFormation && form) {
-      html += `<div style="margin-top:4px;"><span class="ca-form-badge">${escHtml(form)}</span></div>`;
-    }
+    html += '</div>';
     return html;
-  }
-
-  // 仅武将竖向排列（用于敌方高频）
-  function verticalGeneralsHtml(generals) {
-    const gens = normGens(generals);
-    if (!gens.length) return '<span class="ca-dim">—</span>';
-    return gens.map(g => `<div style="padding:2px 0;font-size:12px;"><b style="color:${heroColor(g)}">${escHtml(g)}</b></div>`).join('');
-  }
-
-  // 战法按武将分组竖向排列
-  function verticalTacticsHtml(tactics) {
-    const tacs = normTacs(tactics);
-    if (!tacs.length) return '<span class="ca-dim">—</span>';
-    // 每3个战法一组
-    let groups = [];
-    for (let i = 0; i < tacs.length; i += 3) {
-      const group = tacs.slice(i, i + 3);
-      groups.push(`<div style="padding:2px 0;">${group.map(t => `<span class="ca-tac" style="font-size:10px;padding:1px 4px;">${escHtml(t)}</span>`).join('')}</div>`);
-    }
-    return groups.join('');
   }
 
   // ==================== 图片溯源 ====================
@@ -335,11 +377,13 @@
     if (!el) return;
     await ensureRecords();
     const recs = records();
-    const data = analyzeCounter(recs);
+    let data = analyzeCounter(recs);
+    data = caFilterData(data);
+    data = caSortData(data);
     window._caCounterData = data;
 
     if (!data.length) {
-      el.innerHTML = `<tr><td colspan="7" class="ca-empty">
+      el.innerHTML = `<tr><td colspan="8" class="ca-empty">
         暂无克制关系数据<br><small>只要有敌对战报就会显示（武将＋战法＋阵型均相同视为同一队伍）</small>
       </td></tr>`;
       return;
@@ -356,6 +400,16 @@
         <td class="ca-num-cell">${d.lossRate ? d.lossRate + '%' : '—'}</td>
         <td class="ca-center"><button class="ca-src-btn" onclick="caShowCounterSrc(${i})">溯源</button></td>
       </tr>`).join('');
+
+    // 刷新排序箭头
+    document.querySelectorAll('#caPanelRelationship .ca-sort-arrow').forEach(a => {
+      a.textContent = '↕'; a.classList.remove('ca-sort-active');
+    });
+    const th = document.querySelector(`#caPanelRelationship th[data-sort="${caSortField}"]`);
+    if (th) {
+      const a = th.querySelector('.ca-sort-arrow');
+      if (a) { a.textContent = caSortDir === 'asc' ? '▲' : '▼'; a.classList.add('ca-sort-active'); }
+    }
   };
 
   window.caShowCounterSrc = function (i) {
@@ -401,17 +455,24 @@
     el.innerHTML = `<div class="ca-rec-header">
         <div class="ca-rec-header-left">敌方高频队伍</div>
         <div class="ca-rec-arrow-spacer"></div>
-        <div class="ca-rec-header-right">克制推荐队伍</div>
+        <div class="ca-rec-header-mid">克制推荐队伍</div>
+        <div class="ca-rec-header-right">
+          <span class="ca-rec-sort-btn" onclick="caRecToggleSort('winRate')">胜率 ${caRecSortArrow('winRate')}</span>
+          <span class="ca-rec-sort-btn" onclick="caRecToggleSort('lossRate')">战损 ${caRecSortArrow('lossRate')}</span>
+          <span class="ca-rec-sort-btn" onclick="caRecToggleSort('total')">场次 ${caRecSortArrow('total')}</span>
+          <span class="ca-rec-sort-spacer"></span>
+        </div>
       </div>
       ${data.map((item, gi) => {
-      const countersHtml = item.counters.length
-        ? item.counters.map((c, ci) => `
+      const sortedCounters = caRecSortCounters(item.counters);
+      const countersHtml = sortedCounters.length
+        ? sortedCounters.map((c, ci) => `
           <div class="ca-rec-counter">
-            ${teamChip(c.generals, c.tactics, c.formation, true)}
-            <div class="ca-rec-stats">
-              <span class="ca-badge ca-badge-win">${c.winRate}% 胜率</span>
-              <span class="ca-badge ca-badge-loss">战损 ${c.lossRate}%</span>
-              <span class="ca-badge ca-badge-cnt">${c.total} 场</span>
+            <div class="ca-rec-counter-team">${teamChip(c.generals, c.tactics, c.formation, true)}</div>
+            <div class="ca-rec-counter-stats">
+              <div class="ca-stat-item ca-stat-win">${c.winRate}% 胜率</div>
+              <div class="ca-stat-item ca-stat-loss">战损 ${c.lossRate}%</div>
+              <div class="ca-stat-item ca-stat-cnt">${c.total} 场</div>
               <button class="ca-src-btn" onclick="caShowRecSrc(${gi},${ci})">溯源</button>
             </div>
           </div>`).join('')
@@ -419,9 +480,10 @@
 
       return `<div class="ca-rec-group">
         <div class="ca-rec-enemy">
-          <div class="ca-rec-lbl">敌方高频</div>
-          ${teamChip(item.enemy.generals, item.enemy.tactics, item.enemy.formation, false)}
-          <div class="ca-rec-cnt"><span class="ca-badge ca-badge-cnt">出场 ${item.enemy.count} 次</span></div>
+          ${teamChip(item.enemy.generals, item.enemy.tactics, item.enemy.formation, false, {
+            html: `<span class="ca-badge ca-badge-cnt">×${item.enemy.count}</span>`,
+            cls: 'ca-gen-extra'
+          })}
         </div>
         <div class="ca-rec-arrow">▶</div>
         <div class="ca-rec-counters">${countersHtml}</div>
@@ -449,6 +511,11 @@
 
         <div id="caPanelRelationship">
           <p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p>
+          <div class="ca-filter-row">
+            <input id="caSearchWinner" placeholder="🔍 胜方：武将/战法/阵型" oninput="renderCounterAnalysis()" style="flex:1;min-width:140px;font-size:11px;padding:5px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+            <input id="caSearchLoser" placeholder="🔍 对手：武将/战法/阵型" oninput="renderCounterAnalysis()" style="flex:1;min-width:140px;font-size:11px;padding:5px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+            <button onclick="caClearFilters()" style="font-size:11px;padding:5px 10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;white-space:nowrap;">清除</button>
+          </div>
           <div class="ca-tbl-wrap">
             <table class="ca-tbl">
               <thead><tr>
@@ -456,9 +523,9 @@
                 <th class="ca-th-team">胜方队伍</th>
                 <th class="ca-th-vs"></th>
                 <th class="ca-th-team">对手队伍</th>
-                <th class="ca-th-num">场次</th>
-                <th class="ca-th-num">胜率</th>
-                <th class="ca-th-num">战损比</th>
+                <th class="ca-th-num ca-sortable" data-sort="total" onclick="caToggleSort('total')">场次 ${caSortArrow('total')}</th>
+                <th class="ca-th-num ca-sortable" data-sort="leftWR" onclick="caToggleSort('leftWR')">胜率 ${caSortArrow('leftWR')}</th>
+                <th class="ca-th-num ca-sortable" data-sort="lossRate" onclick="caToggleSort('lossRate')">战损比 ${caSortArrow('lossRate')}</th>
                 <th class="ca-th-act">溯源</th>
               </tr></thead>
               <tbody id="counterAnalysisBody"></tbody>
@@ -503,8 +570,6 @@
     else                        await renderCounterRecommendations();
   };
 
-  window.showRecordSource = function (i) { window.caShowCounterSrc(i); };
-
   // ==================== 样式注入 ====================
 
   function injectStyles() {
@@ -523,26 +588,30 @@
       .ca-tab:hover:not(.active){color:#aaa;background:rgba(255,255,255,.04);}
       .ca-hint{color:#555;font-size:11px;margin:0 0 10px;line-height:1.6;}
 
+      /* ---- 筛选行 ---- */
+      .ca-filter-row{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+
+      /* ---- 可排序表头 ---- */
+      .ca-sortable{cursor:pointer;user-select:none;}
+      .ca-sortable:hover{color:#ccc;}
+      .ca-sort-arrow{font-size:10px;margin-left:2px;color:#555;}
+      .ca-sort-active{color:var(--accent,#5b4fff) !important;}
+
       /* ---- 通用表格 ---- */
       .ca-tbl-wrap{overflow-x:auto;border:1px solid var(--border,#2a2a3e);border-radius:8px;}
       .ca-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
-      .ca-tbl th{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border,#2a2a3e);
+      .ca-tbl th{padding:7px 10px;text-align:center;border-bottom:1px solid var(--border,#2a2a3e);
         color:#666;background:var(--bg2,#111122);font-weight:500;white-space:nowrap;}
       .ca-row td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle;}
       .ca-row:last-child td{border-bottom:none;}
       .ca-row:hover td{background:rgba(255,255,255,.025);}
 
-      /* Tab1 列宽 */
-      .ca-th-idx{width:30px;text-align:center;}
-      .ca-th-vs{width:28px;text-align:center;}
-      .ca-th-team{width:auto;}
-      .ca-th-num{width:56px;text-align:center;}
-      .ca-th-act{width:46px;text-align:center;}
-
-      /* Tab2 列宽 */
-      .ca-th-gen{width:auto;}
-      .ca-th-form{width:70px;text-align:center;}
-      .ca-th-tac{width:auto;}
+      /* Tab1 列宽 — 窄列固定比例，队伍列均分剩余 */
+      .ca-th-idx{width:4%;text-align:center;}
+      .ca-th-vs{width:4%;text-align:center;}
+      .ca-th-num{width:9%;text-align:center;}
+      .ca-th-act{width:7%;text-align:center;}
+      .ca-th-team{text-align:left;}
 
       /* ---- 通用单元格 ---- */
       .ca-idx{color:#444;font-size:11px;text-align:center;white-space:nowrap;}
@@ -571,12 +640,20 @@
       .ca-chip-sep{display:inline-block;width:1px;height:11px;background:#333;flex-shrink:0;}
       .ca-tacs{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;padding-top:5px;
         border-top:1px solid rgba(255,255,255,.05);}
-      .ca-tac{font-size:10px;padding:1px 5px;border-radius:3px;white-space:nowrap;
+      .ca-tac{display:inline-block;width:50px;text-align:center;font-size:10px;padding:1px 0;border-radius:3px;white-space:nowrap;
         background:rgba(91,79,255,.12);color:#9d8fff;border:1px solid rgba(91,79,255,.2);}
       .ca-form-badge{font-size:10px;padding:1px 6px;border-radius:3px;white-space:nowrap;flex-shrink:0;
         background:rgba(245,197,66,.1);color:#f5c542;border:1px solid rgba(245,197,66,.2);}
       .ca-dot{color:#333;margin:0 1px;font-size:10px;}
       .ca-dim{color:#444;font-size:11px;}
+      .ca-gen-table{width:100%;table-layout:fixed;border-collapse:collapse;}
+      .ca-gen-row td{padding:0 0 2px 0;vertical-align:middle;}
+      .ca-gen-row:last-child td{padding-bottom:0;}
+      .ca-gen-name{width:20%;padding-right:6px;white-space:nowrap;font-size:12px;}
+      .ca-gen-tacs{width:40%;line-height:1.4;text-align:left;}
+      .ca-gen-form{width:20%;text-align:center;vertical-align:middle;}
+      .ca-gen-extra{width:20%;text-align:center;vertical-align:middle;padding-left:8px;}
+      .ca-tac-sep{color:#555;margin:0 1px;font-size:9px;}
 
       /* ---- Tab2 专用 ---- */
       .ca-freq-num{color:#f39c12;font-weight:700;font-size:13px;text-align:center;}
@@ -604,31 +681,41 @@
       /* ---- Tab3 克制推荐 ---- */
       .ca-rec-header{display:flex;align-items:center;
         background:var(--bg, #0a0a1a);border:1px solid var(--border,#2a2a3e);
-        border-radius:8px 8px 0 0;padding:8px 14px;margin-bottom:0;font-weight:600;font-size:11px;
+        border-radius:8px 8px 0 0;padding:8px 14px;margin-bottom:0;font-weight:600;font-size:12px;
         color:var(--accent,#f0b429);letter-spacing:.04em;}
-      .ca-rec-header-left{flex:1 1 0;min-width:0;text-align:center;}
-      .ca-rec-header-right{flex:1 1 0;min-width:0;text-align:center;}
+      .ca-rec-header-left{flex:0 0 33.333%;min-width:0;text-align:center;}
+      .ca-rec-header-mid{flex:1 1 0;min-width:0;text-align:center;}
+      .ca-rec-header-right{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:4px;}
       .ca-rec-arrow-spacer{flex:0 0 26px;}
       .ca-rec-group{display:flex;align-items:stretch;
         background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);
         border-top:none;border-radius:0;margin-bottom:0;overflow:hidden;}
       .ca-rec-group:last-child{border-radius:0 0 8px 8px;margin-bottom:8px;}
-      .ca-rec-enemy{flex:1 1 0;min-width:0;padding:12px 14px;
+      .ca-rec-enemy{flex:0 0 33.333%;min-width:0;padding:12px 14px;
         border-right:1px solid var(--border,#2a2a3e);
         display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.01);}
-      .ca-rec-lbl{font-size:10px;color:#555;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}
-      .ca-rec-cnt{margin-top:2px;}
       .ca-rec-arrow{flex:0 0 26px;display:flex;align-items:center;justify-content:center;
         color:#333;font-size:11px;}
       .ca-rec-counters{flex:1 1 0;min-width:0;display:flex;flex-direction:column;}
-      .ca-rec-counter{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);
-        display:flex;flex-direction:column;gap:6px;}
+      .ca-rec-counter{display:flex;align-items:stretch;
+        padding:0;border-bottom:1px solid rgba(255,255,255,.04);}
       .ca-rec-counter:last-child{border-bottom:none;}
+      .ca-rec-counter-team{flex:1 1 0;min-width:0;padding:10px 14px;
+        border-right:1px solid rgba(255,255,255,.04);}
+      .ca-rec-counter-stats{flex:1 1 0;min-width:0;padding:6px 6px;
+        display:flex;align-items:stretch;gap:4px;}
       .ca-rec-empty{color:var(--text3,#888);font-size:12px;padding:16px 14px;font-style:italic;}
-      .ca-rec-stats{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+      .ca-stat-item{flex:1 1 0;min-width:0;font-size:13px;white-space:nowrap;text-align:center;
+        padding:6px 4px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:600;}
+      .ca-stat-win{color:#2ecc71;background:rgba(39,174,96,.12);}
+      .ca-stat-loss{color:#4a90d9;background:rgba(74,144,217,.12);}
+      .ca-stat-cnt{color:#aaa;background:rgba(255,255,255,.06);}
+      .ca-rec-counter-stats .ca-src-btn{flex:1 1 0;min-width:0;text-align:center;}
+	      .ca-rec-sort-btn{flex:1 1 0;min-width:0;cursor:pointer;user-select:none;font-size:12px;padding:2px 6px;border-radius:3px;white-space:nowrap;text-align:center;}
+	      .ca-rec-sort-btn:hover{background:rgba(255,255,255,.06);color:#ccc;}
+	      .ca-rec-sort-spacer{flex:1 1 0;min-width:0;}
     `;
     document.head.appendChild(s);
   }
 
-  console.log('[counter-analysis] 已加载 v202605120002 ✅');
 })();
