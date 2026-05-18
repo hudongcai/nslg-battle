@@ -349,6 +349,52 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .rank-table th,.rank-table td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .rank-table th:nth-child(1),.rank-table td:nth-child(1),
 .rank-table th:nth-child(5),.rank-table td:nth-child(5){text-align:center;}
+/* === PDF 导出打印样式 === */
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  /* 覆写 CSS 变量为打印友好色 */
+  :root {
+    --bg:#fff; --bg2:#f8f8f8; --bg3:#eee; --bg4:#ddd;
+    --accent:#333; --accent2:#555; --accent-dim:rgba(0,0,0,.06);
+    --red:#c00; --green:#060; --blue:#048; --orange:#840;
+    --cyan:#066; --purple:#606; --text:#000; --text2:#444;
+    --text3:#777; --border:#ccc; --card:#fff;
+  }
+  body { background: #fff !important; color: #000 !important; font-size: 10px !important; }
+  .header, .nav, #topNav, #projectSubNav, #systemSubNav,
+  #tab-data, #tab-library, #tab-dataperm, #tab-datamgmt, #tab-syslog,
+  #tab-users, #tab-roles, #tab-projects,
+  .btn, button, input, select, .upload-zone, .progress-wrap,
+  .ocr-status, #headerStats, .form-row, .pagination,
+  #dataPagination, .gallery-toolbar, #imageGallery, #galleryEmpty,
+  .queue-list, #queueArea, #batchInput, #uploadZone,
+  .log-toolbar, .empty-state, .sort-arrow,
+  #btnBatchDelete, #gallerySelectAll, label[for],
+  a[href], .no-print { display: none !important; }
+  .main { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+  .card { box-shadow: none !important; border: 1px solid #ccc !important; break-inside: avoid; margin-bottom: 8px !important; padding: 8px 10px !important; background: #fff !important; }
+  .card h3 { color: #000 !important; border-bottom: 2px solid #333; padding-bottom: 4px; margin-bottom: 6px; font-size: 13px !important; }
+  .card > div[style*="font-size:10px"] { color: #666 !important; }
+  #tab-winrate { display: block !important; }
+  #tab-winrate .card { display: block !important; }
+  #restrictSection, #counterSection { display: block !important; }
+  #efTableWrap, #wrTableWrap { max-height: none !important; overflow: visible !important; border: none !important; }
+  #efTable, #winRateTable { min-width: auto !important; width: 100% !important; font-size: 9px !important; }
+  #efTable th, #efTable td, #winRateTable th, #winRateTable td { padding: 2px 4px !important; color: #000 !important; }
+  #efTable th, #winRateTable th { background: #e8e8e8 !important; color: #000 !important; border-bottom: 1px solid #999 !important; font-size: 9px !important; }
+  #efTable td, #winRateTable td { border-bottom: 1px solid #eee !important; }
+  #efTable td span, #efTable td div, #winRateTable td span, #winRateTable td div { color: #000 !important; }
+  .restrict-cards { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6px !important; }
+  .restrict-card { break-inside: avoid; border: 1px solid #ddd !important; box-shadow: none !important; padding: 8px !important; }
+  .restrict-group-title { font-size: 12px !important; }
+  #counterCards { display: flex !important; flex-direction: column !important; gap: 8px !important; }
+  #counterCards > div { break-inside: avoid; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  /* 确保所有文字在白色背景下可见 */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
 </style>
 <script>
 // ===== 自定义角色下拉组件工具函数 =====
@@ -513,6 +559,10 @@ document.addEventListener('click', function(e) {
 
   <!-- Tab 2: 克制分析 -->
   <div id="tab-winrate" class="tab-content">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;" class="no-print">
+      <button class="btn btn-primary" onclick="exportCounterAnalysisPDF()" style="font-size:13px;padding:8px 20px;">📄 导出PDF</button>
+      <span style="font-size:11px;color:var(--text3);">将当前克制分析全部内容导出为PDF文件（A4横版）</span>
+    </div>
     <!-- 敌方高频队伍分析 -->
     <div class="card" id="enemyFreqSection">
       <h3>🔭 敌方高频队伍分析</h3>
@@ -865,14 +915,53 @@ function renderCounterPick(dominantPairs,dominatedPairs){
   });
   const enemyList=[...enemyMap.values()].sort((a,b)=>b.count-a.count);
   if(enemyList.length===0){section.style.display='none';return;}
-  // 构建克制映射：敌方队伍 -> 我方克制队伍列表
-  // dominantPairs: 我方克制敌方 (dominant=我方, dominated=敌方)
-  // dominatedPairs: 敌方克制我方 (dominant=敌方, dominated=我方) → 反过来就是敌方被谁克制
-  const counterMap=new Map(); // enemyTeamKey -> [{team, generals, tactics, winRate, total, lossRate, recordIds, type}]
-  dominantPairs.forEach(d=>{
-    const ek=getTeamKey(d.dominatedGens);
-    if(!counterMap.has(ek))counterMap.set(ek,[]);
-    counterMap.get(ek).push({team:d.dominant,generals:d.dominantGens,tactics:d.dominantTacs,winRate:d.winRate,total:d.total,lossRate:d.lossRateVal,recordIds:d.recordIds,type:'counter'});
+  // 构建克制映射：直接从原始战报提取，不依赖胜率门槛
+  // 对每支高频敌方队伍 X，找所有曾打赢过 X 的队伍
+  // 情况1：X 在右方输（result='胜'）→ 左方队伍克制 X
+  // 情况2：X 在左方输（result='败'）→ 右方队伍克制 X
+  const rawCounterMap=new Map(); // enemyKey -> Map(counterKey -> {generals,tactics,wins,total,myLossSum,myLossCnt,enLossSum,enLossCnt,recordIds})
+  allRecords.forEach(r=>{
+    const rKey=getTeamKey(r.rightGenerals);
+    const lKey=getTeamKey(r.leftGenerals);
+    // 情况1：高频队伍 X 在右方
+    if(rKey&&rKey!=='未知'&&enemyMap.has(rKey)&&lKey&&lKey!=='未知'){
+      if(!rawCounterMap.has(rKey))rawCounterMap.set(rKey,new Map());
+      const cMap=rawCounterMap.get(rKey);
+      if(!cMap.has(lKey))cMap.set(lKey,{generals:r.leftGenerals,tactics:r.leftTactics,wins:0,total:0,myLossSum:0,myLossCnt:0,enLossSum:0,enLossCnt:0,recordIds:[]});
+      const cd=cMap.get(lKey);
+      cd.total++;cd.recordIds.push(r.id);
+      if(r.result==='胜')cd.wins++;
+      if(r.leftLoss!=null&&r.leftTotal!=null&&r.leftTotal>0){cd.myLossSum+=r.leftLoss;cd.myLossCnt++;}
+      if(r.rightLoss!=null&&r.rightTotal!=null&&r.rightTotal>0){cd.enLossSum+=r.rightLoss;cd.enLossCnt++;}
+      if((r.leftGenerals||[]).filter(g=>g).length>(cd.generals||[]).filter(g=>g).length){cd.generals=r.leftGenerals;cd.tactics=r.leftTactics;}
+    }
+    // 情况2：高频队伍 X 在左方
+    if(lKey&&lKey!=='未知'&&enemyMap.has(lKey)&&rKey&&rKey!=='未知'){
+      if(!rawCounterMap.has(lKey))rawCounterMap.set(lKey,new Map());
+      const cMap=rawCounterMap.get(lKey);
+      if(!cMap.has(rKey))cMap.set(rKey,{generals:r.rightGenerals,tactics:r.rightTactics,wins:0,total:0,myLossSum:0,myLossCnt:0,enLossSum:0,enLossCnt:0,recordIds:[]});
+      const cd=cMap.get(rKey);
+      cd.total++;cd.recordIds.push(r.id);
+      if(r.result==='败')cd.wins++; // 右方赢 = 左方(X)输
+      if(r.rightLoss!=null&&r.rightTotal!=null&&r.rightTotal>0){cd.myLossSum+=r.rightLoss;cd.myLossCnt++;}
+      if(r.leftLoss!=null&&r.leftTotal!=null&&r.leftTotal>0){cd.enLossSum+=r.leftLoss;cd.enLossCnt++;}
+      if((r.rightGenerals||[]).filter(g=>g).length>(cd.generals||[]).filter(g=>g).length){cd.generals=r.rightGenerals;cd.tactics=r.rightTactics;}
+    }
+  });
+  // 转换为 counterMap：只保留至少赢过 1 次的队伍，按胜率排序
+  const counterMap=new Map();
+  rawCounterMap.forEach((cMap,ek)=>{
+    const list=[];
+    cMap.forEach((d,ck)=>{
+      if(d.wins===0)return;
+      const winRate=d.total>0?d.wins/d.total*100:0;
+      const avgMyLoss=d.myLossCnt>0?d.myLossSum/d.myLossCnt:0;
+      const avgEnLoss=d.enLossCnt>0?d.enLossSum/d.enLossCnt:0;
+      const lossRate=avgEnLoss>0?(avgMyLoss/avgEnLoss*100).toFixed(0):(avgMyLoss>0?'999':'-');
+      list.push({team:ck,generals:d.generals,tactics:d.tactics,winRate,wins:d.wins,total:d.total,lossRate,recordIds:d.recordIds,type:'counter'});
+    });
+    list.sort((a,b)=>b.winRate-a.winRate||b.wins-a.wins);
+    counterMap.set(ek,list);
   });
   // 被克制关系中，dominant=敌方, dominated=我方 → 我方被谁克制，这些我方队伍不适合打该敌人
   // 但我们可以从中提取：哪些我方队伍打不过该敌人
@@ -977,6 +1066,21 @@ function renderCounterPick(dominantPairs,dominatedPairs){
     html+=`</div>`; // card结束
   });
   container.innerHTML=html;
+}
+function exportCounterAnalysisPDF(){
+  // 切到克制分析tab并确保内容渲染后再打印
+  if(typeof switchTab==='function') switchTab('winrate');
+  var restrict=document.getElementById('restrictSection');
+  var counter=document.getElementById('counterSection');
+  var rh=restrict.style.display,cH=counter.style.display;
+  // 有内容的隐藏卡片临时显示以便打印
+  if(document.getElementById('restrictCards')?.children.length>0) restrict.style.display='';
+  if(document.getElementById('counterCards')?.children.length>0) counter.style.display='';
+  setTimeout(function(){
+    window.print();
+    setTimeout(function(){restrict.style.display=rh;counter.style.display=cH;},300);
+  },150);
+  if(typeof addSysLog==='function') addSysLog('operation','导出克制分析PDF');
 }
 function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch')?.value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});if(typeof addSysLog==='function')addSysLog('operation','导出克制关系CSV: '+data.length+' 条');downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
 
