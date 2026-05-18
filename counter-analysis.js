@@ -348,8 +348,7 @@
           lossRate: c.enemyLoss ? Math.round(c.counterLoss / c.enemyLoss * 100) : 0,
           total: c.total
         }))
-        .sort((a, b) => b.winRate - a.winRate || b.total - a.total)
-        .slice(0, 8);
+        .sort((a, b) => b.winRate - a.winRate || b.total - a.total);
       return { enemy, counters };
     });
   }

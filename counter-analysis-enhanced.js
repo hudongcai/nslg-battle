@@ -336,7 +336,7 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
 
   // 生成克制推荐卡片 - 竖向排列布局
   let html = '';
-  enemyList.slice(0, 5).forEach(enemy => {
+  enemyList.forEach(enemy => {
     const ek = typeof getTeamKey === 'function' ? getTeamKey(enemy.generals) : (enemy.generals || []).join(',');
     const counters = counterMap.get(ek) || [];
     const weaks = weakMap.get(ek) || [];
@@ -359,7 +359,7 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
     html += `<div style="padding:12px;">`;
     if (counters.length > 0) {
       html += `<div style="font-size:11px;color:var(--green);font-weight:bold;margin-bottom:8px;">✅ 推荐使用（克制该敌方）</div>`;
-      counters.slice(0, 3).forEach(c => {
+      counters.forEach(c => {
         html += `<div style="background:rgba(81,207,102,0.05);border-radius:6px;padding:10px;margin-bottom:8px;border-left:2px solid var(--green);">`;
         html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">`;
         html += `<span style="font-weight:bold;font-size:12px;color:var(--blue);">${typeof escHtml === 'function' ? escHtml(c.team) : c.team}</span>`;
