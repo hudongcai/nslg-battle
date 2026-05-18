@@ -206,6 +206,12 @@ function openToolContact() {
           📦 <b>安装包下载地址</b><br>
           🔑 <b>授权序列号</b>
         </div>
+        <a href="${(typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE.replace(/\/api$/, '') : 'http://localhost:3000')}/api/download/screenshot-tool"
+           download="AutoScreenshot_v1.0.0.zip"
+           style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:700;text-decoration:none;width:100%;justify-content:center;box-sizing:border-box;"
+           onclick="addSysLog('action','用户下载截图工具安装包')">
+          ⬇️ 下载安装包 AutoScreenshot_v1.0.0.zip
+        </a>
         <div style="font-size:12px;color:var(--text3);">套餐：截图工具 · ¥${TOOL_PACKAGE.price}/月</div>
       </div>
     </div>

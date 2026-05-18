@@ -968,6 +968,22 @@ app.get('/api/gallery/by-battle/:battleId', async (req, res) => {
   }
 });
 
+// ========== 截图工具安装包下载 ==========
+const path = require('path');
+const fs   = require('fs');
+
+app.get('/api/download/screenshot-tool', (req, res) => {
+  const filePath = path.resolve('E:\\Auto Screenshot Tool\\release\\AutoScreenshot_v1.0.0.zip');
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ code: 404, message: '文件不存在，请联系管理员' });
+  }
+  res.download(filePath, 'AutoScreenshot_v1.0.0.zip', (err) => {
+    if (err && !res.headersSent) {
+      res.status(500).json({ code: 500, message: '下载失败：' + err.message });
+    }
+  });
+});
+
 app.listen(PORT, async () => {
   await initDB();
   console.log(`🚀 服务运行在 http://localhost:${PORT}`);
