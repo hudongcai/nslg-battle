@@ -271,16 +271,54 @@ function renderCounterPickEnhanced(dominantPairs, dominatedPairs) {
     return;
   }
 
-  // 构建克制映射
-  const counterMap = new Map();
-  dominantPairs.forEach(d => {
-    const ek = typeof getTeamKey === 'function' ? getTeamKey(d.dominatedGens) : (d.dominatedGens || []).join(',');
-    if (!counterMap.has(ek)) counterMap.set(ek, []);
-    counterMap.get(ek).push({
-      team: d.dominant, generals: d.dominantGens, tactics: d.dominantTacs,
-      winRate: d.winRate, total: d.total, lossRate: d.lossRateVal,
-      recordIds: d.recordIds, type: 'counter'
+  // 构建克制映射：直接从原始战报提取，不依赖胜率门槛
+  // 情况1：高频队伍 X 在右方输（result='胜'）→ 左方队伍克制 X
+  // 情况2：高频队伍 X 在左方输（result='败'）→ 右方队伍克制 X
+  const rawCounterMap = new Map();
+  if (typeof allRecords !== 'undefined') {
+    allRecords.forEach(r => {
+      const rKey = typeof getTeamKey === 'function' ? getTeamKey(r.rightGenerals) : (r.rightGenerals||[]).join(',');
+      const lKey = typeof getTeamKey === 'function' ? getTeamKey(r.leftGenerals)  : (r.leftGenerals||[]).join(',');
+      // 情况1：X 在右方
+      if (rKey && rKey !== '未知' && enemyMap.has(rKey) && lKey && lKey !== '未知') {
+        if (!rawCounterMap.has(rKey)) rawCounterMap.set(rKey, new Map());
+        const cMap = rawCounterMap.get(rKey);
+        if (!cMap.has(lKey)) cMap.set(lKey, { generals: r.leftGenerals, tactics: r.leftTactics, wins: 0, total: 0, myLossSum: 0, myLossCnt: 0, enLossSum: 0, enLossCnt: 0, recordIds: [] });
+        const cd = cMap.get(lKey);
+        cd.total++; cd.recordIds.push(r.id);
+        if (r.result === '胜') cd.wins++;
+        if (r.leftLoss  != null && r.leftTotal  != null && r.leftTotal  > 0) { cd.myLossSum += r.leftLoss;  cd.myLossCnt++; }
+        if (r.rightLoss != null && r.rightTotal != null && r.rightTotal > 0) { cd.enLossSum += r.rightLoss; cd.enLossCnt++; }
+        if ((r.leftGenerals||[]).filter(g=>g).length > (cd.generals||[]).filter(g=>g).length) { cd.generals = r.leftGenerals; cd.tactics = r.leftTactics; }
+      }
+      // 情况2：X 在左方
+      if (lKey && lKey !== '未知' && enemyMap.has(lKey) && rKey && rKey !== '未知') {
+        if (!rawCounterMap.has(lKey)) rawCounterMap.set(lKey, new Map());
+        const cMap = rawCounterMap.get(lKey);
+        if (!cMap.has(rKey)) cMap.set(rKey, { generals: r.rightGenerals, tactics: r.rightTactics, wins: 0, total: 0, myLossSum: 0, myLossCnt: 0, enLossSum: 0, enLossCnt: 0, recordIds: [] });
+        const cd = cMap.get(rKey);
+        cd.total++; cd.recordIds.push(r.id);
+        if (r.result === '败') cd.wins++; // 右方赢 = 左方(X)输
+        if (r.rightLoss != null && r.rightTotal != null && r.rightTotal > 0) { cd.myLossSum += r.rightLoss; cd.myLossCnt++; }
+        if (r.leftLoss  != null && r.leftTotal  != null && r.leftTotal  > 0) { cd.enLossSum += r.leftLoss;  cd.enLossCnt++; }
+        if ((r.rightGenerals||[]).filter(g=>g).length > (cd.generals||[]).filter(g=>g).length) { cd.generals = r.rightGenerals; cd.tactics = r.rightTactics; }
+      }
     });
+  }
+  // 转换为 counterMap：只保留至少赢过 1 次的队伍，按胜率排序
+  const counterMap = new Map();
+  rawCounterMap.forEach((cMap, ek) => {
+    const list = [];
+    cMap.forEach((d, ck) => {
+      if (d.wins === 0) return;
+      const winRate = d.total > 0 ? d.wins / d.total * 100 : 0;
+      const avgMyLoss = d.myLossCnt > 0 ? d.myLossSum / d.myLossCnt : 0;
+      const avgEnLoss = d.enLossCnt > 0 ? d.enLossSum / d.enLossCnt : 0;
+      const lossRate = avgEnLoss > 0 ? (avgMyLoss / avgEnLoss * 100).toFixed(0) : (avgMyLoss > 0 ? '999' : '-');
+      list.push({ team: ck, generals: d.generals, tactics: d.tactics, winRate, wins: d.wins, total: d.total, lossRate, recordIds: d.recordIds, type: 'counter' });
+    });
+    list.sort((a, b) => b.winRate - a.winRate || b.wins - a.wins);
+    counterMap.set(ek, list);
   });
 
   const weakMap = new Map();
