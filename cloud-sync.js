@@ -698,6 +698,7 @@ async function cloudGetMyAccess() {
 // ========== 项目图片批量同步（仅 owner 调用）==========
 // 遍历当前项目所有记录，逐条从 battle_gallery 拉取图片并写入 IndexedDB
 // ========== 进入项目时全量同步该项目战报（解决历史截断遗留问题）==========
+// 直接 upsert 所有云端记录，不做本地匹配（put 本身是幂等 upsert）
 async function syncProjectRecords(projectId) {
   if (!projectId) return;
   try {
@@ -705,33 +706,20 @@ async function syncProjectRecords(projectId) {
     const cloudRecords = await cloudGetRecords(projectId);
     if (!cloudRecords || !cloudRecords.length) return;
 
-    const allLocal = await dbGetAll();
-    const byCloudId = new Map(allLocal.filter(r => r.cloudId).map(r => [String(r.cloudId), r]));
-
-    let added = 0, updated = 0;
+    let saved = 0;
     for (const rec of cloudRecords) {
       try {
-        const matched = byCloudId.get(String(rec.id));
-        if (matched) {
-          mergeRecord(matched, rec);
-          matched._synced = true;
-          matched._syncTime = Date.now();
-          await dbPutLocal(matched);
-          updated++;
-        } else {
-          rec.cloudId = rec.id;
-          rec._synced = true;
-          rec._syncTime = Date.now();
-          await dbPutLocal(rec);
-          byCloudId.set(String(rec.id), rec);
-          added++;
-        }
+        rec.cloudId = rec.id;
+        rec._synced = true;
+        rec._syncTime = Date.now();
+        await dbPutLocal(rec);
+        saved++;
       } catch (e) {
         console.warn('[syncProjectRecords] 单条失败:', rec.id, e);
       }
     }
-    console.log(`[syncProjectRecords] 完成：新增 ${added}，更新 ${updated}，共 ${cloudRecords.length} 条`);
-    return { added, updated, total: cloudRecords.length };
+    console.log(`[syncProjectRecords] 完成，写入 ${saved}/${cloudRecords.length} 条`);
+    return { saved, total: cloudRecords.length };
   } catch (e) {
     console.warn('[syncProjectRecords] 失败:', e);
   }
