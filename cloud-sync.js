@@ -588,9 +588,7 @@ async function syncCloudToLocal() {
             // 已有 cloudId 关联：直接用本地记录，用云端数据补全空字段
             localRec = matched;
             mergeRecord(localRec, rec);
-            if (!localRec.imageBase64 && localRec.cloudId) {
-              localRec.imageBase64 = await fetchGalleryImage(localRec.cloudId) || null;
-            }
+            // 图片不在同步阶段拉取，由 syncProjectImages() 或溯源按需加载
             localRec._synced = true;
             localRec._syncTime = Date.now();
             await dbPutLocal(localRec);
@@ -613,16 +611,12 @@ async function syncCloudToLocal() {
               localRec = bizMatch;
               localRec.cloudId = rec.id;
               mergeRecord(localRec, rec);
-              if (!localRec.imageBase64 && localRec.cloudId) {
-                localRec.imageBase64 = await fetchGalleryImage(localRec.cloudId) || null;
-              }
+              // 图片不在同步阶段拉取
               localRec._synced = true;
               localRec._syncTime = Date.now();
               await dbPutLocal(localRec);
             } else {
-              if (!rec.imageBase64 && rec.id) {
-                rec.imageBase64 = await fetchGalleryImage(rec.id) || null;
-              }
+              // 图片不在同步阶段拉取
               rec._synced = true;
               rec._syncTime = Date.now();
               rec.cloudId = rec.id;
@@ -699,6 +693,38 @@ async function cloudGetMyAccess() {
   }
 }
 
+// ========== 项目图片批量同步（仅 owner 调用）==========
+// 遍历当前项目所有记录，逐条从 battle_gallery 拉取图片并写入 IndexedDB
+async function syncProjectImages(projectId) {
+  if (!projectId) return;
+  if (typeof dbGetAll !== 'function' || typeof dbPutLocal !== 'function') return;
+  try {
+    const all = await dbGetAll();
+    const targets = all.filter(r => String(r.projectId) === String(projectId) && !r.imageBase64 && r.cloudId);
+    if (!targets.length) return;
+    console.log(`[syncProjectImages] 开始拉取 ${targets.length} 条记录图片...`);
+    let done = 0;
+    for (const rec of targets) {
+      try {
+        const img = await fetchGalleryImage(rec.cloudId);
+        if (img) {
+          rec.imageBase64 = img;
+          await dbPutLocal(rec);
+          done++;
+        }
+      } catch (e) { /* 单条失败不影响整体 */ }
+    }
+    console.log(`[syncProjectImages] 完成，共加载 ${done} 张图片`);
+    // 图片加载完成后刷新图库显示
+    if (typeof renderGallery === 'function') renderGallery();
+    if (typeof loadAllRecords === 'function') {
+      await loadAllRecords();
+    }
+  } catch (e) {
+    console.warn('[syncProjectImages] 失败:', e);
+  }
+}
+
 window.cloudSync = {
   getProjects: cloudGetProjects,
   createProject: cloudCreateProject,
@@ -716,6 +742,7 @@ window.cloudSync = {
   login: cloudLogin,
   createUser: cloudCreateUser,
   syncToLocal: syncCloudToLocal,
+  syncProjectImages: syncProjectImages,
   request: cloudRequestAPI,
   setToken: setToken,
   getToken: getToken,

@@ -256,8 +256,21 @@
 
   // ==================== 图片溯源 ====================
 
-  function showImageSource(recs) {
-    const imgs = recs.map(r => r.imageBase64 || r.imageData).filter(Boolean);
+  async function showImageSource(recs) {
+    // 优先用内存中的图片；若无则按 cloudId 从后端实时拉取
+    const resolved = await Promise.all(recs.map(async r => {
+      if (r.imageBase64 || r.imageData) return r.imageBase64 || r.imageData;
+      const cid = r.cloudId || r.cloud_id;
+      if (!cid) return null;
+      try {
+        const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+        const res = await fetch(`${base}/gallery/by-battle/${cid}`);
+        const json = await res.json();
+        if (json.code === 200 && json.data && json.data.image_data) return json.data.image_data;
+      } catch(e) {}
+      return null;
+    }));
+    const imgs = resolved.filter(Boolean);
     if (!imgs.length) { alert('该战报组合暂无图片数据'); return; }
     let modal = document.getElementById('_caModal');
     if (modal) modal.remove();

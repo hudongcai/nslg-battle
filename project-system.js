@@ -487,6 +487,10 @@ async function viewProject(projectId){
   if(typeof loadAllRecords==='function') await loadAllRecords();
   // 默认切换到战报导入
   switchTab('data', document.querySelector('#projectSubNav button[onclick*="switchTab\(\'data\'"]'));
+  // owner 异步后台加载图片（不阻塞页面渲染）
+  if(window.currentProjectIsOwner && window.cloudSync && typeof window.cloudSync.syncProjectImages === 'function'){
+    setTimeout(() => window.cloudSync.syncProjectImages(projectId), 500);
+  }
 }
 
 // ========== 退出项目（返回项目列表） ==========

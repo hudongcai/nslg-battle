@@ -808,7 +808,24 @@ function renderDataTable(){const data=getFilteredData();const total=data.length;
     <td>${r.imageBase64?`<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;">📷 原图</a>`:'<span style="color:var(--text3);font-size:11px;">无</span>'}</td>
     <td><button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button></td>
   </tr>`).join('');}const pagEl=document.getElementById('dataPagination');if(totalPages<=1)pagEl.innerHTML='';else pagEl.innerHTML=`<button ${dataPage<=1?'disabled':''} onclick="dataPage--;renderDataTable()">◀</button><span style="color:var(--text2);font-size:11px;">${dataPage}/${totalPages}</span><button ${dataPage>=totalPages?'disabled':''} onclick="dataPage++;renderDataTable()">▶</button>`;}
-async function showRecordImage(id){const record=await dbGet(id);if(!record||!record.imageBase64){alert('该记录没有保存原图');return;}const m=document.createElement('div');m.className='image-modal';m.onclick=()=>m.remove();m.innerHTML=`<img src="${record.imageBase64}" style="max-width:90vw;max-height:90vh;border-radius:8px;">`;document.body.appendChild(m);}
+async function showRecordImage(id){
+  const record=await dbGet(id);
+  if(!record){alert('记录不存在');return;}
+  let img=record.imageBase64||record.imageData||'';
+  if(!img&&(record.cloudId||record.cloud_id)){
+    try{
+      const cid=record.cloudId||record.cloud_id;
+      const base=typeof CLOUD_API_BASE!=='undefined'?CLOUD_API_BASE:'/api';
+      const res=await fetch(`${base}/gallery/by-battle/${cid}`);
+      const json=await res.json();
+      if(json.code===200&&json.data&&json.data.image_data)img=json.data.image_data;
+    }catch(e){}
+  }
+  if(!img){alert('该记录暂无图片');return;}
+  const m=document.createElement('div');m.className='image-modal';m.onclick=()=>m.remove();
+  m.innerHTML=`<img src="${img}" style="max-width:90vw;max-height:90vh;border-radius:8px;">`;
+  document.body.appendChild(m);
+}
 function deleteRecord(id){if(!confirm('确定删除？'))return;dbDelete(id).then(()=>loadAllRecords().then(()=>renderDataTable()));}
 function clearAllData(){if(!confirm('确定清空所有数据？'))return;dbClear().then(()=>{allRecords=[];updateGlobalStats();renderDataTable();renderGallery();location.reload();});}
 function exportDataCSV(){try{const data=getFilteredData();if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['序号','时间','结果','左侧玩家','左侧同盟','左侧武将','左侧战法','左侧阵型','左侧战损','左侧总兵力','左侧战损率','右侧玩家','右侧同盟','右侧武将','右侧战法','右侧阵型','右侧战损','右侧总兵力','右侧战损率'];function tacStr(generals,tactics){if(!generals||generals.length===0)return'-';return generals.slice(0,3).map((g,i)=>{const base=i*3;const t=[tactics?.[base]||'',tactics?.[base+1]||'',tactics?.[base+2]||''].filter(t=>t&&t!=='未知');return g+(t.length?'['+t.join('/')+']':'');}).join(' | ');}const rows=data.map((r,i)=>[i+1,r.time||'',r.result||'',r.leftPlayer||'',r.leftAlliance||'',getTeamKey(r.leftGenerals),tacStr(r.leftGenerals,r.leftTactics),r.leftFormation||'',r.leftLoss||'',r.leftTotal||'',r.leftLossRate!=null?r.leftLossRate.toFixed(1)+'%':'',r.rightPlayer||'',r.rightAlliance||'',getTeamKey(r.rightGenerals),tacStr(r.rightGenerals,r.rightTactics),r.rightFormation||'',r.rightLoss||'',r.rightTotal||'',r.rightLossRate!=null?r.rightLossRate.toFixed(1)+'%':'']);downloadCSV(headers,rows,'三谋战报数据.csv');}catch(e){console.error('exportDataCSV error:',e);alert('导出失败: '+e.message);openCSVWindowFallback();}}function openCSVWindowFallback(){try{let data=getFilteredData();let csv='\uFEFF';csv+='序号,时间,结果,左侧玩家,左侧同盟,左侧武将,左侧战法,左阵型,左战损,左总兵力,左战损率,右侧玩家,右侧同盟,右侧武将,右侧战法,右阵型,右战损,右总兵力,右战损率\n';data.forEach((r,i)=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b]||'',t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join(' | ');}csv+=`${i+1},"${r.time||''}","${r.result||''}","${r.leftPlayer||''}","${r.leftAlliance||''}","${getTeamKey(r.leftGenerals)}","${ts(r.leftGenerals,r.leftTactics)}","${r.leftFormation||''}",${r.leftLoss||0},${r.leftTotal||0},"${r.leftLossRate!=null?r.leftLossRate.toFixed(1)+'%':'-'}","${r.rightPlayer||''}","${r.rightAlliance||''}","${getTeamKey(r.rightGenerals)}","${ts(r.rightGenerals,r.rightTactics)}","${r.rightFormation||''}",${r.rightLoss||0},${r.rightTotal||0},"${r.rightLossRate!=null?r.rightLossRate.toFixed(1)+'%':'-'}"\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>三谋战报数据</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>三谋战报数据 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}catch(e){alert('导出完全失败: '+e.message);}}
