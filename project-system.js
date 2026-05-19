@@ -454,6 +454,10 @@ async function viewProject(projectId){
   const proj = await getProjectWithFallback(projectId);
   if(!proj){ alert('项目不存在'); return; }
   window.currentProjectId = projectId;
+  // 标记当前用户是否为项目所有者（创建者或超管），供图库等模块判断
+  const _isOwner = proj.creator === currentUser.phone || proj.creator_phone === currentUser.phone;
+  const _isSuperAdmin = currentUser && currentUser.role === 'super_admin';
+  window.currentProjectIsOwner = _isOwner || _isSuperAdmin;
   // 隐藏项目列表，显示项目子导航
   document.getElementById('tab-project').style.display='none';
   // 更新项目子导航，添加项目名称显示
@@ -488,6 +492,7 @@ async function viewProject(projectId){
 // ========== 退出项目（返回项目列表） ==========
 function exitProject(){
   window.currentProjectId = null;
+  window.currentProjectIsOwner = null;
   // 隐藏子导航
   const sn = document.getElementById('projectSubNav');
   if(sn){
