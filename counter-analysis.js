@@ -717,58 +717,25 @@
   // ==================== 导出打印 ====================
 
   function caGetPrintStyles() {
+    // 从当前页面读取 CSS 变量，保持原始深色主题
+    const rs = getComputedStyle(document.documentElement);
+    const varNames = ['--bg','--bg2','--bg3','--text','--text2','--text3','--border','--accent','--green','--red'];
+    const vars = varNames.map(v => {
+      const val = rs.getPropertyValue(v).trim();
+      return val ? `${v}:${val}` : '';
+    }).filter(Boolean).join(';');
+
+    // 复制页面中已注入的 CA 样式
+    const caStyleEl = document.getElementById('ca-styles');
+    const caStyles = caStyleEl ? caStyleEl.textContent : '';
+
     return `
+      :root{${vars}}
       *{box-sizing:border-box;}
-      body{background:#fff;color:#222;font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;padding:20px;margin:0;font-size:12px;}
-      h2{font-size:15px;color:#333;margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid #4a3fff;}
-      table{width:100%;border-collapse:collapse;}
-      th{background:#f0f0f0;color:#333;padding:6px 10px;border:1px solid #ddd;font-weight:600;text-align:center;white-space:nowrap;}
-      td{padding:6px 10px;border-bottom:1px solid #eee;vertical-align:middle;}
-      tr:last-child td{border-bottom:none;}
-      .ca-tbl-wrap{border:1px solid #ddd;border-radius:6px;overflow:hidden;}
-      .ca-team{border-left:3px solid #ccc;padding-left:8px;}
-      .ca-gen-table{width:100%;table-layout:fixed;border-collapse:collapse;}
-      .ca-gen-row td{padding:0 0 2px 0;vertical-align:middle;}
-      .ca-gen-name{width:22%;padding-right:4px;font-size:12px;white-space:nowrap;}
-      .ca-gen-tacs{width:45%;font-size:11px;}
-      .ca-gen-form{width:18%;text-align:center;}
-      .ca-gen-extra{width:15%;text-align:center;}
-      .ca-tac{background:#eef2ff;color:#3d2fff;border:1px solid #c5ceff;border-radius:3px;padding:1px 4px;font-size:10px;white-space:nowrap;display:inline-block;}
-      .ca-tac-sep{color:#aaa;margin:0 1px;font-size:9px;}
-      .ca-form-badge{background:#fffbe6;color:#996600;border:1px solid #fde68a;border-radius:3px;padding:1px 5px;font-size:10px;white-space:nowrap;display:inline-block;}
-      .ca-dot{color:#ccc;margin:0 1px;font-size:10px;}
-      .ca-dim{color:#bbb;font-size:11px;}
-      .ca-vs{color:#c0392b;font-weight:700;text-align:center;font-size:11px;}
-      .ca-idx{color:#aaa;text-align:center;font-size:11px;}
-      .ca-num-cell{text-align:center;color:#555;}
-      .ca-center{text-align:center;}
-      .ca-green{color:#1a8a3c;font-weight:600;}
-      .ca-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:10px;}
-      .ca-badge-cnt{background:#f0f0f0;color:#666;border:1px solid #ddd;}
-      .ca-freq-num{color:#e67e22;font-weight:700;text-align:center;}
-      .ca-rank-top{color:#b8860b;}
-      .ca-top3 td{background:#fffef5;}
-      .ca-hint{color:#888;font-size:11px;margin:0 0 10px;}
-      .ca-rec-header{background:#f5f5f5;border:1px solid #ddd;border-radius:6px 6px 0 0;padding:8px 14px;font-weight:600;color:#333;display:flex;align-items:center;font-size:12px;}
-      .ca-rec-header-left{flex:0 0 33.333%;text-align:center;}
-      .ca-rec-arrow-spacer{flex:0 0 26px;}
-      .ca-rec-header-mid{flex:1;text-align:center;}
-      .ca-rec-header-right{display:none;}
-      .ca-rec-group{display:flex;align-items:stretch;border:1px solid #ddd;border-top:none;overflow:hidden;}
-      .ca-rec-group:last-child{border-radius:0 0 6px 6px;margin-bottom:8px;}
-      .ca-rec-enemy{flex:0 0 33.333%;min-width:0;padding:10px 12px;border-right:1px solid #ddd;background:#fafafa;}
-      .ca-rec-arrow{flex:0 0 26px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;}
-      .ca-rec-counters{flex:1;min-width:0;display:flex;flex-direction:column;}
-      .ca-rec-counter{display:flex;align-items:stretch;border-bottom:1px solid #f0f0f0;}
-      .ca-rec-counter:last-child{border-bottom:none;}
-      .ca-rec-counter-team{flex:1;min-width:0;padding:8px 12px;border-right:1px solid #f0f0f0;}
-      .ca-rec-counter-stats{flex:1;min-width:0;padding:6px;display:flex;align-items:stretch;gap:4px;}
-      .ca-stat-item{flex:1;min-width:0;text-align:center;padding:4px 2px;border-radius:4px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;}
-      .ca-stat-win{color:#1a8a3c;background:#f0fbf4;}
-      .ca-stat-loss{color:#2471a3;background:#ebf5fb;}
-      .ca-stat-cnt{color:#666;background:#f5f5f5;}
-      .ca-rec-empty{color:#aaa;padding:12px 14px;font-style:italic;font-size:12px;}
-      .ca-src-btn,.ca-filter-row,.ca-sort-arrow,.ca-rec-sort-btn,.ca-rec-sort-spacer,.ca-th-act,td.ca-center{display:none!important;}
+      body{background:var(--bg,#0a0a1a);color:var(--text,#ddd);font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;padding:20px;margin:0;}
+      h2{font-size:15px;color:var(--text,#ddd);margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid var(--accent,#5b4fff);}
+      ${caStyles}
+      .ca-src-btn,.ca-filter-row,.ca-sort-arrow,.ca-rec-sort-btn,.ca-rec-sort-spacer,.ca-th-act,.ca-hint-row-export,td.ca-center{display:none!important;}
       @media print{body{padding:10px;}@page{margin:12mm;}}
     `;
   }
