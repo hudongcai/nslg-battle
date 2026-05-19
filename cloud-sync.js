@@ -576,13 +576,20 @@ async function syncCloudToLocal() {
     try {
       const cloudRecords = await cloudGetRecords();
       let syncCount = 0;
+
+      // ★ 关键优化：dbGetAll() 只调用一次，用 Map 做 O(1) 查找，避免 O(n²) 性能问题
+      const allLocal = await dbGetAll();
+      const byCloudId = new Map(allLocal.filter(r => r.cloudId).map(r => [String(r.cloudId), r]));
+      // 业务 key：日期+左方+右方
+      const bizKey = r => `${r.battleDate||''}|${r.leftPlayer||r.attackerName||''}|${r.rightPlayer||r.enemyName||''}`;
+      const byBizKey = new Map(allLocal.map(r => [bizKey(r), r]));
+
       for (const rec of cloudRecords) {
         try {
           let localRec = null;
 
           // 3.1 按 cloudId 找本地记录
-          const allLocal = await dbGetAll();
-          let matched = allLocal.find(r => r.cloudId == rec.id);
+          const matched = byCloudId.get(String(rec.id));
 
           if (matched) {
             // 已有 cloudId 关联：直接用本地记录，用云端数据补全空字段
@@ -594,18 +601,8 @@ async function syncCloudToLocal() {
             await dbPutLocal(localRec);
           } else {
             // 3.2 按业务字段匹配（OCR 记录还没关联 cloudId）
-            // 兼容：本地记录可能用 leftPlayer/rightPlayer 或 attackerName/enemyName
-            const bizMatch = allLocal.find(r => {
-              const localDate = r.battleDate || '';
-              const cloudDate = rec.battleDate || '';
-              const localLeft  = r.leftPlayer || r.attackerName || '';
-              const localRight = r.rightPlayer || r.enemyName || '';
-              const cloudLeft  = rec.leftPlayer || '';
-              const cloudRight = rec.rightPlayer || '';
-              return localDate === cloudDate &&
-                     localLeft === cloudLeft &&
-                     localRight === cloudRight;
-            });
+            const cloudBizKey = `${rec.battleDate||''}|${rec.leftPlayer||''}|${rec.rightPlayer||''}`;
+            const bizMatch = byBizKey.get(cloudBizKey);
 
             if (bizMatch) {
               localRec = bizMatch;
@@ -615,12 +612,17 @@ async function syncCloudToLocal() {
               localRec._synced = true;
               localRec._syncTime = Date.now();
               await dbPutLocal(localRec);
+              // 更新内存索引
+              byCloudId.set(String(rec.id), localRec);
             } else {
               // 图片不在同步阶段拉取
               rec._synced = true;
               rec._syncTime = Date.now();
               rec.cloudId = rec.id;
               await dbPutLocal(rec);
+              // 更新内存索引
+              byCloudId.set(String(rec.id), rec);
+              byBizKey.set(bizKey(rec), rec);
             }
           }
 
