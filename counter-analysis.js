@@ -38,6 +38,11 @@
       + '#' + normTacs(tacs).sort().join('|');
   }
 
+  // 仅用武将组合作为 key，忽略战法和阵型
+  function teamKeyNoTacs(gens) {
+    return normGens(gens).sort().join('|');
+  }
+
   function winner(result) {
     if (/^(胜|win|胜利)$/.test(result)) return 'left';
     if (/^(败|负|loss|失败)$/.test(result)) return 'right';
@@ -112,6 +117,10 @@
   let caRecSortField = 'winRate';
   let caRecSortDir = 'desc';
 
+  // ---- 克制推荐（无战法）Tab 排序 ----
+  let caRecNTSortField = 'winRate';
+  let caRecNTSortDir = 'desc';
+
   window.caRecToggleSort = function (field) {
     if (caRecSortField === field) caRecSortDir = caRecSortDir === 'asc' ? 'desc' : 'asc';
     else { caRecSortField = field; caRecSortDir = 'desc'; }
@@ -133,6 +142,30 @@
         default: return 0;
       }
       return caRecSortDir === 'asc' ? va - vb : vb - va;
+    });
+  }
+
+  window.caRecNTToggleSort = function (field) {
+    if (caRecNTSortField === field) caRecNTSortDir = caRecNTSortDir === 'asc' ? 'desc' : 'asc';
+    else { caRecNTSortField = field; caRecNTSortDir = 'desc'; }
+    renderCounterRecommendationsNoTacs();
+  };
+
+  function caRecNTSortArrow(field) {
+    if (caRecNTSortField !== field) return '<span class="ca-sort-arrow">↕</span>';
+    return `<span class="ca-sort-arrow ca-sort-active">${caRecNTSortDir === 'asc' ? '▲' : '▼'}</span>`;
+  }
+
+  function caRecNTSortCounters(counters) {
+    return [...counters].sort((a, b) => {
+      let va, vb;
+      switch (caRecNTSortField) {
+        case 'winRate': va = a.winRate; vb = b.winRate; break;
+        case 'lossRate': va = a.lossRate; vb = b.lossRate; break;
+        case 'total': va = a.total; vb = b.total; break;
+        default: return 0;
+      }
+      return caRecNTSortDir === 'asc' ? va - vb : vb - va;
     });
   }
 
@@ -196,6 +229,27 @@
       html += '</table>';
     }
 
+    html += '</div>';
+    return html;
+  }
+
+  // 无战法队伍芯片：只显示武将名，不显示战法/阵型列
+  function teamChipNoTacs(generals, isWinner, extra) {
+    const gens = normGens(generals);
+    const borderColor = isWinner === true ? 'var(--green)' : isWinner === false ? 'var(--red)' : 'var(--border)';
+    let html = `<div class="ca-team" style="border-left:3px solid ${borderColor};padding-left:8px;">`;
+    if (!gens.length) {
+      html += '<span class="ca-dim">—</span>';
+    } else {
+      html += '<table class="ca-gen-table"><tbody>';
+      gens.forEach((g, i) => {
+        html += `<tr class="ca-gen-row">
+          <td class="ca-gen-name" colspan="2"><b style="color:${heroColor(g)}">${escHtml(g)}</b></td>`;
+        if (i === 0 && extra) html += `<td class="${extra.cls || 'ca-gen-extra'}" rowspan="${gens.length}">${extra.html}</td>`;
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
     html += '</div>';
     return html;
   }
@@ -302,6 +356,19 @@
     return Object.values(stats).sort((a, b) => b.count - a.count).slice(0, 30);
   }
 
+  // 高频统计（无战法）：key 只用武将组合，全部显示不限数量
+  function analyzeEnemyFreqNoTacs(recs) {
+    const stats = {};
+    for (const rec of recs) {
+      const rg = normGens(rec.rightGenerals || rec.right_generals);
+      if (!rg.length) continue;
+      const k = teamKeyNoTacs(rg);
+      if (!stats[k]) stats[k] = { generals: normGens(rg).sort(), count: 0 };
+      stats[k].count++;
+    }
+    return Object.values(stats).sort((a, b) => b.count - a.count);
+  }
+
   function analyzeRecommend(recs) {
     const enemies = analyzeEnemyFreq(recs);
     if (!enemies.length) return [];
@@ -367,6 +434,64 @@
     c.counterLoss += cLoss;
     c.enemyLoss  += eLoss;
     c.records.push(rec);
+  }
+
+  function addEncounterNoTacs(matrix, enemyKey, cKey, cGens, cWon, cLoss, eLoss, rec) {
+    if (!matrix[enemyKey]) matrix[enemyKey] = {};
+    if (!matrix[enemyKey][cKey]) {
+      matrix[enemyKey][cKey] = {
+        generals: cGens,
+        wins: 0, total: 0, counterLoss: 0, enemyLoss: 0, records: []
+      };
+    }
+    const c = matrix[enemyKey][cKey];
+    c.total++;
+    if (cWon) c.wins++;
+    c.counterLoss += cLoss;
+    c.enemyLoss  += eLoss;
+    c.records.push(rec);
+  }
+
+  // 克制推荐（无战法）：key 只用武将组合，至少1胜进入列表，全部显示
+  function analyzeRecommendNoTacs(recs) {
+    const enemies = analyzeEnemyFreqNoTacs(recs);
+    if (!enemies.length) return [];
+    const enemyKeySet = new Set(enemies.map(e => teamKeyNoTacs(e.generals)));
+    const matrix = {};
+    for (const rec of recs) {
+      const lg = normGens(rec.leftGenerals  || rec.left_generals);
+      const rg = normGens(rec.rightGenerals || rec.right_generals);
+      if (!lg.length || !rg.length) continue;
+      const leftKey  = teamKeyNoTacs(lg);
+      const rightKey = teamKeyNoTacs(rg);
+      const w = winner(rec.result);
+      const leftLoss  = parseFloat(rec.leftLoss  || rec.left_loss  || 0);
+      const rightLoss = parseFloat(rec.rightLoss || rec.right_loss || 0);
+      // 情况一：敌方高频队伍在右侧 → 左侧是潜在克制方
+      if (enemyKeySet.has(rightKey)) {
+        addEncounterNoTacs(matrix, rightKey, leftKey, normGens(lg).sort(), w === 'left', leftLoss, rightLoss, rec);
+      }
+      // 情况二：敌方高频队伍在左侧 → 右侧是潜在克制方
+      if (leftKey !== rightKey && enemyKeySet.has(leftKey)) {
+        addEncounterNoTacs(matrix, leftKey, rightKey, normGens(rg).sort(), w === 'right', rightLoss, leftLoss, rec);
+      }
+    }
+    return enemies.map(enemy => {
+      const ek = teamKeyNoTacs(enemy.generals);
+      const allCounters = Object.values(matrix[ek] || {});
+      const counters = allCounters
+        .filter(c => c.wins > 0)
+        .map(c => ({
+          generals: c.generals,
+          records: c.records,
+          wins: c.wins,
+          winRate:  c.total ? Math.round(c.wins / c.total * 1000) / 10 : 0,
+          lossRate: c.enemyLoss ? Math.round(c.counterLoss / c.enemyLoss * 100) : 0,
+          total: c.total
+        }))
+        .sort((a, b) => b.winRate - a.winRate || b.total - a.total);
+      return { enemy, counters };
+    });
   }
 
   // ==================== 渲染：Tab 1 克制关系 ====================
@@ -495,6 +620,85 @@
     if (d && d.counters[ci]) showImageSource(d.counters[ci].records);
   };
 
+  // ==================== 渲染：Tab 4 高频（无战法）====================
+
+  window.renderEnemyHighFreqNoTacs = async function () {
+    const el = document.getElementById('enemyHighFreqBodyNoTacs');
+    if (!el) return;
+    await ensureRecords();
+    const data = analyzeEnemyFreqNoTacs(records());
+
+    if (!data.length) {
+      el.innerHTML = `<tr><td colspan="3" class="ca-empty">暂无敌方队伍数据</td></tr>`;
+      return;
+    }
+
+    el.innerHTML = data.map((d, i) => `
+      <tr class="ca-row${i < 3 ? ' ca-top3' : ''}">
+        <td class="ca-idx ca-rank${i < 3 ? ' ca-rank-top' : ''}">${i + 1}</td>
+        <td>${teamChipNoTacs(d.generals, false)}</td>
+        <td class="ca-num-cell ca-freq-num">×${d.count}</td>
+      </tr>`).join('');
+  };
+
+  // ==================== 渲染：Tab 5 克制推荐（无战法）====================
+
+  window.renderCounterRecommendationsNoTacs = async function () {
+    const el = document.getElementById('counterRecommendationsNoTacs');
+    if (!el) return;
+    await ensureRecords();
+    const data = analyzeRecommendNoTacs(records());
+    window._caRecNTData = data;
+
+    if (!data.length) {
+      el.innerHTML = `<div class="ca-empty-blk">暂无克制推荐数据<br><small>需要足够的战报数据才能生成推荐</small></div>`;
+      return;
+    }
+
+    el.innerHTML = `<div class="ca-rec-header">
+        <div class="ca-rec-header-left">敌方高频（无战法）</div>
+        <div class="ca-rec-arrow-spacer"></div>
+        <div class="ca-rec-header-mid">克制推荐（无战法）</div>
+        <div class="ca-rec-header-right">
+          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('winRate')">胜率 ${caRecNTSortArrow('winRate')}</span>
+          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('lossRate')">战损 ${caRecNTSortArrow('lossRate')}</span>
+          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('total')">场次 ${caRecNTSortArrow('total')}</span>
+          <span class="ca-rec-sort-spacer"></span>
+        </div>
+      </div>
+      ${data.map((item, gi) => {
+      const sortedCounters = caRecNTSortCounters(item.counters);
+      const countersHtml = sortedCounters.length
+        ? sortedCounters.map((c, ci) => `
+          <div class="ca-rec-counter">
+            <div class="ca-rec-counter-team">${teamChipNoTacs(c.generals, true)}</div>
+            <div class="ca-rec-counter-stats">
+              <div class="ca-stat-item ca-stat-win">${c.winRate}% 胜率</div>
+              <div class="ca-stat-item ca-stat-loss">战损 ${c.lossRate}%</div>
+              <div class="ca-stat-item ca-stat-cnt">${c.total} 场</div>
+              <button class="ca-src-btn" onclick="caShowRecSrcNT(${gi},${ci})">溯源</button>
+            </div>
+          </div>`).join('')
+        : `<div class="ca-rec-empty">暂无克制数据</div>`;
+
+      return `<div class="ca-rec-group">
+        <div class="ca-rec-enemy">
+          ${teamChipNoTacs(item.enemy.generals, false, {
+            html: `<span class="ca-badge ca-badge-cnt">×${item.enemy.count}</span>`,
+            cls: 'ca-gen-extra'
+          })}
+        </div>
+        <div class="ca-rec-arrow">▶</div>
+        <div class="ca-rec-counters">${countersHtml}</div>
+      </div>`;
+    }).join('')}`;
+  };
+
+  window.caShowRecSrcNT = function (gi, ci) {
+    const d = (window._caRecNTData || [])[gi];
+    if (d && d.counters[ci]) showImageSource(d.counters[ci].records);
+  };
+
   // ==================== UI 框架 ====================
 
   window.createCounterAnalysisUI = async function (parent) {
@@ -506,6 +710,8 @@
           <button class="ca-tab active" onclick="switchCounterTab('relationship')" id="caTabRelBtn">克制关系</button>
           <button class="ca-tab" onclick="switchCounterTab('enemy')" id="caTabEnemyBtn">敌方高频</button>
           <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐</button>
+          <button class="ca-tab" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">高频(无战法)</button>
+          <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">克制(无战法)</button>
         </div>
 
         <div id="caPanelRelationship">
@@ -550,23 +756,56 @@
           <p class="ca-hint">针对敌方高频队伍，从所有战报中找出有过战胜记录（胜率 &gt;50%）的克制阵容，按胜率降序</p>
           <div id="counterRecommendations"></div>
         </div>
+
+        <div id="caPanelEnemyNoTacs" style="display:none;">
+          <p class="ca-hint">敌方（右侧）队伍出场频率，仅以武将组合区分，不区分战法与阵型，全部显示</p>
+          <div class="ca-tbl-wrap">
+            <table class="ca-tbl">
+              <thead><tr>
+                <th class="ca-th-idx">#</th>
+                <th>队伍（武将组合）</th>
+                <th class="ca-th-num">出场</th>
+              </tr></thead>
+              <tbody id="enemyHighFreqBodyNoTacs"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="caPanelRecommendNoTacs" style="display:none;">
+          <p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p>
+          <div id="counterRecommendationsNoTacs"></div>
+        </div>
       </div>`;
 
     switchCounterTab('relationship');
   };
 
   window.switchCounterTab = async function (tab) {
-    const panels = { relationship: 'caPanelRelationship', enemy: 'caPanelEnemy', recommend: 'caPanelRecommend' };
-    const btns   = { relationship: 'caTabRelBtn', enemy: 'caTabEnemyBtn', recommend: 'caTabRecBtn' };
+    const panels = {
+      relationship:    'caPanelRelationship',
+      enemy:           'caPanelEnemy',
+      recommend:       'caPanelRecommend',
+      enemyNoTacs:     'caPanelEnemyNoTacs',
+      recommendNoTacs: 'caPanelRecommendNoTacs'
+    };
+    const btns = {
+      relationship:    'caTabRelBtn',
+      enemy:           'caTabEnemyBtn',
+      recommend:       'caTabRecBtn',
+      enemyNoTacs:     'caTabEnemyNTBtn',
+      recommendNoTacs: 'caTabRecNTBtn'
+    };
     Object.keys(panels).forEach(t => {
       const p = document.getElementById(panels[t]);
       const b = document.getElementById(btns[t]);
       if (p) p.style.display = t === tab ? 'block' : 'none';
       if (b) b.classList.toggle('active', t === tab);
     });
-    if (tab === 'relationship') await renderCounterAnalysis();
-    else if (tab === 'enemy')   await renderEnemyHighFreq();
-    else                        await renderCounterRecommendations();
+    if (tab === 'relationship')    await renderCounterAnalysis();
+    else if (tab === 'enemy')      await renderEnemyHighFreq();
+    else if (tab === 'recommend')  await renderCounterRecommendations();
+    else if (tab === 'enemyNoTacs') await renderEnemyHighFreqNoTacs();
+    else                           await renderCounterRecommendationsNoTacs();
   };
 
   // ==================== 样式注入 ====================
