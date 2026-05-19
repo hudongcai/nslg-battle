@@ -602,6 +602,7 @@
       </div>
       ${data.map((item, gi) => {
       const sortedCounters = caRecSortCounters(item.counters);
+      item.counters = sortedCounters; // 保持溯源下标与显示顺序一致
       const countersHtml = sortedCounters.length
         ? sortedCounters.map((c, ci) => `
           <div class="ca-rec-counter">
@@ -681,6 +682,7 @@
       </div>
       ${data.map((item, gi) => {
       const sortedCounters = caRecNTSortCounters(item.counters);
+      item.counters = sortedCounters; // 保持溯源下标与显示顺序一致
       const countersHtml = sortedCounters.length
         ? sortedCounters.map((c, ci) => `
           <div class="ca-rec-counter">
