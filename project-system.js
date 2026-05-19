@@ -483,7 +483,11 @@ async function viewProject(projectId){
     `;
     projectSubNav.style.display='flex';
   }
-  // 先加载项目数据（过滤后），再切换 tab 确保显示正确
+  // 先从云端全量同步该项目战报（解决历史截断导致的数据缺失）
+  if(window.cloudSync && typeof window.cloudSync.syncProjectRecords === 'function'){
+    try { await window.cloudSync.syncProjectRecords(projectId); } catch(e) {}
+  }
+  // 再加载本地数据（此时 IndexedDB 已完整）
   if(typeof loadAllRecords==='function') await loadAllRecords();
   // 默认切换到战报导入
   switchTab('data', document.querySelector('#projectSubNav button[onclick*="switchTab\(\'data\'"]'));
