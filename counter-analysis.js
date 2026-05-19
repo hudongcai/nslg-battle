@@ -714,6 +714,96 @@
     if (d && d.counters[ci]) showImageSource(d.counters[ci].records);
   };
 
+  // ==================== 导出打印 ====================
+
+  function caGetPrintStyles() {
+    return `
+      *{box-sizing:border-box;}
+      body{background:#fff;color:#222;font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;padding:20px;margin:0;font-size:12px;}
+      h2{font-size:15px;color:#333;margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid #4a3fff;}
+      table{width:100%;border-collapse:collapse;}
+      th{background:#f0f0f0;color:#333;padding:6px 10px;border:1px solid #ddd;font-weight:600;text-align:center;white-space:nowrap;}
+      td{padding:6px 10px;border-bottom:1px solid #eee;vertical-align:middle;}
+      tr:last-child td{border-bottom:none;}
+      .ca-tbl-wrap{border:1px solid #ddd;border-radius:6px;overflow:hidden;}
+      .ca-team{border-left:3px solid #ccc;padding-left:8px;}
+      .ca-gen-table{width:100%;table-layout:fixed;border-collapse:collapse;}
+      .ca-gen-row td{padding:0 0 2px 0;vertical-align:middle;}
+      .ca-gen-name{width:22%;padding-right:4px;font-size:12px;white-space:nowrap;}
+      .ca-gen-tacs{width:45%;font-size:11px;}
+      .ca-gen-form{width:18%;text-align:center;}
+      .ca-gen-extra{width:15%;text-align:center;}
+      .ca-tac{background:#eef2ff;color:#3d2fff;border:1px solid #c5ceff;border-radius:3px;padding:1px 4px;font-size:10px;white-space:nowrap;display:inline-block;}
+      .ca-tac-sep{color:#aaa;margin:0 1px;font-size:9px;}
+      .ca-form-badge{background:#fffbe6;color:#996600;border:1px solid #fde68a;border-radius:3px;padding:1px 5px;font-size:10px;white-space:nowrap;display:inline-block;}
+      .ca-dot{color:#ccc;margin:0 1px;font-size:10px;}
+      .ca-dim{color:#bbb;font-size:11px;}
+      .ca-vs{color:#c0392b;font-weight:700;text-align:center;font-size:11px;}
+      .ca-idx{color:#aaa;text-align:center;font-size:11px;}
+      .ca-num-cell{text-align:center;color:#555;}
+      .ca-center{text-align:center;}
+      .ca-green{color:#1a8a3c;font-weight:600;}
+      .ca-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:10px;}
+      .ca-badge-cnt{background:#f0f0f0;color:#666;border:1px solid #ddd;}
+      .ca-freq-num{color:#e67e22;font-weight:700;text-align:center;}
+      .ca-rank-top{color:#b8860b;}
+      .ca-top3 td{background:#fffef5;}
+      .ca-hint{color:#888;font-size:11px;margin:0 0 10px;}
+      .ca-rec-header{background:#f5f5f5;border:1px solid #ddd;border-radius:6px 6px 0 0;padding:8px 14px;font-weight:600;color:#333;display:flex;align-items:center;font-size:12px;}
+      .ca-rec-header-left{flex:0 0 33.333%;text-align:center;}
+      .ca-rec-arrow-spacer{flex:0 0 26px;}
+      .ca-rec-header-mid{flex:1;text-align:center;}
+      .ca-rec-header-right{display:none;}
+      .ca-rec-group{display:flex;align-items:stretch;border:1px solid #ddd;border-top:none;overflow:hidden;}
+      .ca-rec-group:last-child{border-radius:0 0 6px 6px;margin-bottom:8px;}
+      .ca-rec-enemy{flex:0 0 33.333%;min-width:0;padding:10px 12px;border-right:1px solid #ddd;background:#fafafa;}
+      .ca-rec-arrow{flex:0 0 26px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;}
+      .ca-rec-counters{flex:1;min-width:0;display:flex;flex-direction:column;}
+      .ca-rec-counter{display:flex;align-items:stretch;border-bottom:1px solid #f0f0f0;}
+      .ca-rec-counter:last-child{border-bottom:none;}
+      .ca-rec-counter-team{flex:1;min-width:0;padding:8px 12px;border-right:1px solid #f0f0f0;}
+      .ca-rec-counter-stats{flex:1;min-width:0;padding:6px;display:flex;align-items:stretch;gap:4px;}
+      .ca-stat-item{flex:1;min-width:0;text-align:center;padding:4px 2px;border-radius:4px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;}
+      .ca-stat-win{color:#1a8a3c;background:#f0fbf4;}
+      .ca-stat-loss{color:#2471a3;background:#ebf5fb;}
+      .ca-stat-cnt{color:#666;background:#f5f5f5;}
+      .ca-rec-empty{color:#aaa;padding:12px 14px;font-style:italic;font-size:12px;}
+      .ca-src-btn,.ca-filter-row,.ca-sort-arrow,.ca-rec-sort-btn,.ca-rec-sort-spacer,.ca-th-act,td.ca-center{display:none!important;}
+      @media print{body{padding:10px;}@page{margin:12mm;}}
+    `;
+  }
+
+  window.caExportTab = function (tab) {
+    const panelMap = {
+      relationship:    { id: 'caPanelRelationship',    title: '克制关系分析' },
+      enemy:           { id: 'caPanelEnemy',           title: '敌方高频队伍' },
+      recommend:       { id: 'caPanelRecommend',       title: '克制推荐' },
+      enemyNoTacs:     { id: 'caPanelEnemyNoTacs',     title: '敌方高频（无战法）' },
+      recommendNoTacs: { id: 'caPanelRecommendNoTacs', title: '克制推荐（无战法）' },
+    };
+    const cfg = panelMap[tab];
+    if (!cfg) return;
+    const panel = document.getElementById(cfg.id);
+    if (!panel) return;
+
+    const clone = panel.cloneNode(true);
+    clone.querySelectorAll('.ca-hint-row-export').forEach(el => el.remove());
+
+    const win = window.open('', '_blank', 'width=980,height=760');
+    if (!win) { alert('请允许浏览器弹出窗口后重试'); return; }
+    win.document.write(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>${escHtml(cfg.title)}</title>
+<style>${caGetPrintStyles()}</style>
+</head>
+<body>
+<h2>${escHtml(cfg.title)}</h2>
+${clone.innerHTML}
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`);
+    win.document.close();
+  };
+
   // ==================== UI 框架 ====================
 
   window.createCounterAnalysisUI = async function (parent) {
@@ -730,7 +820,7 @@
         </div>
 
         <div id="caPanelRelationship">
-          <p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p>
+          <div class="ca-hint-row"><p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p><button class="ca-hint-row-export" onclick="caExportTab('relationship')">⬇ 导出打印</button></div>
           <div class="ca-filter-row">
             <input id="caSearchWinner" placeholder="🔍 胜方：武将/战法/阵型" oninput="renderCounterAnalysis()" style="flex:1;min-width:140px;font-size:11px;padding:5px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;">
             <input id="caSearchLoser" placeholder="🔍 对手：武将/战法/阵型" oninput="renderCounterAnalysis()" style="flex:1;min-width:140px;font-size:11px;padding:5px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;">
@@ -754,7 +844,7 @@
         </div>
 
         <div id="caPanelEnemy" style="display:none;">
-          <p class="ca-hint">敌方（右侧）队伍出场频率 TOP 30，武将＋战法＋阵型相同视为同一队伍</p>
+          <div class="ca-hint-row"><p class="ca-hint">敌方（右侧）队伍出场频率 TOP 30，武将＋战法＋阵型相同视为同一队伍</p><button class="ca-hint-row-export" onclick="caExportTab('enemy')">⬇ 导出打印</button></div>
           <div class="ca-tbl-wrap">
             <table class="ca-tbl">
               <thead><tr>
@@ -768,12 +858,12 @@
         </div>
 
         <div id="caPanelRecommend" style="display:none;">
-          <p class="ca-hint">针对敌方高频队伍，从所有战报中找出有过战胜记录（胜率 &gt;50%）的克制阵容，按胜率降序</p>
+          <div class="ca-hint-row"><p class="ca-hint">针对敌方高频队伍，从所有战报中找出有过战胜记录（胜率 &gt;50%）的克制阵容，按胜率降序</p><button class="ca-hint-row-export" onclick="caExportTab('recommend')">⬇ 导出打印</button></div>
           <div id="counterRecommendations"></div>
         </div>
 
         <div id="caPanelEnemyNoTacs" style="display:none;">
-          <p class="ca-hint">敌方（右侧）队伍出场频率，仅以武将组合区分，不区分战法与阵型，全部显示</p>
+          <div class="ca-hint-row"><p class="ca-hint">敌方（右侧）队伍出场频率，仅以武将组合区分，不区分战法与阵型，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('enemyNoTacs')">⬇ 导出打印</button></div>
           <div class="ca-tbl-wrap">
             <table class="ca-tbl">
               <thead><tr>
@@ -787,7 +877,7 @@
         </div>
 
         <div id="caPanelRecommendNoTacs" style="display:none;">
-          <p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p>
+          <div class="ca-hint-row"><p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('recommendNoTacs')">⬇ 导出打印</button></div>
           <div id="counterRecommendationsNoTacs"></div>
         </div>
       </div>`;
@@ -832,6 +922,12 @@
     s.textContent = `
       /* ---- 根容器 ---- */
       .ca-root{padding:16px;}
+
+      /* ---- 导出按钮行 ---- */
+      .ca-hint-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;}
+      .ca-hint-row .ca-hint{margin:0;}
+      .ca-hint-row-export{flex-shrink:0;padding:3px 10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:4px;color:#888;font-size:11px;cursor:pointer;white-space:nowrap;transition:all .15s;}
+      .ca-hint-row-export:hover{background:rgba(255,255,255,.13);color:#ccc;border-color:rgba(255,255,255,.28);}
 
       /* ---- tabs ---- */
       .ca-tabs{display:flex;gap:2px;margin-bottom:14px;border-bottom:1px solid var(--border,#2a2a3e);}
