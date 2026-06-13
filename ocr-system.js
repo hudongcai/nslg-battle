@@ -531,6 +531,111 @@ function clearQueue() {
   renderOCRQueue();
 }
 
+// ========== 文件夹自动监听 ==========
+let folderWatchHandle = null;
+let folderWatchTimer = null;
+let folderWatchActive = false;
+let folderProcessedSet = new Set();
+let folderNewCount = 0;
+
+function getFolderStorageKey(name) {
+  return `folder-watch-processed::${name}`;
+}
+
+function loadFolderProcessed(name) {
+  try {
+    const raw = localStorage.getItem(getFolderStorageKey(name));
+    if (raw) return new Set(JSON.parse(raw));
+  } catch (e) {}
+  return new Set();
+}
+
+function saveFolderProcessed(name, set) {
+  try {
+    localStorage.setItem(getFolderStorageKey(name), JSON.stringify([...set]));
+  } catch (e) {}
+}
+
+async function selectWatchFolder() {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'read' });
+    folderWatchHandle = handle;
+    const wasActive = folderWatchActive;
+    if (wasActive) stopFolderWatch();
+    document.getElementById('folderWatchName').textContent = handle.name;
+    document.getElementById('btnFolderWatch').disabled = false;
+    folderProcessedSet = loadFolderProcessed(handle.name);
+    folderNewCount = 0;
+    updateFolderWatchStats();
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('选择文件夹失败：' + e.message);
+  }
+}
+
+async function toggleFolderWatch() {
+  if (folderWatchActive) {
+    stopFolderWatch();
+  } else {
+    await startFolderWatch();
+  }
+}
+
+async function startFolderWatch() {
+  if (!folderWatchHandle) return;
+  folderWatchActive = true;
+  folderNewCount = 0;
+  const btn = document.getElementById('btnFolderWatch');
+  const statusEl = document.getElementById('folderWatchStatus');
+  if (btn) { btn.textContent = '⏹ 停止'; btn.className = 'btn btn-sm btn-danger'; }
+  if (statusEl) { statusEl.textContent = '监听中...'; statusEl.style.cssText += ';background:var(--accent);color:#fff;'; }
+  document.getElementById('folderWatchStats').style.display = 'block';
+  await scanWatchFolder();
+  folderWatchTimer = setInterval(() => { if (folderWatchActive) scanWatchFolder(); }, 5000);
+}
+
+function stopFolderWatch() {
+  folderWatchActive = false;
+  if (folderWatchTimer) { clearInterval(folderWatchTimer); folderWatchTimer = null; }
+  const btn = document.getElementById('btnFolderWatch');
+  const statusEl = document.getElementById('folderWatchStatus');
+  if (btn) { btn.textContent = '▶ 启动'; btn.className = 'btn btn-sm btn-primary'; }
+  if (statusEl) { statusEl.textContent = '已停止'; statusEl.style.cssText += ';background:var(--bg3);color:var(--text3);'; }
+}
+
+async function scanWatchFolder() {
+  if (!folderWatchHandle) return;
+  try {
+    const newFiles = [];
+    for await (const [name, handle] of folderWatchHandle.entries()) {
+      if (handle.kind !== 'file') continue;
+      if (!/\.(png|jpg|jpeg)$/i.test(name)) continue;
+      if (folderProcessedSet.has(name)) continue;
+      const file = await handle.getFile();
+      newFiles.push({ name, file });
+    }
+    if (newFiles.length === 0) return;
+    for (const { name, file } of newFiles) {
+      folderProcessedSet.add(name);
+      ocrQueue.push({ file, name, status: 'pending', error: null });
+      folderNewCount++;
+    }
+    saveFolderProcessed(folderWatchHandle.name, folderProcessedSet);
+    updateFolderWatchStats();
+    document.getElementById('queueArea').style.display = 'block';
+    renderOCRQueue();
+    if (!ocrRunning && !ocrPausedByUser) startBatchProcess();
+  } catch (e) {
+    console.error('文件夹扫描出错:', e.message);
+  }
+}
+
+function updateFolderWatchStats() {
+  const p = document.getElementById('folderProcessedCount');
+  const n = document.getElementById('folderNewCount');
+  if (p) p.textContent = folderProcessedSet.size;
+  if (n) n.textContent = folderNewCount;
+}
+
 // ========== 文件读取 ==========
 // 读取文件并压缩为 base64（最大宽度 1920px，质量 0.85），避免大图导致 OCR 超时
 function readFileAsBase64(file) {
