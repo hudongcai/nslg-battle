@@ -100,8 +100,8 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 2. 玩家名：从玩家名称区域单独读取，完整保留，即使含有"丨"也不要拆分（"丨"是玩家名的一部分）
 3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
 4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
-5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3
-6. 战法：每位武将下方的战法框中，每行一个战法名。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
+5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。**必须输出武将1、武将2、武将3三行，即使某位武将头像下方文字模糊也必须输出该行**；若确实无法辨认则填"未知"
+6. 战法：每位武将下方的战法框中，每行一个战法名。**武将1/2/3各自的战法必须独立输出（战法1、战法2、战法3三行，不得合并或省略任何一行）**；若某格战法确实看不清则填"未知"。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
 7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
 8. 无法识别的文字填"未知"，数字填0
 
@@ -253,7 +253,7 @@ function parseOCRResponse(text) {
       const tacs = [];
       indices.forEach(i => {
         const g = generalMap[i];
-        if (g && g !== '未知') gens.push(g);
+        if (g) gens.push(g);
         const t = tacticsMap[i] || [];
         tacs.push(...t);
       });
@@ -423,6 +423,46 @@ function parseOCRResponse(text) {
 
   // 写入识别到的战斗日期（OCR 识别不到则为空，由调用方补默认值）
   record.battleDate = battleDate || '';
+  correctByDatabase(record);
+  return record;
+}
+
+// ========== 数据库模糊纠错（OCR形近字修正）==========
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = [];
+  for (let i = 0; i <= m; i++) {
+    dp[i] = [i];
+    for (let j = 1; j <= n; j++) dp[i][j] = i === 0 ? j : 0;
+  }
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function bestMatch(name, list, nameKey) {
+  if (!name || name === '未知' || name.length < 2) return name;
+  let best = null, bestDist = Infinity;
+  for (const item of list) {
+    const d = levenshtein(name, item[nameKey]);
+    if (d === 0) return item[nameKey];
+    if (d < bestDist) { bestDist = d; best = item[nameKey]; }
+  }
+  // 允许纠错：名字≤4字符容1个字不同，>4字符容2个字不同
+  const threshold = name.length > 4 ? 2 : 1;
+  return (best && bestDist <= threshold) ? best : name;
+}
+
+function correctByDatabase(record) {
+  if (typeof ALL_HEROES === 'undefined' || typeof ALL_TACTICS === 'undefined') return record;
+  ['left', 'right'].forEach(side => {
+    record[side + 'Generals'] = (record[side + 'Generals'] || []).map(n => bestMatch(n, ALL_HEROES, 'name'));
+    record[side + 'Tactics']  = (record[side + 'Tactics']  || []).map(n => bestMatch(n, ALL_TACTICS, 'name'));
+  });
   return record;
 }
 
