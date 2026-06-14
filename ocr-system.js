@@ -54,6 +54,7 @@ function setupOCRListeners() {
     uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
     uploadZone.addEventListener('drop', e => {
       e.preventDefault();
+      e.stopPropagation();
       uploadZone.classList.remove('dragover');
       handleBatchUpload(e.dataTransfer.files);
     });
@@ -465,7 +466,10 @@ async function handleBatchUpload(files) {
     return;
   }
 
+  const existingNames = new Set(ocrQueue.filter(i => i.status === 'pending' || i.status === 'processing').map(i => i.name));
   for (const file of files) {
+    if (existingNames.has(file.name)) continue;
+    existingNames.add(file.name);
     ocrQueue.push({ file, name: file.name, status: 'pending', error: null });
   }
   renderOCRQueue();
