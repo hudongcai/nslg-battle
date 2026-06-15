@@ -487,9 +487,15 @@ function bestMatchHeroName(name) {
 
 function correctByDatabase(record) {
   if (typeof ALL_HEROES === 'undefined' || typeof ALL_TACTICS === 'undefined') return record;
+  const tacticNameSet = new Set(ALL_TACTICS.map(t => t.name));
   ['left', 'right'].forEach(side => {
     record[side + 'Generals'] = (record[side + 'Generals'] || []).map(bestMatchHeroName);
-    record[side + 'Tactics']  = (record[side + 'Tactics']  || []).map(n => bestMatch(n, ALL_TACTICS, 'name'));
+    record[side + 'Tactics']  = (record[side + 'Tactics']  || []).map(n => {
+      if (!n || n === '未知') return '未知';
+      const matched = bestMatch(n, ALL_TACTICS, 'name');
+      // 若模糊匹配结果仍不在战法库中（如误识别的"缘分"等羁绊标签），丢弃
+      return tacticNameSet.has(matched) ? matched : '未知';
+    });
   });
   return record;
 }
