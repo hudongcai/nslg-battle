@@ -508,6 +508,29 @@ async function checkCreditsBeforeUpload() {
 async function handleBatchUpload(files) {
   if (!files || files.length === 0) return;
 
+  // 查询已成功识别的文件名，跳过这些文件（失败的允许重新处理）
+  let successNames = new Set();
+  try {
+    updateOCRStatus('work', '检查已处理文件...');
+    const data = await cloudRequest('/gallery/imagenames?successOnly=true');
+    if (data && data.code === 200 && Array.isArray(data.data)) {
+      successNames = new Set(data.data);
+    }
+  } catch (e) {
+    console.warn('[BatchUpload] 获取已成功列表失败，不跳过任何文件:', e.message);
+  }
+  updateOCRStatus('ok', 'OCR 就绪');
+
+  // 过滤掉已成功识别的文件
+  const filesToProcess = Array.from(files).filter(f => !successNames.has(f.name));
+  const skippedCount = files.length - filesToProcess.length;
+
+  if (filesToProcess.length === 0) {
+    updateOCRStatus('ok', `全部 ${files.length} 张已成功识别，无需重复处理`);
+    setTimeout(() => updateOCRStatus('ok', 'OCR 就绪'), 4000);
+    return;
+  }
+
   // 从云端获取最新积分（管理员可能已调整）
   let userPoints = (currentUser && currentUser.points) || 0;
   try {
@@ -516,20 +539,26 @@ async function handleBatchUpload(files) {
     }
   } catch (e) { /* 网络问题，回退到本地缓存值 */ }
 
-  const totalToUpload = files.length;
-
-  // 选中图片数量超过剩余积分，立即拦截并弹窗提示
-  if (totalToUpload > userPoints) {
-    showPointsInsufficientModal(userPoints, totalToUpload);
+  // 积分校验基于实际待处理数量（已跳过的不扣积分）
+  if (filesToProcess.length > userPoints) {
+    showPointsInsufficientModal(userPoints, filesToProcess.length);
     return;
   }
 
   const existingNames = new Set(ocrQueue.filter(i => i.status === 'pending' || i.status === 'processing').map(i => i.name));
-  for (const file of files) {
+  let addedCount = 0;
+  for (const file of filesToProcess) {
     if (existingNames.has(file.name)) continue;
     existingNames.add(file.name);
     ocrQueue.push({ file, name: file.name, status: 'pending', error: null });
+    addedCount++;
   }
+
+  if (skippedCount > 0) {
+    updateOCRStatus('ok', `已跳过 ${skippedCount} 张（已成功识别），入队 ${addedCount} 张`);
+    setTimeout(() => updateOCRStatus('ok', 'OCR 就绪'), 4000);
+  }
+
   renderOCRQueue();
   const queueArea = document.getElementById('queueArea');
   if (queueArea) queueArea.style.display = 'block';

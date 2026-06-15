@@ -968,13 +968,23 @@ app.get('/api/gallery/by-battle/:battleId', async (req, res) => {
   }
 });
 
-// 获取当前用户已上传图片的文件名列表（供文件夹监听去重使用）
+// 获取当前用户已上传图片的文件名列表（供文件夹监听去重 / 批量上传跳重使用）
+// ?successOnly=true：只返回OCR成功的文件名（battle_records.left_generals非空）
+// 不传或false：返回所有已上传文件名（成功+失败）
 app.get('/api/gallery/imagenames', requireActiveUser, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT DISTINCT original_name FROM battle_gallery WHERE uploaded_by = ? AND original_name != "" AND status = 1',
-      [req.authUserId]
-    );
+    let query, params = [req.authUserId];
+    if (req.query.successOnly === 'true') {
+      query = `SELECT DISTINCT bg.original_name
+               FROM battle_gallery bg
+               INNER JOIN battle_records br ON bg.battle_id = br.id
+               WHERE bg.uploaded_by = ? AND bg.original_name != '' AND bg.status = 1
+                 AND br.left_generals IS NOT NULL AND br.left_generals NOT IN ('', '[]')`;
+    } else {
+      query = `SELECT DISTINCT original_name FROM battle_gallery
+               WHERE uploaded_by = ? AND original_name != '' AND status = 1`;
+    }
+    const [rows] = await pool.query(query, params);
     res.json({ code: 200, data: rows.map(r => r.original_name) });
   } catch (err) {
     res.json({ code: 500, message: err.message });
