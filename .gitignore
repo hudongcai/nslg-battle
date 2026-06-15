@@ -20,3 +20,11 @@ Thumbs.db
 push-fix*.py
 put-api.py
 do-git-push.ps1
+
+# 环境变量（含密码、API Key，禁止提交）
+.env
+.env.*
+
+# Cloudflare 隧道凭证（含私钥，禁止提交）
+migration/cloudflare_tunnel_credentials.json
+migration/cloudflare_config.yml

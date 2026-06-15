@@ -7,7 +7,7 @@ let db = null;
 let allRecords = [];
 let batchRunning = false;
 let dataPage = 1;
-const DATA_PER_PAGE = 20;
+let dataPerPage = 20;
 let winRateSortField = null;
 let winRateSortDir = 'desc';
 let gallerySelectedIds = new Set();
@@ -37,6 +37,7 @@ async function dbAdd(rec) {
     rec.projectId = window.currentProjectId || '';
     rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
     rec.time = rec.time || new Date().toLocaleString('zh-CN');
+    rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
     const req = store.add(rec);
     req.onsuccess = () => {
       rec.id = req.result;
@@ -292,6 +293,46 @@ async function loadAllRecords() {
   } catch (e) {
     allRecords = [];
   }
+
+  // 去重1：同 cloudId 存在两条记录时（syncProjectRecords 旧逻辑遗留），
+  // 保留本地 id 较大的那条（含图片等本地数据），删除 id=cloudId 的影子记录
+  try {
+    const seen = new Map();
+    const toDelete = [];
+    for (const r of allRecords) {
+      if (!r.cloudId) continue;
+      const key = String(r.cloudId);
+      if (seen.has(key)) {
+        const prev = seen.get(key);
+        // id 较小的通常是 MySQL 主键直写的影子记录，删它
+        if (Number(r.id) > Number(prev.id)) {
+          toDelete.push(prev.id);
+          seen.set(key, r);
+        } else {
+          toDelete.push(r.id);
+        }
+      } else {
+        seen.set(key, r);
+      }
+    }
+    if (toDelete.length > 0) {
+      const delSet = new Set(toDelete.map(String));
+      allRecords = allRecords.filter(r => !delSet.has(String(r.id)));
+      toDelete.forEach(id => dbDeleteLocal(id).catch(() => {}));
+    }
+  } catch (e) {}
+
+  // 去重2：孤立记录（无 cloudId）数量 = 云同步记录数量，
+  // 说明刷新前 cloudId 未写回，保留云版本，删除孤立记录
+  try {
+    const withCloud = allRecords.filter(r => r.cloudId);
+    const noCloud   = allRecords.filter(r => !r.cloudId);
+    if (withCloud.length > 0 && noCloud.length > 0 && withCloud.length === noCloud.length) {
+      allRecords = withCloud;
+      noCloud.forEach(r => dbDeleteLocal(r.id).catch(() => {}));
+    }
+  } catch (e) {}
+
   // 健壮性：如果 currentProjectId 指向一个已删除的项目，自动清除过滤
   if (window.currentProjectId) {
     try {
@@ -824,34 +865,35 @@ function getFilteredData() {
 function renderDataTable() {
   const data = getFilteredData();
   const total = data.length;
-  const totalPages = Math.ceil(total / DATA_PER_PAGE);
+  const totalPages = Math.ceil(total / dataPerPage);
   if (dataPage > totalPages) dataPage = Math.max(1, totalPages);
-  const start = (dataPage - 1) * DATA_PER_PAGE;
-  const page = data.slice(start, start + DATA_PER_PAGE);
+  const start = (dataPage - 1) * dataPerPage;
+  const page = data.slice(start, start + dataPerPage);
   const tbody = document.getElementById('dataTableBody');
   if (!tbody) return;
   // 初始化表头排序指示器
   updateDataTableHeaders();
   if (page.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="21" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="22" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
   } else {
     tbody.innerHTML = page.map((r, i) => `
       <tr>
+        <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td>
         <td class="num">${start + i + 1}</td>
         <td style="color:var(--text2);font-size:11px;">${r.time || '-'}</td>
         <td><span class="result-badge result-${r.result === '胜' ? 'win' : r.result === '败' ? 'lose' : 'draw'}">${r.result || '-'}</span></td>
         <td style="white-space:nowrap;">${escHtml(r.leftPlayer || '')}</td>
-        <td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.leftAlliance || '')}</td>
-        <td style="white-space:nowrap;min-width:80px;">${getTeamDisplay(r.leftGenerals)}</td>
-        <td style="font-size:11px;line-height:1.6;min-width:300px;">${getTacticsDisplay(r.leftGenerals, r.leftTactics)}</td>
+        <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.leftAlliance || '')}</td>
+        <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(r.leftGenerals)}</td>
+        <td style="font-size:11px;line-height:1.6;min-width:210px;">${getTacticsDisplay(r.leftGenerals, r.leftTactics)}</td>
         <td style="color:var(--text2);">${escHtml(r.leftFormation || '')}</td>
         <td class="num">${fmtNum(r.leftLoss)}</td>
         <td class="num">${fmtNum(r.leftTotal)}</td>
         <td class="num" style="font-weight:bold;color:${getLossColor(r.leftLossRate)}">${r.leftLossRate != null ? Number(r.leftLossRate).toFixed(1) + '%' : '-'}</td>
         <td style="white-space:nowrap;">${escHtml(r.rightPlayer || '')}</td>
-        <td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.rightAlliance || '')}</td>
-        <td style="white-space:nowrap;min-width:80px;">${getTeamDisplay(r.rightGenerals)}</td>
-        <td style="font-size:11px;line-height:1.6;min-width:300px;">${getTacticsDisplay(r.rightGenerals, r.rightTactics)}</td>
+        <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.rightAlliance || '')}</td>
+        <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(r.rightGenerals)}</td>
+        <td style="font-size:11px;line-height:1.6;min-width:210px;">${getTacticsDisplay(r.rightGenerals, r.rightTactics)}</td>
         <td style="color:var(--text2);">${escHtml(r.rightFormation || '')}</td>
         <td class="num">${fmtNum(r.rightLoss)}</td>
         <td class="num">${fmtNum(r.rightTotal)}</td>
@@ -862,13 +904,54 @@ function renderDataTable() {
   }
   const pagEl = document.getElementById('dataPagination');
   if (pagEl) {
-    if (totalPages <= 1) pagEl.innerHTML = '';
+    const sizeSelect = `<select onchange="dataPerPage=+this.value;dataPage=1;renderDataTable()" style="font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">
+      ${[10,20,30,50,100].map(n=>`<option value="${n}"${n===dataPerPage?' selected':''}>${n}条/页</option>`).join('')}
+    </select>`;
+    if (totalPages <= 1) pagEl.innerHTML = sizeSelect;
     else pagEl.innerHTML = `
+      ${sizeSelect}
       <button ${dataPage <= 1 ? 'disabled' : ''} onclick="dataPage--;renderDataTable()">◀</button>
       <span style="color:var(--text2);font-size:11px;">${dataPage}/${totalPages}</span>
       <button ${dataPage >= totalPages ? 'disabled' : ''} onclick="dataPage++;renderDataTable()">▶</button>`;
   }
 }
+
+// ── 批量勾选 ─────────────────────────────────────────────────────────
+function updateSelectionCount() {
+  const n = document.querySelectorAll('#dataTableBody .row-check:checked').length;
+  const span = document.getElementById('dataSelectedCount');
+  const btn  = document.getElementById('btnDeleteSelected');
+  if (span) span.textContent = n;
+  if (btn)  { btn.disabled = n === 0; btn.style.opacity = n > 0 ? '1' : '.4'; btn.style.cursor = n > 0 ? 'pointer' : 'not-allowed'; }
+}
+function tableCheckAll(chk) {
+  document.querySelectorAll('#dataTableBody .row-check').forEach(c => { c.checked = chk.checked; });
+  updateSelectionCount();
+}
+function tableSelectAll() {
+  document.querySelectorAll('#dataTableBody .row-check').forEach(c => { c.checked = true; });
+  const ca = document.getElementById('checkAll');
+  if (ca) ca.checked = true;
+  updateSelectionCount();
+}
+function tableInvertSelect() {
+  document.querySelectorAll('#dataTableBody .row-check').forEach(c => { c.checked = !c.checked; });
+  const ca = document.getElementById('checkAll');
+  if (ca) ca.checked = [...document.querySelectorAll('#dataTableBody .row-check')].every(c => c.checked);
+  updateSelectionCount();
+}
+async function deleteSelected() {
+  const ids = [...document.querySelectorAll('#dataTableBody .row-check:checked')].map(c => +c.dataset.id).filter(id => id);
+  if (!ids.length) return;
+  if (!confirm(`确定删除选中的 ${ids.length} 条记录？`)) return;
+  for (const id of ids) await dbDelete(id);
+  await loadAllRecords();
+  renderDataTable();
+}
+// 事件委托：直接挂 document，捕获所有 row-check 的变更（动态内容也适用）
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.classList.contains('row-check')) updateSelectionCount();
+});
 
 // 数据底表排序切换
 function toggleDataSort(field) {
@@ -1001,13 +1084,15 @@ function openCSVWindow(csv, filename) {
   w.document.close();
 }
 
-function exportDataCSV() {
+function exportDataCSV(scope = 'all') {
   try {
-    const data = getFilteredData();
-    if (data.length === 0) { alert('当前筛选条件下没有数据'); return; }
-    // 记录系统日志
+    const allData = getFilteredData();
+    const data = scope === 'page'
+      ? allData.slice((dataPage - 1) * dataPerPage, dataPage * dataPerPage)
+      : allData;
+    if (data.length === 0) { alert('当前没有可导出的数据'); return; }
     if (typeof addSysLog === 'function') {
-      addSysLog('operation', '导出战报数据CSV: ' + data.length + ' 条' + (window.currentProjectId ? ' [项目ID:' + window.currentProjectId + ']' : ''));
+      addSysLog('operation', '导出战报CSV(' + (scope==='page'?'本页':'全部') + '): ' + data.length + ' 条' + (window.currentProjectId ? ' [项目ID:' + window.currentProjectId + ']' : ''));
     }
     const headers = ['序号', '时间', '结果', '左侧玩家', '左侧同盟', '左侧武将', '左侧战法', '左侧阵型', '左侧战损', '左侧总兵力', '左侧战损率', '右侧玩家', '右侧同盟', '右侧武将', '右侧战法', '右侧阵型', '右侧战损', '右侧总兵力', '右侧战损率'];
     function tacStr(generals, tactics) {
@@ -1029,7 +1114,7 @@ function exportDataCSV() {
       r.leftFormation || '',
       r.leftLoss || 0,
       r.leftTotal || 0,
-      r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-',
+      r.leftLossRate != null ? Number(r.leftLossRate).toFixed(1) + '%' : '-',
       r.rightPlayer || '',
       r.rightAlliance || '',
       getTeamKey(r.rightGenerals),
@@ -1037,7 +1122,7 @@ function exportDataCSV() {
       r.rightFormation || '',
       r.rightLoss || 0,
       r.rightTotal || 0,
-      r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'
+      r.rightLossRate != null ? Number(r.rightLossRate).toFixed(1) + '%' : '-'
     ]);
     downloadCSV(headers, rows, '三谋战报数据.csv');
   } catch (e) {

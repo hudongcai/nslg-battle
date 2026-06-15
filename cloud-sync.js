@@ -356,7 +356,7 @@ async function cloudGetRecords(projectId) {
       id: r.id,
       projectId: (r.projectId !== undefined && r.projectId !== null) ? r.projectId : (r.project_id || null),
       battleDate: bd,
-      time: bd,
+      time: bd ? new Date(bd).toLocaleString('zh-CN') : '',
       result: r.result || '',
       leftPlayer: r.attackerName || r.attacker_name || '',
       rightPlayer: r.enemyName || r.enemy_name || '',
@@ -450,10 +450,10 @@ async function cloudUpdateRecord(recordId, recordData) {
     right_generals: JSON.stringify(recordData.rightGenerals || recordData.right_generals || []),
     left_tactics:   JSON.stringify(recordData.leftTactics   || recordData.left_tactics   || []),
     right_tactics:  JSON.stringify(recordData.rightTactics  || recordData.right_tactics  || []),
-    left_loss:      recordData.leftLoss      ?? recordData.left_loss      ?? null,
-    right_loss:     recordData.rightLoss     ?? recordData.right_loss     ?? null,
-    left_total:     recordData.leftTotal     ?? recordData.left_total     ?? null,
-    right_total:    recordData.rightTotal    ?? recordData.right_total    ?? null,
+    left_loss:      recordData.leftLoss      ?? recordData.left_loss      ?? recordData.leftDamage  ?? null,
+    right_loss:     recordData.rightLoss     ?? recordData.right_loss     ?? recordData.rightDamage ?? null,
+    left_total:     recordData.leftTotal     ?? recordData.left_total     ?? recordData.leftTroops  ?? null,
+    right_total:    recordData.rightTotal    ?? recordData.right_total    ?? recordData.rightTroops ?? null,
     left_loss_rate: recordData.leftLossRate  ?? recordData.left_loss_rate ?? null,
     right_loss_rate:recordData.rightLossRate ?? recordData.right_loss_rate?? null,
     result:         recordData.result        || '',
@@ -698,7 +698,6 @@ async function cloudGetMyAccess() {
 // ========== 项目图片批量同步（仅 owner 调用）==========
 // 遍历当前项目所有记录，逐条从 battle_gallery 拉取图片并写入 IndexedDB
 // ========== 进入项目时全量同步该项目战报（解决历史截断遗留问题）==========
-// 直接 upsert 所有云端记录，不做本地匹配（put 本身是幂等 upsert）
 async function syncProjectRecords(projectId) {
   if (!projectId) return;
   try {
@@ -706,13 +705,41 @@ async function syncProjectRecords(projectId) {
     const cloudRecords = await cloudGetRecords(projectId);
     if (!cloudRecords || !cloudRecords.length) return;
 
+    // 先加载本地所有记录，按 cloudId 和 bizKey 建立索引，避免重复写入
+    const allLocal = await dbGetAll();
+    const byCloudId = new Map(allLocal.filter(r => r.cloudId).map(r => [String(r.cloudId), r]));
+    const bizKey = r => `${r.battleDate||''}|${r.leftPlayer||r.attackerName||''}|${r.rightPlayer||r.enemyName||''}`;
+    const byBizKey = new Map(allLocal.map(r => [bizKey(r), r]));
+
     let saved = 0;
     for (const rec of cloudRecords) {
       try {
-        rec.cloudId = rec.id;
-        rec._synced = true;
-        rec._syncTime = Date.now();
-        await dbPutLocal(rec);
+        const cid = String(rec.id);
+        const existing = byCloudId.get(cid);
+        if (existing) {
+          // 本地已有此 cloudId 的记录，只更新 _synced 标记，保留本地数据（含图片）
+          existing._synced = true;
+          existing._syncTime = Date.now();
+          await dbPutLocal(existing);
+        } else {
+          // 尝试 bizKey 匹配（处理 cloudId 尚未写回的孤立记录）
+          const ck = bizKey(rec);
+          const bizMatch = byBizKey.get(ck);
+          if (bizMatch) {
+            bizMatch.cloudId = rec.id;
+            bizMatch._synced = true;
+            bizMatch._syncTime = Date.now();
+            await dbPutLocal(bizMatch);
+            byCloudId.set(cid, bizMatch);
+          } else {
+            // 云端有、本地无 → 写入（rec.id 是 MySQL 主键，IndexedDB 用它做 key）
+            rec.cloudId = rec.id;
+            rec._synced = true;
+            rec._syncTime = Date.now();
+            await dbPutLocal(rec);
+            byCloudId.set(cid, rec);
+          }
+        }
         saved++;
       } catch (e) {
         console.warn('[syncProjectRecords] 单条失败:', rec.id, e);

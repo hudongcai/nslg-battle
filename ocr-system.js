@@ -9,6 +9,7 @@ const OCR_CONFIG = {
   enabled: true,
   model: 'ep-m-20260426183050-krmx7',
   maxTokens: 3000,
+  temperature: 0,     // 确定性输出，避免每次结果不一致
   timeout: 120000,    // 视觉模型识别大图可能较久，从60s提升到120s
   batchConcurrency: 2,
   batchInterval: 1500,
@@ -16,12 +17,60 @@ const OCR_CONFIG = {
 
 // 动态获取 OCR 请求地址
 function getOcrEndpoint() {
-  // 统一用 CLOUD_API_BASE（已区分本地3000/生产api.zhenwu.fun），避免打到静态服务器
   if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) {
     return CLOUD_API_BASE + '/ocr';
   }
-  // 兜底：本地后端地址
   return 'http://localhost:3000/api/ocr';
+}
+function getPaddleEndpoint() {
+  if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) {
+    return CLOUD_API_BASE + '/ocr-paddle';
+  }
+  return 'http://localhost:3000/api/ocr-paddle';
+}
+
+// ── PaddleOCR 快速通道（优先使用，失败自动回退豆包）──────────────────
+async function tryPaddleOCR(base64Data, signal) {
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const resp = await fetch(getPaddleEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+      },
+      // 去掉 data:xxx;base64, 前缀，Python 服务端兼容两种格式
+      body: JSON.stringify({ image: base64Data.replace(/^data:[^;]+;base64,/, '') }),
+      signal,
+      credentials: 'omit',
+    });
+    if (!resp.ok) return null;               // 4xx/5xx → 回退
+    const data = await resp.json();
+    if (!data.ok) return null;               // Python 内部错误 → 回退
+    // 将 Python 返回的结构转为 record 格式（与 parseOCRResponse 输出一致）
+    const winnerMap = { left: '胜', right: '败', unknown: '' };
+    return {
+      time:           new Date().toLocaleString('zh-CN'),
+      result:         winnerMap[data.winner] ?? '',
+      leftPlayer:     data.leftPlayer    || '',
+      leftAlliance:   data.leftAlliance  || '',
+      leftFormation:  data.leftFormation || '',
+      leftLoss:       data.leftDamage    ?? 0,
+      leftTotal:      data.leftTroops    ?? 0,
+      leftGenerals:   data.leftGenerals  || ['未知','未知','未知'],
+      leftTactics:    data.leftTactics   || [],
+      rightPlayer:    data.rightPlayer   || '',
+      rightAlliance:  data.rightAlliance || '',
+      rightFormation: data.rightFormation|| '',
+      rightLoss:      data.rightDamage   ?? 0,
+      rightTotal:     data.rightTroops   ?? 0,
+      rightGenerals:  data.rightGenerals || ['未知','未知','未知'],
+      rightTactics:   data.rightTactics  || [],
+      battleDate:     data.battleDate    || '',
+    };
+  } catch (_) {
+    return null;  // 网络错误/超时 → 回退豆包
+  }
 }
 
 // ========== 状态 ==========
@@ -101,7 +150,7 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
 4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
 5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。必须输出武将1、武将2、武将3三行；若某位名字确实无法辨认，填"未知"。**武将名只能是纯汉字（通常2-4个字），严禁包含任何数字**；头像旁显示的数字（等级、兵力层数等）是装饰信息，绝对不属于武将名
-6. 战法：每位武将**恰好有3个战法**（第1个为武将自带战法，第2、3个为装备战法）。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；请逐格仔细读取，确保每位武将输出**恰好3个**战法名，用英文逗号分隔；若某格战法确实无法辨认，填"未知"。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记。**严禁**将武将羁绊效果名（如"缘分"、"羁绊"、"义结金兰"等武将关系标签）输出为战法名，这些标签出现在武将头像卡内部，不是战法框的内容
+6. 战法：每位武将**恰好有3个战法**（第1个为武将自带战法，第2、3个为装备战法）。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；请逐格仔细读取，确保每位武将输出**恰好3个**战法名，用英文逗号分隔。**识别策略：战法文字即使模糊，也必须尽力辨认并输出最接近的汉字；只有当该格完全没有任何可见文字（空白格）时，才填"未知"**——绝对不允许因为"不确定"就放弃输出可见的战法名。注意："影本·XXXX"是一个完整战法名，必须用点号连接输出为"影本·XXXX"，**严禁**用逗号分隔写成"影本,XXXX"（这会导致误判！）。忽略"×数字"叠层标记。**严禁**将武将羁绊效果名（如"缘分"、"羁绊"、"义结金兰"等武将关系标签）输出为战法名，这些标签出现在武将头像卡内部，不是战法框的内容。**重要：同一武将在不同战报中的战法可能完全不同**——你必须逐格读取本张截图中实际显示的战法名称，绝对不得根据武将"通常使用"的战法进行替换或猜测
 7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
 8. 无法识别的文字填"未知"，数字填0
 
@@ -139,7 +188,24 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 假设玩家名区域显示：风云丨天下，同盟名区域显示：傲世天下
 ✅ 正确输出：玩家：风云丨天下  同盟：傲世天下
 ❌ 严禁输出：玩家：天下  同盟：风云  （这是拆分玩家名的错误行为！）
-核心原则：玩家名区域里写的什么就完整复制什么，同盟名去同盟区域找，两者绝对不能混用！`;
+核心原则：玩家名区域里写的什么就完整复制什么，同盟名去同盟区域找，两者绝对不能混用！
+
+【武将/战法行格式铁律】
+武将名只能写在武将N行，绝对禁止出现在战法N行！三位武将的标签一个都不能省略：
+❌ 错误输出（战法行混入武将名，或省略武将行）：
+武将1：陆逊
+战法1：A,B,C
+战法2：孙权         ← 严禁！战法行出现武将名
+战法2：D,E,F
+战法3：小乔         ← 严禁！武将名出现在战法行
+战法3：G,H,I
+✅ 正确输出（严格交替，武将N在前，战法N在后）：
+武将1：陆逊
+战法1：A,B,C
+武将2：孙权
+战法2：D,E,F
+武将3：小乔
+战法3：G,H,I`;
 
   try {
     const reqBody = {
@@ -491,6 +557,7 @@ function correctByDatabase(record) {
   const validTacticNames = new Set([
     ...ALL_TACTICS.map(t => t.name),
     ...ALL_HEROES.map(h => h.skill).filter(s => s),
+    ...ALL_HEROES.flatMap(h => h.suggest_skills || []),
   ]);
   ['left', 'right'].forEach(side => {
     record[side + 'Generals'] = (record[side + 'Generals'] || []).map(bestMatchHeroName);
@@ -857,8 +924,19 @@ async function startBatchProcess() {
       let base64 = null;
       try {
         base64 = await readFileAsBase64(item.file);
-        const rawResult = await callOCRAPI(base64, batchAbortController ? batchAbortController.signal : null);
-        const record = parseOCRResponse(rawResult);
+        const abortSig = batchAbortController ? batchAbortController.signal : null;
+        // 优先使用本地 PaddleOCR（确定性、高准确率）；不可用时自动回退豆包
+        let record = await tryPaddleOCR(base64, abortSig);
+        if (record) {
+          correctByDatabase(record);  // 再过一遍数据库模糊纠错
+          if (record.leftLoss != null && record.leftTotal > 0)
+            record.leftLossRate = (record.leftLoss / record.leftTotal) * 100;
+          if (record.rightLoss != null && record.rightTotal > 0)
+            record.rightLossRate = (record.rightLoss / record.rightTotal) * 100;
+        } else {
+          const rawResult = await callOCRAPI(base64, abortSig);
+          record = parseOCRResponse(rawResult);
+        }
         record.imageBase64 = base64;
         record.imageName = item.name;
         record.imageTime = new Date().toLocaleString('zh-CN');

@@ -9,6 +9,9 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// 静态文件服务（前端页面），Express 多线程比 python http.server 快得多
+app.use(express.static(__dirname, { maxAge: 0 }));
+
 // ========== Token 工具函数 ==========
 // token 格式：mock-token-{phone}-{timestamp}
 function extractPhoneFromToken(token) {
@@ -77,11 +80,11 @@ async function globalUserCheck(req, res, next) {
 }
 
 const dbConfig = {
-  host: 'localhost',
-  port: 3306,
-  user: 'nslg-battle-server',
-  password: 'hu6956521',
-  database: 'nslg_battle',
+  host:     process.env.DB_HOST     || 'localhost',
+  port:     process.env.DB_PORT     || 3306,
+  user:     process.env.DB_USER     || 'nslg-battle-server',
+  password: process.env.DB_PASS     || 'hu6956521',
+  database: process.env.DB_NAME     || 'nslg_battle',
   charset: 'utf8mb4'
 };
 
@@ -657,19 +660,21 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
     const result = body.result;
     const battle_date = body.battle_date || body.battleDate;
     const description = body.description;
-    const left_loss = body.left_loss || body.leftLoss;
-    const right_loss = body.right_loss || body.rightLoss;
-    const left_total = body.left_total || body.leftTotal;
-    const right_total = body.right_total || body.rightTotal;
-    const left_generals = body.left_generals || body.leftGenerals;
-    const right_generals = body.right_generals || body.rightGenerals;
-    const left_tactics = body.left_tactics || body.leftTactics;
-    const right_tactics = body.right_tactics || body.rightTactics;
-    const left_formation = body.left_formation || body.leftFormation;
-    const right_formation = body.right_formation || body.rightFormation;
-    const left_alliance = body.left_alliance || body.leftAlliance;
-    const right_alliance = body.right_alliance || body.rightAlliance;
-    
+    const left_loss  = body.left_loss  ?? body.leftLoss  ?? body.leftDamage  ?? null;
+    const right_loss = body.right_loss ?? body.rightLoss ?? body.rightDamage ?? null;
+    const left_total  = body.left_total  ?? body.leftTotal  ?? body.leftTroops  ?? null;
+    const right_total = body.right_total ?? body.rightTotal ?? body.rightTroops ?? null;
+    const left_generals = body.left_generals ?? body.leftGenerals;
+    const right_generals = body.right_generals ?? body.rightGenerals;
+    const left_tactics = body.left_tactics ?? body.leftTactics;
+    const right_tactics = body.right_tactics ?? body.rightTactics;
+    const left_formation  = body.left_formation  ?? body.leftFormation;
+    const right_formation = body.right_formation ?? body.rightFormation;
+    const left_alliance   = body.left_alliance   ?? body.leftAlliance;
+    const right_alliance  = body.right_alliance  ?? body.rightAlliance;
+    const left_loss_rate  = body.left_loss_rate  ?? body.leftLossRate  ?? null;
+    const right_loss_rate = body.right_loss_rate ?? body.rightLossRate ?? null;
+
     const now = new Date();
     
     const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
@@ -679,12 +684,13 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
     
     const [resultRow] = await pool.query(
       'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, ' +
-      'left_loss, right_loss, left_total, right_total, left_generals, right_generals, ' +
+      'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_generals, right_generals, ' +
       'left_tactics, right_tactics, left_formation, right_formation, left_alliance, right_alliance, ' +
       'created_by, status, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [projectId, attacker_name, enemy_name, result, battle_date, description,
-       left_loss, right_loss, left_total, right_total, left_generals_str, right_generals_str,
+       left_loss, right_loss, left_total, right_total, left_loss_rate ?? null, right_loss_rate ?? null,
+       left_generals_str, right_generals_str,
        left_tactics_str, right_tactics_str, left_formation, right_formation, left_alliance, right_alliance,
        1, 1, now, now]
     );
@@ -713,10 +719,10 @@ app.put('/api/battles/:id', async (req, res) => {
     const description = req.body.description;
     const left_alliance = req.body.left_alliance || req.body.leftAlliance;
     const right_alliance = req.body.right_alliance || req.body.rightAlliance;
-    const left_loss = req.body.left_loss || req.body.leftLoss;
-    const right_loss = req.body.right_loss || req.body.rightLoss;
-    const left_total = req.body.left_total || req.body.leftTotal;
-    const right_total = req.body.right_total || req.body.rightTotal;
+    const left_loss  = req.body.left_loss  ?? req.body.leftLoss  ?? req.body.leftDamage  ?? null;
+    const right_loss = req.body.right_loss ?? req.body.rightLoss ?? req.body.rightDamage ?? null;
+    const left_total  = req.body.left_total  ?? req.body.leftTotal  ?? req.body.leftTroops  ?? null;
+    const right_total = req.body.right_total ?? req.body.rightTotal ?? req.body.rightTroops ?? null;
     const left_loss_rate = req.body.left_loss_rate || req.body.leftLossRate;
     const right_loss_rate = req.body.right_loss_rate || req.body.rightLossRate;
     let left_generals = req.body.left_generals || req.body.leftGenerals;
@@ -898,10 +904,32 @@ app.get('/api/db/table/:tableName/desc', async (req, res) => {
   }
 });
 
-// ========== OCR 代理（豆包视觉模型）==========
-const DOUBAO_API_KEY = 'ark-74b37e3f-3407-4070-b918-71d6a455bc5a-19ae6';
+// ========== OCR 代理 ==========
+const DOUBAO_API_KEY = process.env.DOUBAO_API_KEY || 'ark-74b37e3f-3407-4070-b918-71d6a455bc5a-19ae6';
 const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+const PADDLE_URL  = 'http://127.0.0.1:8003/ocr';
 
+// PaddleOCR / RapidOCR 本地服务路由
+app.post('/api/ocr-paddle', requireActiveUser, async (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ ok: false, error: '缺少 image 参数' });
+    const resp = await fetch(PADDLE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!resp.ok) return res.status(502).json({ ok: false, error: `OCR服务异常: ${resp.status}` });
+    const data = await resp.json();
+    res.json(data);
+  } catch (err) {
+    // 503 → 前端自动回退豆包
+    res.status(503).json({ ok: false, error: `OCR服务不可用: ${err.message}` });
+  }
+});
+
+// 豆包视觉模型代理（备用）
 app.post('/api/ocr', requireActiveUser, async (req, res) => {
   try {
     const response = await fetch(DOUBAO_URL, {
