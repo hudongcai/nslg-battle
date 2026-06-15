@@ -101,7 +101,7 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
 4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
 5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。必须输出武将1、武将2、武将3三行；若某位名字确实无法辨认，填"未知"。**武将名只能是纯汉字（通常2-4个字），严禁包含任何数字**；头像旁显示的数字（等级、兵力层数等）是装饰信息，绝对不属于武将名
-6. 战法：每位武将下方的战法框中，每行一个战法名。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；若某格战法看不清则填"未知"。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
+6. 战法：每位武将**恰好有3个战法**（第1个为武将自带战法，第2、3个为装备战法）。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；请逐格仔细读取，确保每位武将输出**恰好3个**战法名，用英文逗号分隔；若某格战法确实无法辨认，填"未知"。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记
 7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
 8. 无法识别的文字填"未知"，数字填0
 
@@ -254,8 +254,18 @@ function parseOCRResponse(text) {
       indices.forEach(i => {
         const g = generalMap[i];
         if (g) gens.push(g);
-        const t = tacticsMap[i] || [];
-        tacs.push(...t);
+        let heroTacs = tacticsMap[i] || [];
+        // 自带战法补全：若武将已知且战法不足3个，尝试补入自带战法
+        if (g && g !== '未知' && heroTacs.length < 3 && typeof ALL_HEROES !== 'undefined') {
+          const correctedName = bestMatchHeroName(g);
+          const heroEntry = ALL_HEROES.find(h => h.name === correctedName);
+          if (heroEntry && heroEntry.skill) {
+            const selfSkill = heroEntry.skill;
+            const alreadyPresent = heroTacs.some(t => t === selfSkill || levenshtein(t, selfSkill) <= 1);
+            if (!alreadyPresent) heroTacs = [selfSkill, ...heroTacs];
+          }
+        }
+        tacs.push(...heroTacs);
       });
       if (sideKey === 'left') { record.leftGenerals = gens; record.leftTactics = tacs; }
       else if (sideKey === 'right') { record.rightGenerals = gens; record.rightTactics = tacs; }
