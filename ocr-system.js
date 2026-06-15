@@ -100,8 +100,8 @@ async function callOCRAPI(base64Data, externalSignal = null) {
 2. 玩家名：从玩家名称区域单独读取，完整保留，即使含有"丨"也不要拆分（"丨"是玩家名的一部分）
 3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
 4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
-5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。**必须输出武将1、武将2、武将3三行，即使某位武将头像下方文字模糊也必须输出该行**；若确实无法辨认则填"未知"
-6. 战法：每位武将下方的战法框中，每行一个战法名。**武将1/2/3各自的战法必须独立输出（战法1、战法2、战法3三行，不得合并或省略任何一行）**；若某格战法确实看不清则填"未知"。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
+5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。必须输出武将1、武将2、武将3三行；若某位名字确实无法辨认，填"未知"。**武将名只能是纯汉字（通常2-4个字），严禁包含任何数字**；头像旁显示的数字（等级、兵力层数等）是装饰信息，绝对不属于武将名
+6. 战法：每位武将下方的战法框中，每行一个战法名。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；若某格战法看不清则填"未知"。注意："影本·XXXX"是一个完整战法名，不要拆成"影本"和"XXXX"两个。忽略"×数字"叠层标记，提取战法名用英文逗号分隔，每位武将通常有2-4个战法
 7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
 8. 无法识别的文字填"未知"，数字填0
 
@@ -457,10 +457,28 @@ function bestMatch(name, list, nameKey) {
   return (best && bestDist <= threshold) ? best : name;
 }
 
+function bestMatchHeroName(name) {
+  if (!name || name === '未知' || name.length < 2) return name;
+  // 去除武将名前缀中的数字和等级/层/兵标记（如"50级延"→"延"，"100层瑜"→"瑜"）
+  const cleaned = name.replace(/^\d+[级层兵\s]*/u, '').trim();
+  if (cleaned !== name && cleaned.length >= 1) {
+    if (cleaned.length === 1) {
+      // 单字符：尝试唯一后缀匹配（"延"→"魏延"；"瑜"有多个则不匹配）
+      const matches = ALL_HEROES.filter(h => h.name.endsWith(cleaned));
+      if (matches.length === 1) return matches[0].name;
+      return name; // 有歧义，保留原值由人工核查
+    }
+    // 清洗后≥2字符：做模糊匹配
+    const r = bestMatch(cleaned, ALL_HEROES, 'name');
+    if (r !== cleaned) return r;
+  }
+  return bestMatch(name, ALL_HEROES, 'name');
+}
+
 function correctByDatabase(record) {
   if (typeof ALL_HEROES === 'undefined' || typeof ALL_TACTICS === 'undefined') return record;
   ['left', 'right'].forEach(side => {
-    record[side + 'Generals'] = (record[side + 'Generals'] || []).map(n => bestMatch(n, ALL_HEROES, 'name'));
+    record[side + 'Generals'] = (record[side + 'Generals'] || []).map(bestMatchHeroName);
     record[side + 'Tactics']  = (record[side + 'Tactics']  || []).map(n => bestMatch(n, ALL_TACTICS, 'name'));
   });
   return record;
@@ -608,12 +626,29 @@ async function selectWatchFolder() {
     if (wasActive) stopFolderWatch();
     document.getElementById('folderWatchName').textContent = handle.name;
     document.getElementById('btnFolderWatch').disabled = false;
-    folderProcessedSet = loadFolderProcessed(handle.name);
+    folderProcessedSet = await loadFolderProcessedSet(handle.name);
     folderNewCount = 0;
     updateFolderWatchStats();
   } catch (e) {
     if (e.name !== 'AbortError') alert('选择文件夹失败：' + e.message);
   }
+}
+
+async function loadFolderProcessedSet(folderName) {
+  // 优先从服务端拉取已上传文件名（跨session持久化，不依赖localStorage）
+  try {
+    const data = await cloudRequest('/gallery/imagenames');
+    if (data && data.code === 200 && Array.isArray(data.data)) {
+      const serverSet = new Set(data.data);
+      // 合并localStorage作为补充（兼容本地未同步到服务端的情况）
+      const localSet = loadFolderProcessed(folderName);
+      localSet.forEach(n => serverSet.add(n));
+      return serverSet;
+    }
+  } catch (e) {
+    console.warn('[FolderWatch] 服务端查询已处理文件失败，回退localStorage:', e.message);
+  }
+  return loadFolderProcessed(folderName);
 }
 
 async function toggleFolderWatch() {

@@ -968,6 +968,19 @@ app.get('/api/gallery/by-battle/:battleId', async (req, res) => {
   }
 });
 
+// 获取当前用户已上传图片的文件名列表（供文件夹监听去重使用）
+app.get('/api/gallery/imagenames', requireActiveUser, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT DISTINCT original_name FROM battle_gallery WHERE uploaded_by = ? AND original_name != "" AND status = 1',
+      [req.authUserId]
+    );
+    res.json({ code: 200, data: rows.map(r => r.original_name) });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // ========== 截图工具安装包下载 ==========
 const path = require('path');
 const fs   = require('fs');
