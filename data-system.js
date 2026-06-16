@@ -160,26 +160,31 @@ function dbPutLocal(rec) {
 // 仅添加到本地 IndexedDB，不触发云端同步（用于服务端已存 MySQL 的记录，如 ocr-upload）
 async function dbAddLocal(rec) {
   if (!db) await openDB();
-  return new Promise((resolve, reject) => {
-    rec.projectId = rec.projectId || window.currentProjectId || '';
-    rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
-    rec.time = rec.time || new Date().toLocaleString('zh-CN');
-    rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
-    rec.hasImage = !!(rec.imageBase64);
+  rec.projectId = rec.projectId || window.currentProjectId || '';
+  rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
+  rec.time = rec.time || new Date().toLocaleString('zh-CN');
+  rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
+  rec.hasImage = !!(rec.imageBase64);
+
+  // 用 put 代替 add：有则更新，无则插入，不因主键冲突静默失败
+  await new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
-    const store = tx.objectStore('records');
-    const req = store.add(rec);
-    req.onsuccess = () => {
-      rec.id = req.result;
-      const { imageBase64: _img2, ...liteRec2 } = rec;
-      allRecords.push({ ...liteRec2 });
-      updateGlobalStats();
-      syncToLocalStorage();
-      renderDataTable();
-      resolve(req.result);
-    };
+    const req = tx.objectStore('records').put(rec);
+    req.onsuccess = () => { rec.id = req.result; resolve(); };
     req.onerror = () => reject(req.error);
   });
+
+  // 更新内存（去掉图片字段节省内存）
+  const { imageBase64: _, ...liteRec } = rec;
+  const idx = allRecords.findIndex(r => r.id === rec.id);
+  if (idx >= 0) allRecords[idx] = { ...liteRec };
+  else allRecords.push({ ...liteRec });
+
+  updateGlobalStats();
+  syncToLocalStorage();
+  dataPage = 1;        // 新记录排在最前，跳回第 1 页
+  renderDataTable();
+  return rec.id;
 }
 window.dbAddLocal = dbAddLocal;
 
