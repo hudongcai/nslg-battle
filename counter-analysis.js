@@ -297,11 +297,11 @@
   function analyzeCounter(recs) {
     const groups = {};
     for (const rec of recs) {
-      const lg = normGens(rec.leftGenerals  || rec.left_generals);
-      const lt = normTacs(rec.leftTactics   || rec.left_tactics);
+      const lg = normGens(getGenerals(rec, 'left'));
+      const lt = normTacs(getTactics(rec, 'left'));
       const lf = rec.leftFormation  || rec.left_formation  || '';
-      const rg = normGens(rec.rightGenerals || rec.right_generals);
-      const rt = normTacs(rec.rightTactics  || rec.right_tactics);
+      const rg = normGens(getGenerals(rec, 'right'));
+      const rt = normTacs(getTactics(rec, 'right'));
       const rf = rec.rightFormation || rec.right_formation || '';
       if (!lg.length || !rg.length) continue;
       const lk = teamKey(lg, lt, lf);
@@ -358,8 +358,8 @@
   function analyzeEnemyFreq(recs) {
     const stats = {};
     for (const rec of recs) {
-      const rg = normGens(rec.rightGenerals || rec.right_generals);
-      const rt = normTacs(rec.rightTactics  || rec.right_tactics);
+      const rg = normGens(getGenerals(rec, 'right'));
+      const rt = normTacs(getTactics(rec, 'right'));
       const rf = rec.rightFormation || rec.right_formation || '';
       if (!rg.length) continue;
       const k = teamKey(rg, rt, rf);
@@ -371,8 +371,8 @@
 
   // 判断某条战报是否双方均无战法
   function hasNoTactics(rec) {
-    const lt = normTacs(rec.leftTactics  || rec.left_tactics  || []);
-    const rt = normTacs(rec.rightTactics || rec.right_tactics || []);
+    const lt = normTacs(getTactics(rec, 'left'));
+    const rt = normTacs(getTactics(rec, 'right'));
     return lt.length === 0 && rt.length === 0;
   }
 
@@ -381,7 +381,7 @@
     const stats = {};
     for (const rec of recs) {
       if (!hasNoTactics(rec)) continue;
-      const rg = normGens(rec.rightGenerals || rec.right_generals);
+      const rg = normGens(getGenerals(rec, 'right'));
       if (!rg.length) continue;
       const k = teamKeyNoTacs(rg);
       if (!stats[k]) stats[k] = { generals: normGens(rg).sort(), count: 0 };
@@ -398,11 +398,11 @@
     const matrix = {};
     let recProcessed = 0, recMatchedRight = 0, recMatchedLeft = 0;
     for (const rec of recs) {
-      const lg = normGens(rec.leftGenerals  || rec.left_generals);
-      const lt = normTacs(rec.leftTactics   || rec.left_tactics);
+      const lg = normGens(getGenerals(rec, 'left'));
+      const lt = normTacs(getTactics(rec, 'left'));
       const lf = rec.leftFormation  || rec.left_formation  || '';
-      const rg = normGens(rec.rightGenerals || rec.right_generals);
-      const rt = normTacs(rec.rightTactics  || rec.right_tactics);
+      const rg = normGens(getGenerals(rec, 'right'));
+      const rt = normTacs(getTactics(rec, 'right'));
       const rf = rec.rightFormation || rec.right_formation || '';
       if (!lg.length || !rg.length) continue;
       recProcessed++;
@@ -481,8 +481,8 @@
     const enemyKeySet = new Set(enemies.map(e => teamKeyNoTacs(e.generals)));
     const matrix = {};
     for (const rec of noTacsRecs) {
-      const lg = normGens(rec.leftGenerals  || rec.left_generals);
-      const rg = normGens(rec.rightGenerals || rec.right_generals);
+      const lg = normGens(getGenerals(rec, 'left'));
+      const rg = normGens(getGenerals(rec, 'right'));
       if (!lg.length || !rg.length) continue;
       const leftKey  = teamKeyNoTacs(lg);
       const rightKey = teamKeyNoTacs(rg);

@@ -638,6 +638,14 @@ app.get('/api/battles', async (req, res) => {
         right_generals: r.right_generals,
         left_tactics: r.left_tactics,
         right_tactics: r.right_tactics,
+        left_general_1: r.left_general_1, left_general_2: r.left_general_2, left_general_3: r.left_general_3,
+        right_general_1: r.right_general_1, right_general_2: r.right_general_2, right_general_3: r.right_general_3,
+        left_tactic_1_1: r.left_tactic_1_1, left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
+        left_tactic_2_1: r.left_tactic_2_1, left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
+        left_tactic_3_1: r.left_tactic_3_1, left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
+        right_tactic_1_1: r.right_tactic_1_1, right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
+        right_tactic_2_1: r.right_tactic_2_1, right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
+        right_tactic_3_1: r.right_tactic_3_1, right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
         left_formation: r.left_formation,
         right_formation: r.right_formation,
         left_alliance: r.left_alliance,
@@ -676,22 +684,35 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
     const right_loss_rate = body.right_loss_rate ?? body.rightLossRate ?? null;
 
     const now = new Date();
-    
+
     const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
     const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
     const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
     const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
-    
+
+    // 从 body 或从数组中提取 24 个独立字段
+    const lg = Array.isArray(left_generals)  ? left_generals  : [];
+    const rg = Array.isArray(right_generals) ? right_generals : [];
+    const lt = Array.isArray(left_tactics)   ? left_tactics   : [];
+    const rt = Array.isArray(right_tactics)  ? right_tactics  : [];
+    const f = (arr, i) => arr[i] || null;
+
     const [resultRow] = await pool.query(
       'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, ' +
       'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_generals, right_generals, ' +
       'left_tactics, right_tactics, left_formation, right_formation, left_alliance, right_alliance, ' +
+      'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
+      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
+      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
       'created_by, status, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [projectId, attacker_name, enemy_name, result, battle_date, description,
        left_loss, right_loss, left_total, right_total, left_loss_rate ?? null, right_loss_rate ?? null,
        left_generals_str, right_generals_str,
        left_tactics_str, right_tactics_str, left_formation, right_formation, left_alliance, right_alliance,
+       f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
+       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
+       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
        1, 1, now, now]
     );
     
@@ -732,11 +753,18 @@ app.put('/api/battles/:id', async (req, res) => {
     const left_formation = req.body.left_formation || req.body.leftFormation;
     const right_formation = req.body.right_formation || req.body.rightFormation;
 
-    // JSON 序列化数组字段
+    // JSON 序列化数组字段（兼容旧格式）
     const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
     const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
     const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
     const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
+
+    // 24 个独立字段
+    const lg = Array.isArray(left_generals)  ? left_generals  : [];
+    const rg = Array.isArray(right_generals) ? right_generals : [];
+    const lt = Array.isArray(left_tactics)   ? left_tactics   : [];
+    const rt = Array.isArray(right_tactics)  ? right_tactics  : [];
+    const f = (arr, i) => arr[i] || null;
 
     const now = new Date();
 
@@ -745,15 +773,27 @@ app.put('/api/battles/:id', async (req, res) => {
       'left_alliance = ?, right_alliance = ?, ' +
       'left_loss = ?, right_loss = ?, left_total = ?, right_total = ?, ' +
       'left_loss_rate = ?, right_loss_rate = ?, ' +
-      'left_generals = ?, right_generals = ?, ' +
-      'left_tactics = ?, right_tactics = ?, left_formation = ?, right_formation = ?, updated_at = ? ' +
-      'WHERE id = ?',
+      'left_generals = ?, right_generals = ?, left_tactics = ?, right_tactics = ?, ' +
+      'left_formation = ?, right_formation = ?, ' +
+      'left_general_1 = ?, left_general_2 = ?, left_general_3 = ?, ' +
+      'right_general_1 = ?, right_general_2 = ?, right_general_3 = ?, ' +
+      'left_tactic_1_1 = ?, left_tactic_1_2 = ?, left_tactic_1_3 = ?, ' +
+      'left_tactic_2_1 = ?, left_tactic_2_2 = ?, left_tactic_2_3 = ?, ' +
+      'left_tactic_3_1 = ?, left_tactic_3_2 = ?, left_tactic_3_3 = ?, ' +
+      'right_tactic_1_1 = ?, right_tactic_1_2 = ?, right_tactic_1_3 = ?, ' +
+      'right_tactic_2_1 = ?, right_tactic_2_2 = ?, right_tactic_2_3 = ?, ' +
+      'right_tactic_3_1 = ?, right_tactic_3_2 = ?, right_tactic_3_3 = ?, ' +
+      'updated_at = ? WHERE id = ?',
       [attacker_name, enemy_name, result, battle_date, description,
        left_alliance || '', right_alliance || '',
        left_loss, right_loss, left_total, right_total,
        left_loss_rate ?? null, right_loss_rate ?? null,
-       left_generals_str, right_generals_str,
-       left_tactics_str, right_tactics_str, left_formation, right_formation, now, id]
+       left_generals_str, right_generals_str, left_tactics_str, right_tactics_str,
+       left_formation, right_formation,
+       f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
+       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
+       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
+       now, id]
     );
 
     res.json({ code: 200, message: '更新成功' });
@@ -1007,7 +1047,7 @@ app.get('/api/gallery/imagenames', requireActiveUser, async (req, res) => {
                FROM battle_gallery bg
                INNER JOIN battle_records br ON bg.battle_id = br.id
                WHERE bg.uploaded_by = ? AND bg.original_name != '' AND bg.status = 1
-                 AND br.left_generals IS NOT NULL AND br.left_generals NOT IN ('', '[]')`;
+                 AND br.left_general_1 IS NOT NULL AND br.left_general_1 != ''`;
     } else {
       query = `SELECT DISTINCT original_name FROM battle_gallery
                WHERE uploaded_by = ? AND original_name != '' AND status = 1`;

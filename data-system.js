@@ -13,15 +13,59 @@ let winRateSortDir = 'desc';
 let gallerySelectedIds = new Set();
 let cachedWinRateData = [];
 
+// ========== 武将/战法独立字段 helper ==========
+function getGenerals(rec, side) {
+  const p = side === 'left' ? 'leftGeneral' : 'rightGeneral';
+  return [rec[p + '1'] || '', rec[p + '2'] || '', rec[p + '3'] || ''];
+}
+
+function getTactics(rec, side) {
+  const p = side === 'left' ? 'leftTactic' : 'rightTactic';
+  return [
+    rec[p + '1_1'] || '', rec[p + '1_2'] || '', rec[p + '1_3'] || '',
+    rec[p + '2_1'] || '', rec[p + '2_2'] || '', rec[p + '2_3'] || '',
+    rec[p + '3_1'] || '', rec[p + '3_2'] || '', rec[p + '3_3'] || ''
+  ];
+}
+
+function setFlat(rec, side, generals, tactics) {
+  const gp = side === 'left' ? 'leftGeneral' : 'rightGeneral';
+  const tp = side === 'left' ? 'leftTactic'  : 'rightTactic';
+  rec[gp + '1'] = generals[0] || ''; rec[gp + '2'] = generals[1] || ''; rec[gp + '3'] = generals[2] || '';
+  rec[tp + '1_1'] = tactics[0] || ''; rec[tp + '1_2'] = tactics[1] || ''; rec[tp + '1_3'] = tactics[2] || '';
+  rec[tp + '2_1'] = tactics[3] || ''; rec[tp + '2_2'] = tactics[4] || ''; rec[tp + '2_3'] = tactics[5] || '';
+  rec[tp + '3_1'] = tactics[6] || ''; rec[tp + '3_2'] = tactics[7] || ''; rec[tp + '3_3'] = tactics[8] || '';
+}
+
 // ========== IndexedDB ==========
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('SanmoBattleDB', 3); // V1.0: 升级至 v3
+    const req = indexedDB.open('SanmoBattleDB', 4); // v4: 武将/战法扁平化
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
       // v1: records
       if (!d.objectStoreNames.contains('records'))
         d.createObjectStore('records', { keyPath: 'id', autoIncrement: true });
+      // v4: 迁移旧数组字段为独立字段
+      if (e.oldVersion < 4) {
+        const tx = e.target.transaction;
+        const store = tx.objectStore('records');
+        store.openCursor().onsuccess = function(ev) {
+          const cursor = ev.target.result;
+          if (!cursor) return;
+          const rec = cursor.value;
+          let changed = false;
+          if (rec.leftGenerals || rec.rightGenerals || rec.leftTactics || rec.rightTactics) {
+            setFlat(rec, 'left',  rec.leftGenerals  || [], rec.leftTactics  || []);
+            setFlat(rec, 'right', rec.rightGenerals || [], rec.rightTactics || []);
+            delete rec.leftGenerals; delete rec.rightGenerals;
+            delete rec.leftTactics;  delete rec.rightTactics;
+            changed = true;
+          }
+          if (changed) cursor.update(rec);
+          cursor.continue();
+        };
+      }
     };
     req.onsuccess = () => { db = req.result; resolve(db); };
     req.onerror = () => reject(req.error);
@@ -60,10 +104,14 @@ async function dbAdd(rec) {
             rightAlliance: rec.rightAlliance || '',
             leftFormation: rec.leftFormation || '',
             rightFormation: rec.rightFormation || '',
-            leftGenerals: rec.leftGenerals || [],
-            rightGenerals: rec.rightGenerals || [],
-            leftTactics: rec.leftTactics || [],
-            rightTactics: rec.rightTactics || [],
+            leftGeneral1: rec.leftGeneral1 || '', leftGeneral2: rec.leftGeneral2 || '', leftGeneral3: rec.leftGeneral3 || '',
+            rightGeneral1: rec.rightGeneral1 || '', rightGeneral2: rec.rightGeneral2 || '', rightGeneral3: rec.rightGeneral3 || '',
+            leftTactic1_1: rec.leftTactic1_1||'', leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
+            leftTactic2_1: rec.leftTactic2_1||'', leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
+            leftTactic3_1: rec.leftTactic3_1||'', leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
+            rightTactic1_1: rec.rightTactic1_1||'', rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
+            rightTactic2_1: rec.rightTactic2_1||'', rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
+            rightTactic3_1: rec.rightTactic3_1||'', rightTactic3_2: rec.rightTactic3_2||'', rightTactic3_3: rec.rightTactic3_3||'',
             leftLoss: rec.leftLoss ?? null,
             rightLoss: rec.rightLoss ?? null,
             leftTotal: rec.leftTotal ?? null,
@@ -137,10 +185,14 @@ function dbPut(rec) {
             rightAlliance: rec.rightAlliance || '',
             leftFormation: rec.leftFormation || '',
             rightFormation: rec.rightFormation || '',
-            leftGenerals: rec.leftGenerals || [],
-            rightGenerals: rec.rightGenerals || [],
-            leftTactics: rec.leftTactics || [],
-            rightTactics: rec.rightTactics || [],
+            leftGeneral1: rec.leftGeneral1 || '', leftGeneral2: rec.leftGeneral2 || '', leftGeneral3: rec.leftGeneral3 || '',
+            rightGeneral1: rec.rightGeneral1 || '', rightGeneral2: rec.rightGeneral2 || '', rightGeneral3: rec.rightGeneral3 || '',
+            leftTactic1_1: rec.leftTactic1_1||'', leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
+            leftTactic2_1: rec.leftTactic2_1||'', leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
+            leftTactic3_1: rec.leftTactic3_1||'', leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
+            rightTactic1_1: rec.rightTactic1_1||'', rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
+            rightTactic2_1: rec.rightTactic2_1||'', rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
+            rightTactic3_1: rec.rightTactic3_1||'', rightTactic3_2: rec.rightTactic3_2||'', rightTactic3_3: rec.rightTactic3_3||'',
             leftLoss: rec.leftLoss ?? null,
             rightLoss: rec.rightLoss ?? null,
             leftTotal: rec.leftTotal ?? null,
@@ -714,8 +766,8 @@ function updateGlobalStats() {
   if (elTotal) elTotal.textContent = allRecords.length;
   const teams = new Set();
   allRecords.forEach(r => {
-    teams.add(getTeamKey(r.leftGenerals));
-    teams.add(getTeamKey(r.rightGenerals));
+    teams.add(getTeamKey(getGenerals(r, 'left')));
+    teams.add(getTeamKey(getGenerals(r, 'right')));
   });
   if (elTeams) elTeams.textContent = teams.size;
   if (elDataCount) elDataCount.textContent = allRecords.length + ' 条';
@@ -768,7 +820,7 @@ function getTacticsDisplay(generals, tactics) {
     const t1 = tactics?.[base + 1] || '';
     const t2 = tactics?.[base + 2] || '';
     const parts = [fm, t1, t2].filter(t => t && t !== '未知');
-    html += `<div style="display:flex;align-items:baseline;gap:4px;white-space:nowrap;"><span style="color:var(--blue);font-weight:bold;font-size:11px;min-width:40px;">${escHtml(generals[i])}</span><span style="color:var(--text2);font-size:10px;">${parts.length ? parts.map(t => escHtml(t)).join(' / ') : '-'}</span></div>`;
+    html += `<div style="white-space:nowrap;"><span style="color:var(--text2);font-size:10px;">${parts.length ? parts.map(t => escHtml(t)).join(' / ') : '-'}</span></div>`;
   }
   html += '</div>';
   return html;
@@ -801,8 +853,8 @@ function getFilteredData() {
       (r.rightPlayer || '').toLowerCase().includes(search) ||
       (r.leftAlliance || '').toLowerCase().includes(search) ||
       (r.rightAlliance || '').toLowerCase().includes(search) ||
-      getTeamKey(r.leftGenerals).toLowerCase().includes(search) ||
-      getTeamKey(r.rightGenerals).toLowerCase().includes(search)
+      getTeamKey(getGenerals(r, 'left')).toLowerCase().includes(search) ||
+      getTeamKey(getGenerals(r, 'right')).toLowerCase().includes(search)
     );
   }
   if (filterR) data = data.filter(r => r.result === filterR);
@@ -818,8 +870,8 @@ function getFilteredData() {
   // 武将关键词筛选
   if (filterGeneral) {
     data = data.filter(r => {
-      const leftGens = getTeamKey(r.leftGenerals).toLowerCase();
-      const rightGens = getTeamKey(r.rightGenerals).toLowerCase();
+      const leftGens = getTeamKey(getGenerals(r, 'left')).toLowerCase();
+      const rightGens = getTeamKey(getGenerals(r, 'right')).toLowerCase();
       return leftGens.includes(filterGeneral) || rightGens.includes(filterGeneral);
     });
   }
@@ -827,8 +879,8 @@ function getFilteredData() {
   // 战法关键词筛选
   if (filterTactic) {
     data = data.filter(r => {
-      const leftTacs = (r.leftTactics || []).join(',').toLowerCase();
-      const rightTacs = (r.rightTactics || []).join(',').toLowerCase();
+      const leftTacs = getTactics(r, 'left').join(',').toLowerCase();
+      const rightTacs = getTactics(r, 'right').join(',').toLowerCase();
       return leftTacs.includes(filterTactic) || rightTacs.includes(filterTactic);
     });
   }
@@ -874,7 +926,7 @@ function renderDataTable() {
   // 初始化表头排序指示器
   updateDataTableHeaders();
   if (page.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="22" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="26" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
   } else {
     tbody.innerHTML = page.map((r, i) => `
       <tr>
@@ -884,16 +936,20 @@ function renderDataTable() {
         <td><span class="result-badge result-${r.result === '胜' ? 'win' : r.result === '败' ? 'lose' : 'draw'}">${r.result || '-'}</span></td>
         <td style="white-space:nowrap;">${escHtml(r.leftPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.leftAlliance || '')}</td>
-        <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(r.leftGenerals)}</td>
-        <td style="font-size:11px;line-height:1.6;min-width:210px;">${getTacticsDisplay(r.leftGenerals, r.leftTactics)}</td>
+        <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(getGenerals(r, 'left'))}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'left',0)}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'left',1)}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'left',2)}</td>
         <td style="color:var(--text2);">${escHtml(r.leftFormation || '')}</td>
         <td class="num">${fmtNum(r.leftLoss)}</td>
         <td class="num">${fmtNum(r.leftTotal)}</td>
         <td class="num" style="font-weight:bold;color:${getLossColor(r.leftLossRate)}">${r.leftLossRate != null ? Number(r.leftLossRate).toFixed(1) + '%' : '-'}</td>
         <td style="white-space:nowrap;">${escHtml(r.rightPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.rightAlliance || '')}</td>
-        <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(r.rightGenerals)}</td>
-        <td style="font-size:11px;line-height:1.6;min-width:210px;">${getTacticsDisplay(r.rightGenerals, r.rightTactics)}</td>
+        <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(getGenerals(r, 'right'))}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'right',0)}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'right',1)}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'right',2)}</td>
         <td style="color:var(--text2);">${escHtml(r.rightFormation || '')}</td>
         <td class="num">${fmtNum(r.rightLoss)}</td>
         <td class="num">${fmtNum(r.rightTotal)}</td>
@@ -1109,16 +1165,16 @@ function exportDataCSV(scope = 'all') {
       r.result || '',
       r.leftPlayer || '',
       r.leftAlliance || '',
-      getTeamKey(r.leftGenerals),
-      tacStr(r.leftGenerals, r.leftTactics),
+      getTeamKey(getGenerals(r, 'left')),
+      tacStr(getGenerals(r, 'left'), getTactics(r, 'left')),
       r.leftFormation || '',
       r.leftLoss || 0,
       r.leftTotal || 0,
       r.leftLossRate != null ? Number(r.leftLossRate).toFixed(1) + '%' : '-',
       r.rightPlayer || '',
       r.rightAlliance || '',
-      getTeamKey(r.rightGenerals),
-      tacStr(r.rightGenerals, r.rightTactics),
+      getTeamKey(getGenerals(r, 'right')),
+      tacStr(getGenerals(r, 'right'), getTactics(r, 'right')),
       r.rightFormation || '',
       r.rightLoss || 0,
       r.rightTotal || 0,
@@ -1146,7 +1202,7 @@ function openCSVWindowFallback() {
           return gn + (tc.length ? '[' + tc.join('/') + ']' : '');
         }).join(' | ');
       }
-      csv += `${i + 1},"${r.time || ''}","${r.result || ''}","${r.leftPlayer || ''}","${r.leftAlliance || ''}","${getTeamKey(r.leftGenerals)}","${ts(r.leftGenerals, r.leftTactics)}","${r.leftFormation || ''}",${r.leftLoss || 0},${r.leftTotal || 0},"${r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-'}","${r.rightPlayer || ''}","${r.rightAlliance || ''}","${getTeamKey(r.rightGenerals)}","${ts(r.rightGenerals, r.rightTactics)}","${r.rightFormation || ''}",${r.rightLoss || 0},${r.rightTotal || 0},"${r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'}"\n`;
+      csv += `${i + 1},"${r.time || ''}","${r.result || ''}","${r.leftPlayer || ''}","${r.leftAlliance || ''}","${getTeamKey(getGenerals(r,'left'))}","${ts(getGenerals(r,'left'), getTactics(r,'left'))}","${r.leftFormation || ''}",${r.leftLoss || 0},${r.leftTotal || 0},"${r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-'}","${r.rightPlayer || ''}","${r.rightAlliance || ''}","${getTeamKey(getGenerals(r,'right'))}","${ts(getGenerals(r,'right'), getTactics(r,'right'))}","${r.rightFormation || ''}",${r.rightLoss || 0},${r.rightTotal || 0},"${r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'}"\n`;
     });
     const w = window.open('', '_blank');
     if (w) {
@@ -1169,8 +1225,8 @@ function renderGallery() {
   const filter = document.getElementById('galleryFilter')?.value || '';
   let records = allRecords.filter(r => r.imageBase64);
   if (search) records = records.filter(r => r.imageName && r.imageName.toLowerCase().includes(search));
-  if (filter === 'parsed') records = records.filter(r => r.leftGenerals && r.leftGenerals.length > 0);
-  if (filter === 'pending') records = records.filter(r => (!r.leftGenerals || r.leftGenerals.length === 0) && (!r.rightGenerals || r.rightGenerals.length === 0));
+  if (filter === 'parsed') records = records.filter(r => r.leftGeneral1);
+  if (filter === 'pending') records = records.filter(r => !r.leftGeneral1 && !r.rightGeneral1);
   if (filter === 'error') records = records.filter(r => r._parseError);
   if (countEl) countEl.textContent = records.length + ' 张';
   if (empty) empty.style.display = records.length > 0 ? 'none' : 'block';
@@ -1178,7 +1234,7 @@ function renderGallery() {
   records.sort((a, b) => (b.id || 0) - (a.id || 0));
   try {
     if (container) container.innerHTML = records.map(r => {
-      const isParsed = (r.leftGenerals && r.leftGenerals.length > 0) || (r.rightGenerals && r.rightGenerals.length > 0);
+      const isParsed = !!(r.leftGeneral1 || r.rightGeneral1);
       const isErr = r._parseError;
       const isChecked = gallerySelectedIds.has(r.id);
       const badgeCls = isErr ? 'badge-error' : isParsed ? 'badge-parsed' : 'badge-pending';
@@ -1390,7 +1446,7 @@ function renderDBDataTable(data) {
 
   // 判断列类型辅助函数
   function isJsonCol(name) {
-    const knownJsonCols = { battle_records: ['left_generals','right_generals','left_tactics','right_tactics'], roles: ['permissions'] };
+    const knownJsonCols = { battle_records: [], roles: ['permissions'] };
     const jsonCols = knownJsonCols[dbViewerCurrentTable] || [];
     return jsonCols.includes(name) || columns.find(c=>c.field===name && c.type.startsWith('json'));
   }

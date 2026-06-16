@@ -49,7 +49,7 @@ async function tryPaddleOCR(base64Data, signal) {
     if (!data.ok) return null;               // Python 内部错误 → 回退
     // 将 Python 返回的结构转为 record 格式（与 parseOCRResponse 输出一致）
     const winnerMap = { left: '胜', right: '败', unknown: '' };
-    return {
+    const rec = {
       time:           new Date().toLocaleString('zh-CN'),
       result:         winnerMap[data.winner] ?? '',
       leftPlayer:     data.leftPlayer    || '',
@@ -57,17 +57,16 @@ async function tryPaddleOCR(base64Data, signal) {
       leftFormation:  data.leftFormation || '',
       leftLoss:       data.leftDamage    ?? 0,
       leftTotal:      data.leftTroops    ?? 0,
-      leftGenerals:   data.leftGenerals  || ['未知','未知','未知'],
-      leftTactics:    data.leftTactics   || [],
       rightPlayer:    data.rightPlayer   || '',
       rightAlliance:  data.rightAlliance || '',
       rightFormation: data.rightFormation|| '',
       rightLoss:      data.rightDamage   ?? 0,
       rightTotal:     data.rightTroops   ?? 0,
-      rightGenerals:  data.rightGenerals || ['未知','未知','未知'],
-      rightTactics:   data.rightTactics  || [],
       battleDate:     data.battleDate    || '',
     };
+    setFlat(rec, 'left',  data.leftGenerals  || [], data.leftTactics  || []);
+    setFlat(rec, 'right', data.rightGenerals || [], data.rightTactics || []);
+    return rec;
   } catch (_) {
     return null;  // 网络错误/超时 → 回退豆包
   }
@@ -500,6 +499,11 @@ function parseOCRResponse(text) {
   // 写入识别到的战斗日期（OCR 识别不到则为空，由调用方补默认值）
   record.battleDate = battleDate || '';
   correctByDatabase(record);
+  // 将内部数组转为独立字段
+  setFlat(record, 'left',  record.leftGenerals  || [], record.leftTactics  || []);
+  setFlat(record, 'right', record.rightGenerals || [], record.rightTactics || []);
+  delete record.leftGenerals; delete record.rightGenerals;
+  delete record.leftTactics;  delete record.rightTactics;
   return record;
 }
 
@@ -992,8 +996,6 @@ async function startBatchProcess() {
               imageBase64: base64,
               imageName: item.name,
               imageTime: new Date().toLocaleString('zh-CN'),
-              leftGenerals: [], rightGenerals: [],
-              leftTactics: [], rightTactics: [],
               _parseError: true, _errorMsg: e.message,
             };
             const newId = await dbAdd(errRec);
