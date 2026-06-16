@@ -563,7 +563,6 @@ document.addEventListener('click', function(e) {
       <div style="overflow-x:auto;"><table id="dataTable"><thead><tr>
         <th style="width:32px;min-width:32px;padding:0;text-align:center;"><input type="checkbox" id="checkAll" onchange="tableCheckAll(this)" title="全选/取消" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></th><th>#</th><th>时间</th><th>结果</th>
         <th>左玩家</th><th style="min-width:77px;">左同盟</th><th style="min-width:56px;">左武将</th>
-        <th style="min-width:70px;white-space:nowrap;">左战法1<span data-tac-col="lt1" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt1',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt1',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">左战法2<span data-tac-col="lt2" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt2',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt2',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">左战法3<span data-tac-col="lt3" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt3',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt3',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:56px;">左阵型</th>
@@ -571,7 +570,6 @@ document.addEventListener('click', function(e) {
         <th id="th-leftTotal" onclick="toggleDataSort('leftTotal')" style="min-width:60px;cursor:pointer;">左总兵<span class="sort-arrow">↕</span></th>
         <th id="th-leftLossRate" onclick="toggleDataSort('leftLossRate')" style="min-width:60px;cursor:pointer;">左战损率<span class="sort-arrow">↕</span></th>
         <th>右玩家</th><th style="min-width:77px;">右同盟</th><th style="min-width:56px;">右武将</th>
-        <th style="min-width:70px;white-space:nowrap;">右战法1<span data-tac-col="rt1" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('rt1',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('rt1',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">右战法2<span data-tac-col="rt2" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('rt2',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('rt2',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">右战法3<span data-tac-col="rt3" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('rt3',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('rt3',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:56px;">右阵型</th>
@@ -819,10 +817,10 @@ window.confirmDialog = function(options){
 function getLossColor(rate){if(rate==null)return'var(--text2)';if(rate<=30)return'var(--green)';if(rate<=60)return'var(--accent)';return'var(--red)';}
 
 // ========== TAB 1: DATA TABLE ==========
-window.tacticColFilters={lt1:{sel:'',txt:''},lt2:{sel:'',txt:''},lt3:{sel:'',txt:''},rt1:{sel:'',txt:''},rt2:{sel:'',txt:''},rt3:{sel:'',txt:''}};
+window.tacticColFilters={lt2:{sel:'',txt:''},lt3:{sel:'',txt:''},rt2:{sel:'',txt:''},rt3:{sel:'',txt:''}};
 var _tacPanelCol=null;
-var _tacSlotKeys={lt1:['leftTactic1_1','leftTactic2_1','leftTactic3_1'],lt2:['leftTactic1_2','leftTactic2_2','leftTactic3_2'],lt3:['leftTactic1_3','leftTactic2_3','leftTactic3_3'],rt1:['rightTactic1_1','rightTactic2_1','rightTactic3_1'],rt2:['rightTactic1_2','rightTactic2_2','rightTactic3_2'],rt3:['rightTactic1_3','rightTactic2_3','rightTactic3_3']};
-var _tacColNames={lt1:'左战法1',lt2:'左战法2',lt3:'左战法3',rt1:'右战法1',rt2:'右战法2',rt3:'右战法3'};
+var _tacSlotKeys={lt2:['leftTactic1_2','leftTactic2_2','leftTactic3_2'],lt3:['leftTactic1_3','leftTactic2_3','leftTactic3_3'],rt2:['rightTactic1_2','rightTactic2_2','rightTactic3_2'],rt3:['rightTactic1_3','rightTactic2_3','rightTactic3_3']};
+var _tacColNames={lt2:'左战法2',lt3:'左战法3',rt2:'右战法2',rt3:'右战法3'};
 function openTacticPanel(col,anchor,mode){
   _tacPanelCol=col;
   var panel=document.getElementById('tacticFilterPanel');if(!panel)return;
@@ -855,7 +853,7 @@ function clearTacticFilter(){
 }
 function closeTacticPanel(){var p=document.getElementById('tacticFilterPanel');if(p)p.style.display='none';}
 function updateTacticFilterIndicators(){
-  ['lt1','lt2','lt3','rt1','rt2','rt3'].forEach(k=>{
+  ['lt2','lt3','rt2','rt3'].forEach(k=>{
     var span=document.querySelector('[data-tac-col="'+k+'"]');
     if(span){var active=!!(window.tacticColFilters[k].sel||window.tacticColFilters[k].txt);span.querySelectorAll('.tac-fp-btn').forEach(btn=>btn.style.color=active?'var(--accent)':'var(--text3)');}
   });
@@ -1682,8 +1680,8 @@ function getFilteredData(){
   var tcf=window.tacticColFilters||{};
   var sk=window._tacSlotKeys||{};
   var tacSlots=[
-    {f:tcf.lt1||{sel:'',txt:''},keys:sk.lt1||[]},{f:tcf.lt2||{sel:'',txt:''},keys:sk.lt2||[]},{f:tcf.lt3||{sel:'',txt:''},keys:sk.lt3||[]},
-    {f:tcf.rt1||{sel:'',txt:''},keys:sk.rt1||[]},{f:tcf.rt2||{sel:'',txt:''},keys:sk.rt2||[]},{f:tcf.rt3||{sel:'',txt:''},keys:sk.rt3||[]},
+    {f:tcf.lt2||{sel:'',txt:''},keys:sk.lt2||[]},{f:tcf.lt3||{sel:'',txt:''},keys:sk.lt3||[]},
+    {f:tcf.rt2||{sel:'',txt:''},keys:sk.rt2||[]},{f:tcf.rt3||{sel:'',txt:''},keys:sk.rt3||[]},
   ];
   tacSlots.forEach(function(slot){
     var f=slot.f,keys=slot.keys;
@@ -1692,19 +1690,17 @@ function getFilteredData(){
   data.sort(function(a,b){return(b.id||0)-(a.id||0);});
   return data;
 }
-function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(page.length===0){tbody.innerHTML='<tr><td colspan="25" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
+function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(page.length===0){tbody.innerHTML='<tr><td colspan="23" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
     <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td><td class="num">${start+i+1}</td><td style="color:var(--text2);font-size:11px;">${r.time||'-'}</td>
     <td><span class="result-badge result-${r.result==='胜'?'win':r.result==='败'?'lose':'draw'}">${r.result||'-'}</span></td>
     <td style="white-space:nowrap;">${escHtml(r.leftPlayer||'')}</td><td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.leftAlliance||'')}</td>
     <td style="white-space:nowrap;min-width:80px;">${getTeamDisplay(getGenerals(r,'left'))}</td>
-    <td style="min-width:70px;">${getTacticColDisplay(r,'left',0)}</td>
     <td style="min-width:70px;">${getTacticColDisplay(r,'left',1)}</td>
     <td style="min-width:70px;">${getTacticColDisplay(r,'left',2)}</td>
     <td style="color:var(--text2);">${escHtml(r.leftFormation||'')}</td><td class="num">${fmtNum(r.leftLoss)}</td><td class="num">${fmtNum(r.leftTotal)}</td>
     <td class="num" style="font-weight:bold;color:${getLossColor(r.leftLossRate)}">${r.leftLossRate!=null?Number(r.leftLossRate).toFixed(1)+'%':'-'}</td>
     <td style="white-space:nowrap;">${escHtml(r.rightPlayer||'')}</td><td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.rightAlliance||'')}</td>
     <td style="white-space:nowrap;min-width:80px;">${getTeamDisplay(getGenerals(r,'right'))}</td>
-    <td style="min-width:70px;">${getTacticColDisplay(r,'right',0)}</td>
     <td style="min-width:70px;">${getTacticColDisplay(r,'right',1)}</td>
     <td style="min-width:70px;">${getTacticColDisplay(r,'right',2)}</td>
     <td style="color:var(--text2);">${escHtml(r.rightFormation||'')}</td><td class="num">${fmtNum(r.rightLoss)}</td><td class="num">${fmtNum(r.rightTotal)}</td>

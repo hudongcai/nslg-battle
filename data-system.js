@@ -32,9 +32,9 @@ function setFlat(rec, side, generals, tactics) {
   const gp = side === 'left' ? 'leftGeneral' : 'rightGeneral';
   const tp = side === 'left' ? 'leftTactic'  : 'rightTactic';
   rec[gp + '1'] = generals[0] || ''; rec[gp + '2'] = generals[1] || ''; rec[gp + '3'] = generals[2] || '';
-  rec[tp + '1_1'] = tactics[0] || ''; rec[tp + '1_2'] = tactics[1] || ''; rec[tp + '1_3'] = tactics[2] || '';
-  rec[tp + '2_1'] = tactics[3] || ''; rec[tp + '2_2'] = tactics[4] || ''; rec[tp + '2_3'] = tactics[5] || '';
-  rec[tp + '3_1'] = tactics[6] || ''; rec[tp + '3_2'] = tactics[7] || ''; rec[tp + '3_3'] = tactics[8] || '';
+  rec[tp + '1_2'] = tactics[1] || ''; rec[tp + '1_3'] = tactics[2] || '';
+  rec[tp + '2_2'] = tactics[4] || ''; rec[tp + '2_3'] = tactics[5] || '';
+  rec[tp + '3_2'] = tactics[7] || ''; rec[tp + '3_3'] = tactics[8] || '';
 }
 
 // ========== IndexedDB ==========
@@ -108,11 +108,11 @@ async function dbAdd(rec) {
             rightFormation: rec.rightFormation || '',
             leftGeneral1: rec.leftGeneral1 || '', leftGeneral2: rec.leftGeneral2 || '', leftGeneral3: rec.leftGeneral3 || '',
             rightGeneral1: rec.rightGeneral1 || '', rightGeneral2: rec.rightGeneral2 || '', rightGeneral3: rec.rightGeneral3 || '',
-            leftTactic1_1: rec.leftTactic1_1||'', leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
-            leftTactic2_1: rec.leftTactic2_1||'', leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
-            leftTactic3_1: rec.leftTactic3_1||'', leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
-            rightTactic1_1: rec.rightTactic1_1||'', rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
-            rightTactic2_1: rec.rightTactic2_1||'', rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
+            leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
+            leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
+            leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
+            rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
+            rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
             rightTactic3_1: rec.rightTactic3_1||'', rightTactic3_2: rec.rightTactic3_2||'', rightTactic3_3: rec.rightTactic3_3||'',
             leftLoss: rec.leftLoss ?? null,
             rightLoss: rec.rightLoss ?? null,
@@ -905,7 +905,7 @@ function renderDataTable() {
   // 初始化表头排序指示器
   updateDataTableHeaders();
   if (page.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="26" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
   } else {
     tbody.innerHTML = page.map((r, i) => `
       <tr>
@@ -916,7 +916,6 @@ function renderDataTable() {
         <td style="white-space:nowrap;">${escHtml(r.leftPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.leftAlliance || '')}</td>
         <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(getGenerals(r, 'left'))}</td>
-        <td style="min-width:100px;">${getTacticColDisplay(r,'left',0)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'left',1)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'left',2)}</td>
         <td style="color:var(--text2);">${escHtml(r.leftFormation || '')}</td>
@@ -926,7 +925,6 @@ function renderDataTable() {
         <td style="white-space:nowrap;">${escHtml(r.rightPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.rightAlliance || '')}</td>
         <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(getGenerals(r, 'right'))}</td>
-        <td style="min-width:100px;">${getTacticColDisplay(r,'right',0)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'right',1)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'right',2)}</td>
         <td style="color:var(--text2);">${escHtml(r.rightFormation || '')}</td>

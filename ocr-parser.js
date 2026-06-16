@@ -54,9 +54,9 @@ function setFlat(rec, side, generals, tactics) {
   const gp = side === 'left' ? 'leftGeneral' : 'rightGeneral';
   const tp = side === 'left' ? 'leftTactic'  : 'rightTactic';
   rec[gp+'1'] = generals[0] || ''; rec[gp+'2'] = generals[1] || ''; rec[gp+'3'] = generals[2] || '';
-  rec[tp+'1_1'] = tactics[0] || ''; rec[tp+'1_2'] = tactics[1] || ''; rec[tp+'1_3'] = tactics[2] || '';
-  rec[tp+'2_1'] = tactics[3] || ''; rec[tp+'2_2'] = tactics[4] || ''; rec[tp+'2_3'] = tactics[5] || '';
-  rec[tp+'3_1'] = tactics[6] || ''; rec[tp+'3_2'] = tactics[7] || ''; rec[tp+'3_3'] = tactics[8] || '';
+  rec[tp+'1_2'] = tactics[1] || ''; rec[tp+'1_3'] = tactics[2] || '';
+  rec[tp+'2_2'] = tactics[4] || ''; rec[tp+'2_3'] = tactics[5] || '';
+  rec[tp+'3_2'] = tactics[7] || ''; rec[tp+'3_3'] = tactics[8] || '';
 }
 
 // ─── 数据库纠错 ────────────────────────────────────────────────────────────

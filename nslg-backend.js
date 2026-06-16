@@ -641,12 +641,12 @@ app.get('/api/battles', async (req, res) => {
         right_tactics: r.right_tactics,
         left_general_1: r.left_general_1, left_general_2: r.left_general_2, left_general_3: r.left_general_3,
         right_general_1: r.right_general_1, right_general_2: r.right_general_2, right_general_3: r.right_general_3,
-        left_tactic_1_1: r.left_tactic_1_1, left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
-        left_tactic_2_1: r.left_tactic_2_1, left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
-        left_tactic_3_1: r.left_tactic_3_1, left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
-        right_tactic_1_1: r.right_tactic_1_1, right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
-        right_tactic_2_1: r.right_tactic_2_1, right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
-        right_tactic_3_1: r.right_tactic_3_1, right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
+        left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
+        left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
+        left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
+        right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
+        right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
+        right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
         left_formation: r.left_formation,
         right_formation: r.right_formation,
         left_alliance: r.left_alliance,
@@ -745,17 +745,17 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
       'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_generals, right_generals, ' +
       'left_tactics, right_tactics, left_formation, right_formation, left_alliance, right_alliance, ' +
       'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
-      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
-      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
+      'left_tactic_1_2, left_tactic_1_3, left_tactic_2_2, left_tactic_2_3, left_tactic_3_2, left_tactic_3_3, ' +
+      'right_tactic_1_2, right_tactic_1_3, right_tactic_2_2, right_tactic_2_3, right_tactic_3_2, right_tactic_3_3, ' +
       'created_by, status, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [projectId, attacker_name, enemy_name, result, battle_date, description,
        left_loss, right_loss, left_total, right_total, left_loss_rate ?? null, right_loss_rate ?? null,
        left_generals_str, right_generals_str,
        left_tactics_str, right_tactics_str, left_formation, right_formation, left_alliance, right_alliance,
        f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
-       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
-       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
+       f(lt,1), f(lt,2), f(lt,4), f(lt,5), f(lt,7), f(lt,8),
+       f(rt,1), f(rt,2), f(rt,4), f(rt,5), f(rt,7), f(rt,8),
        1, 1, now, now]
     );
     
@@ -849,12 +849,12 @@ app.put('/api/battles/:id', async (req, res) => {
       'left_formation = ?, right_formation = ?, ' +
       'left_general_1 = ?, left_general_2 = ?, left_general_3 = ?, ' +
       'right_general_1 = ?, right_general_2 = ?, right_general_3 = ?, ' +
-      'left_tactic_1_1 = ?, left_tactic_1_2 = ?, left_tactic_1_3 = ?, ' +
-      'left_tactic_2_1 = ?, left_tactic_2_2 = ?, left_tactic_2_3 = ?, ' +
-      'left_tactic_3_1 = ?, left_tactic_3_2 = ?, left_tactic_3_3 = ?, ' +
-      'right_tactic_1_1 = ?, right_tactic_1_2 = ?, right_tactic_1_3 = ?, ' +
-      'right_tactic_2_1 = ?, right_tactic_2_2 = ?, right_tactic_2_3 = ?, ' +
-      'right_tactic_3_1 = ?, right_tactic_3_2 = ?, right_tactic_3_3 = ?, ' +
+      'left_tactic_1_2 = ?, left_tactic_1_3 = ?, ' +
+      'left_tactic_2_2 = ?, left_tactic_2_3 = ?, ' +
+      'left_tactic_3_2 = ?, left_tactic_3_3 = ?, ' +
+      'right_tactic_1_2 = ?, right_tactic_1_3 = ?, ' +
+      'right_tactic_2_2 = ?, right_tactic_2_3 = ?, ' +
+      'right_tactic_3_2 = ?, right_tactic_3_3 = ?, ' +
       'updated_at = ? WHERE id = ?',
       [attacker_name, enemy_name, result, battle_date, description,
        left_alliance || '', right_alliance || '',
@@ -863,8 +863,8 @@ app.put('/api/battles/:id', async (req, res) => {
        left_generals_str, right_generals_str, left_tactics_str, right_tactics_str,
        left_formation, right_formation,
        f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
-       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
-       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
+       f(lt,1), f(lt,2), f(lt,4), f(lt,5), f(lt,7), f(lt,8),
+       f(rt,1), f(rt,2), f(rt,4), f(rt,5), f(rt,7), f(rt,8),
        now, id]
     );
 
@@ -1122,12 +1122,12 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
       fv(record.leftAlliance),   fv(record.rightAlliance),
       fv(record.leftGeneral1),   fv(record.leftGeneral2),   fv(record.leftGeneral3),
       fv(record.rightGeneral1),  fv(record.rightGeneral2),  fv(record.rightGeneral3),
-      fv(record.leftTactic1_1),  fv(record.leftTactic1_2),  fv(record.leftTactic1_3),
-      fv(record.leftTactic2_1),  fv(record.leftTactic2_2),  fv(record.leftTactic2_3),
-      fv(record.leftTactic3_1),  fv(record.leftTactic3_2),  fv(record.leftTactic3_3),
-      fv(record.rightTactic1_1), fv(record.rightTactic1_2), fv(record.rightTactic1_3),
-      fv(record.rightTactic2_1), fv(record.rightTactic2_2), fv(record.rightTactic2_3),
-      fv(record.rightTactic3_1), fv(record.rightTactic3_2), fv(record.rightTactic3_3),
+      fv(record.leftTactic1_2),  fv(record.leftTactic1_3),
+      fv(record.leftTactic2_2),  fv(record.leftTactic2_3),
+      fv(record.leftTactic3_2),  fv(record.leftTactic3_3),
+      fv(record.rightTactic1_2), fv(record.rightTactic1_3),
+      fv(record.rightTactic2_2), fv(record.rightTactic2_3),
+      fv(record.rightTactic3_2), fv(record.rightTactic3_3),
       userId, 1, now, now,
     ];
 
@@ -1138,12 +1138,12 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
       'left_generals, right_generals, left_tactics, right_tactics, ' +
       'left_formation, right_formation, left_alliance, right_alliance, ' +
       'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
-      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, ' +
-      'left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, ' +
-      'left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
-      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, ' +
-      'right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, ' +
-      'right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
+      'left_tactic_1_2, left_tactic_1_3, ' +
+      'left_tactic_2_2, left_tactic_2_3, ' +
+      'left_tactic_3_2, left_tactic_3_3, ' +
+      'right_tactic_1_2, right_tactic_1_3, ' +
+      'right_tactic_2_2, right_tactic_2_3, ' +
+      'right_tactic_3_2, right_tactic_3_3, ' +
       'created_by, status, created_at, updated_at) ' +
       'VALUES (' + insertParams.map(() => '?').join(',') + ')',
       insertParams
