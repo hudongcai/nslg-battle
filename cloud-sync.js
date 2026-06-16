@@ -352,11 +352,12 @@ async function cloudGetRecords(projectId) {
   for (var i = 0; i < list.length; i++) {
     var r = list[i];
     var bd = r.battleDate || r.battle_date || r.battleTime || '';
+    var ca = r.created_at || r.createdAt || null;
     out.push({
       id: r.id,
       projectId: (r.projectId !== undefined && r.projectId !== null) ? r.projectId : (r.project_id || null),
       battleDate: bd,
-      time: bd ? new Date(bd).toLocaleString('zh-CN') : '',
+      time: ca ? new Date(ca).toLocaleString('zh-CN') : (bd || ''),
       result: r.result || '',
       leftPlayer: r.attackerName || r.attacker_name || '',
       rightPlayer: r.enemyName || r.enemy_name || '',
