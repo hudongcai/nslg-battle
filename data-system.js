@@ -155,6 +155,30 @@ function dbPutLocal(rec) {
   });
 }
 
+// 仅添加到本地 IndexedDB，不触发云端同步（用于服务端已存 MySQL 的记录，如 ocr-upload）
+async function dbAddLocal(rec) {
+  if (!db) await openDB();
+  return new Promise((resolve, reject) => {
+    rec.projectId = rec.projectId || window.currentProjectId || '';
+    rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
+    rec.time = rec.time || new Date().toLocaleString('zh-CN');
+    rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
+    const tx = db.transaction(['records'], 'readwrite');
+    const store = tx.objectStore('records');
+    const req = store.add(rec);
+    req.onsuccess = () => {
+      rec.id = req.result;
+      allRecords.push({ ...rec });
+      updateGlobalStats();
+      syncToLocalStorage();
+      renderDataTable();
+      resolve(req.result);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+window.dbAddLocal = dbAddLocal;
+
 // 仅删 IndexedDB，不同步云端（用于同步时清理本地孤立记录）
 function dbDeleteLocal(id) {
   return new Promise((resolve, reject) => {

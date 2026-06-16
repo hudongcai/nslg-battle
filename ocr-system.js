@@ -15,61 +15,12 @@ const OCR_CONFIG = {
   batchInterval: 1500,
 };
 
-// 动态获取 OCR 请求地址
-function getOcrEndpoint() {
+// 一站式 OCR 上传端点（后端处理识别→解析→存库）
+function getOcrUploadEndpoint() {
   if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) {
-    return CLOUD_API_BASE + '/ocr';
+    return CLOUD_API_BASE + '/battles/ocr-upload';
   }
-  return 'http://localhost:3000/api/ocr';
-}
-function getPaddleEndpoint() {
-  if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) {
-    return CLOUD_API_BASE + '/ocr-paddle';
-  }
-  return 'http://localhost:3000/api/ocr-paddle';
-}
-
-// ── PaddleOCR 快速通道（优先使用，失败自动回退豆包）──────────────────
-async function tryPaddleOCR(base64Data, signal) {
-  try {
-    const token = typeof getToken === 'function' ? getToken() : '';
-    const resp = await fetch(getPaddleEndpoint(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
-      },
-      // 去掉 data:xxx;base64, 前缀，Python 服务端兼容两种格式
-      body: JSON.stringify({ image: base64Data.replace(/^data:[^;]+;base64,/, '') }),
-      signal,
-      credentials: 'omit',
-    });
-    if (!resp.ok) return null;               // 4xx/5xx → 回退
-    const data = await resp.json();
-    if (!data.ok) return null;               // Python 内部错误 → 回退
-    // 将 Python 返回的结构转为 record 格式（与 parseOCRResponse 输出一致）
-    const winnerMap = { left: '胜', right: '败', unknown: '' };
-    const rec = {
-      time:           new Date().toLocaleString('zh-CN'),
-      result:         winnerMap[data.winner] ?? '',
-      leftPlayer:     data.leftPlayer    || '',
-      leftAlliance:   data.leftAlliance  || '',
-      leftFormation:  data.leftFormation || '',
-      leftLoss:       data.leftDamage    ?? 0,
-      leftTotal:      data.leftTroops    ?? 0,
-      rightPlayer:    data.rightPlayer   || '',
-      rightAlliance:  data.rightAlliance || '',
-      rightFormation: data.rightFormation|| '',
-      rightLoss:      data.rightDamage   ?? 0,
-      rightTotal:     data.rightTroops   ?? 0,
-      battleDate:     data.battleDate    || '',
-    };
-    setFlat(rec, 'left',  data.leftGenerals  || [], data.leftTactics  || []);
-    setFlat(rec, 'right', data.rightGenerals || [], data.rightTactics || []);
-    return rec;
-  } catch (_) {
-    return null;  // 网络错误/超时 → 回退豆包
-  }
+  return 'http://localhost:3000/api/battles/ocr-upload';
 }
 
 // ========== 状态 ==========
@@ -109,479 +60,6 @@ function setupOCRListeners() {
     // 点击上传（HTML 中 uploadZone 的 onclick 会触发 batchInput.click()，这里无需重复绑定）
   }
   // batchInput 的 onchange 在 HTML 中直接绑定 handleBatchUpload(this.files)
-}
-
-// ========== OCR API ==========
-async function callOCRAPI(base64Data, externalSignal = null) {
-  const startTime = Date.now();
-  updateOCRStatus('work', 'OCR 识别中...');
-  // 定时更新状态文字，显示已等待时间，让用户知道没卡死
-  const statusTimer = setInterval(() => {
-    const elapsed = Math.round((Date.now() - startTime) / 1000);
-    updateOCRStatus('work', `OCR 识别中...(${elapsed}s)`);
-  }, 3000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OCR_CONFIG.timeout);
-
-  // 将外部中止信号（用户暂停）转发给内部 controller
-  let onExternalAbort;
-  if (externalSignal) {
-    onExternalAbort = () => controller.abort();
-    externalSignal.addEventListener('abort', onExternalAbort);
-  }
-
-  const promptText = `你是三国谋定天下游戏战报识别专家。请仔细分析这张战报截图，严格按照格式输出所有字段。
-
-【画面布局说明】
-- 画面分左右两半，中央有"胜"或"败"大字结果
-- 每侧顶部有两个**物理位置相距较远**的独立区域（不在同一行）：
-  ① 玩家名称区：位于页面上方，字体较大，单独显示玩家自己的名字
-  ② 同盟名称区：位于玩家区下方（中间有空白），字体较小/颜色不同，**只显示同盟名，没有玩家名**
-  ③ 阵型标签：显示阵型名称（如"方圆阵"、"雁行阵"、"鱼鳞阵"、"锋矢阵"、"箕形阵"等）
-  **极其重要**：玩家名中若出现"丨"（如"风云丨天下"），这只是玩家的取名风格，"丨"左侧的文字是玩家名的一部分，**严禁**把"丨"左侧的文字当作同盟名填入同盟字段。同盟字段**只能**从画面上玩家名下方的同盟名称区域读取
-- 每侧中部：三位武将的头像卡片横向排列，头像下方有武将名字
-- 每侧底部：三列战法框，每列对应上方的武将，每个框内列出该武将的战法名称（战法名旁边可能有"×数字"表示叠加层数，忽略这些数字，只取战法名称）
-- 每侧顶部数字区：显示"战损:XXXX"（已损失兵力）和总兵力数字（通常格式为"XXXX/XXXXX"，斜线前为战损、斜线后为总兵）
-
-【识别规则】
-1. 同盟名：**只能**从画面中玩家名**下方**的同盟名称区域读取（字体较小，与玩家名区域不在同一行）。如果找不到独立的同盟名称区域，填"未知"。**严禁**从玩家名中提取或按"丨"拆分玩家名来获取同盟名
-2. 玩家名：从玩家名称区域单独读取，完整保留，即使含有"丨"也不要拆分（"丨"是玩家名的一部分）
-3. 阵型：读取顶部阵型标签文字（如方圆阵、雁行阵等）
-4. 战损/总兵：找"战损"数值和总兵力数值，均为纯整数
-5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。必须输出武将1、武将2、武将3三行；若某位名字确实无法辨认，填"未知"。**武将名只能是纯汉字（通常2-4个字），严禁包含任何数字**；头像旁显示的数字（等级、兵力层数等）是装饰信息，绝对不属于武将名
-6. 战法：每位武将**恰好有3个战法**（第1个为武将自带战法，第2、3个为装备战法）。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；请逐格仔细读取，确保每位武将输出**恰好3个**战法名，用英文逗号分隔。**识别策略：战法文字即使模糊，也必须尽力辨认并输出最接近的汉字；只有当该格完全没有任何可见文字（空白格）时，才填"未知"**——绝对不允许因为"不确定"就放弃输出可见的战法名。注意："影本·XXXX"是一个完整战法名，必须用点号连接输出为"影本·XXXX"，**严禁**用逗号分隔写成"影本,XXXX"（这会导致误判！）。忽略"×数字"叠层标记。**严禁**将武将羁绊效果名（如"缘分"、"羁绊"、"义结金兰"等武将关系标签）输出为战法名，这些标签出现在武将头像卡内部，不是战法框的内容。**重要：同一武将在不同战报中的战法可能完全不同**——你必须逐格读取本张截图中实际显示的战法名称，绝对不得根据武将"通常使用"的战法进行替换或猜测
-7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
-8. 无法识别的文字填"未知"，数字填0
-
-【输出格式（严格按此格式，不要增减字段）】
-【左侧】
-同盟：xxx
-玩家：xxx
-阵型：xxx
-战损：数字
-总兵：数字
-武将1：武将名
-战法1：战法A,战法B,战法C
-武将2：武将名
-战法2：战法D,战法E,战法F
-武将3：武将名
-战法3：战法G,战法H,战法I
-【右侧】
-同盟：xxx
-玩家：xxx
-阵型：xxx
-战损：数字
-总兵：数字
-武将1：武将名
-战法1：战法A,战法B,战法C
-武将2：武将名
-战法2：战法D,战法E,战法F
-武将3：武将名
-战法3：战法G,战法H,战法I
-【结果】
-胜负：胜或败或平
-【日期】
-战斗日期：YYYY-MM-DD（无法识别则留空）
-
-【正确与错误对照（极其重要）】
-假设玩家名区域显示：风云丨天下，同盟名区域显示：傲世天下
-✅ 正确输出：玩家：风云丨天下  同盟：傲世天下
-❌ 严禁输出：玩家：天下  同盟：风云  （这是拆分玩家名的错误行为！）
-核心原则：玩家名区域里写的什么就完整复制什么，同盟名去同盟区域找，两者绝对不能混用！
-
-【武将/战法行格式铁律】
-武将名只能写在武将N行，绝对禁止出现在战法N行！三位武将的标签一个都不能省略：
-❌ 错误输出（战法行混入武将名，或省略武将行）：
-武将1：陆逊
-战法1：A,B,C
-战法2：孙权         ← 严禁！战法行出现武将名
-战法2：D,E,F
-战法3：小乔         ← 严禁！武将名出现在战法行
-战法3：G,H,I
-✅ 正确输出（严格交替，武将N在前，战法N在后）：
-武将1：陆逊
-战法1：A,B,C
-武将2：孙权
-战法2：D,E,F
-武将3：小乔
-战法3：G,H,I`;
-
-  try {
-    const reqBody = {
-      model: OCR_CONFIG.model,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: base64Data } },
-          { type: 'text', text: promptText }
-        ]
-      }],
-      max_tokens: OCR_CONFIG.maxTokens,
-    };
-
-    const apiEndpoint = getOcrEndpoint();
-    const ocrToken = typeof getToken === 'function' ? getToken() : '';
-    const resp = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(ocrToken ? { 'Authorization': 'Bearer ' + ocrToken } : {})
-      },
-      body: JSON.stringify(reqBody),
-      signal: controller.signal,
-      credentials: 'omit',  // OCR 请求不需要 cookie，避免 CORS 问题
-    });
-
-    clearTimeout(timeout);
-    clearInterval(statusTimer);
-    if (externalSignal && onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
-
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      // 账号被删/禁时，触发与 cloudRequest 一致的强制退出逻辑
-      if (resp.status === 401) {
-        let errMsg = '';
-        try { errMsg = JSON.parse(errBody).message || ''; } catch(e) {}
-        const isFatal = errMsg.includes('账号不存在') || errMsg.includes('已被禁用') || errMsg.includes('已被删除') || errMsg.includes('登录状态已过期');
-        if (isFatal) {
-          if (typeof setToken === 'function') setToken(null);
-          if (typeof clearSession === 'function') clearSession();
-          if (typeof userDBDelete === 'function' && typeof currentUser !== 'undefined' && currentUser && currentUser.phone) {
-            try { await userDBDelete(currentUser.phone); } catch(e) {}
-          }
-          if (typeof currentUser !== 'undefined') currentUser = null;
-          setTimeout(() => {
-            alert((errMsg || '您的账号已被删除或禁用') + '，即将退出登录');
-            if (typeof showLogin === 'function') showLogin(); else location.reload();
-          }, 0);
-        }
-      }
-      throw new Error('HTTP ' + resp.status + ': ' + errBody.substring(0, 200));
-    }
-
-    const json = await resp.json();
-    const content = json.choices?.[0]?.message?.content || '';
-    if (!content) throw new Error('API 返回空内容');
-
-    updateOCRStatus('ok', 'OCR 就绪');
-    clearInterval(statusTimer);
-    return content;
-  } catch (e) {
-    clearTimeout(timeout);
-    clearInterval(statusTimer);
-    if (externalSignal && onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
-    console.error('[OCR] 异常:', e.name, e.message);
-    // 仅超时中止（非用户主动暂停）才改写错误信息
-    if (e.name === 'AbortError' && !(externalSignal && externalSignal.aborted)) {
-      e.message = 'OCR 请求超时(120秒)，图片可能太大，请尝试压缩后重试';
-    } else if (e.name === 'TypeError' && e.message.includes('Failed to fetch')) {
-      e.message = '网络请求失败（可能是 CORS 跨域拦截或网络不通）。请按 F12 打开控制台 → Network 标签，查看 /api/ocr 请求的状态和响应头';
-    }
-    updateOCRStatus('err', 'OCR 错误: ' + e.message);
-    throw e;
-  }
-}
-
-// ========== 解析 OCR 返回 ==========
-function parseOCRResponse(text) {
-  const record = {
-    time: new Date().toLocaleString('zh-CN'),
-    result: '',
-    leftPlayer: '',
-    leftAlliance: '',
-    leftGenerals: [],
-    leftTactics: [],
-    leftFormation: '',
-    leftLoss: null,
-    leftTotal: null,
-    rightPlayer: '',
-    rightAlliance: '',
-    rightGenerals: [],
-    rightTactics: [],
-    rightFormation: '',
-    rightLoss: null,
-    rightTotal: null,
-  };
-  let rawText = text; // 保存原始文本用于兜底解析
-
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-  let side = '';
-  let generalMap = {};
-  let tacticsMap = {};
-  let battleDate = ''; // OCR 识别到的战斗日期
-
-  function flush(sideKey) {
-    const indices = Object.keys(generalMap).map(Number).sort((a, b) => a - b);
-    // generalMap 为空说明模型使用了无编号格式（武将：xxx），已由 key==='武将' 分支设置，不覆盖
-    if (indices.length > 0) {
-      const gens = [];
-      const tacs = [];
-      indices.forEach(i => {
-        const g = generalMap[i];
-        if (g) gens.push(g);
-        let heroTacs = tacticsMap[i] || [];
-        // 自带战法补全：若武将已知且战法不足3个，尝试补入自带战法
-        if (g && g !== '未知' && heroTacs.length < 3 && typeof ALL_HEROES !== 'undefined') {
-          const correctedName = bestMatchHeroName(g);
-          const heroEntry = ALL_HEROES.find(h => h.name === correctedName);
-          if (heroEntry && heroEntry.skill) {
-            const selfSkill = heroEntry.skill;
-            const alreadyPresent = heroTacs.some(t => t === selfSkill || levenshtein(t, selfSkill) <= 1);
-            if (!alreadyPresent) heroTacs = [selfSkill, ...heroTacs];
-          }
-        }
-        tacs.push(...heroTacs);
-      });
-      if (sideKey === 'left') { record.leftGenerals = gens; record.leftTactics = tacs; }
-      else if (sideKey === 'right') { record.rightGenerals = gens; record.rightTactics = tacs; }
-    }
-    generalMap = {};
-    tacticsMap = {};
-  }
-
-  for (const line of lines) {
-    // 兼容多种 section 标题写法：【左侧】 / 左侧 / **左侧** / ## 左侧
-    const isLeft   = line.includes('【左侧】')  || /^[*#\s]*左侧[*#\s：:]*$/.test(line);
-    const isRight  = line.includes('【右侧】')  || /^[*#\s]*右侧[*#\s：:]*$/.test(line);
-    const isResult = line.includes('【结果】')  || line.includes('【胜负】') ||
-                     /^[*#\s]*(结果|胜负)[*#\s：:]*$/.test(line);
-    if (isLeft) {
-      if (side === 'left') flush('left'); else if (side === 'right') flush('right');
-      side = 'left'; continue;
-    }
-    if (isRight) {
-      if (side === 'left') flush('left');
-      side = 'right'; continue;
-    }
-    if (isResult) {
-      if (side === 'left') flush('left'); else if (side === 'right') flush('right');
-      side = 'result'; continue;
-    }
-    // 支持全角：和半角 : 两种冒号
-    let ci = line.indexOf('：');
-    if (ci === -1) ci = line.indexOf(':');
-    if (ci === -1) continue;
-    const key = line.substring(0, ci).trim();
-    const val = line.substring(ci + 1).trim();
-
-    const gm = key.match(/武将\s*(\d+)/);
-    if (gm) { generalMap[parseInt(gm[1])] = val; continue; }
-    const tm = key.match(/战法\s*(\d+)/);
-    if (tm && !key.includes('战损')) {
-      tacticsMap[parseInt(tm[1])] = val.split(/[,，、]+/).map(t => t.trim()).filter(t => t && t !== '未知' && t !== '影本').map(t => t.replace(/^影本[·.•]/, ''));
-      continue;
-    }
-    if (key === '武将') {
-      const names = val.split(/[,，、\s]+/).filter(n => n && n !== '未知');
-      if (side === 'left') record.leftGenerals = names;
-      else if (side === 'right') record.rightGenerals = names;
-      continue;
-    }
-    if (key === '战法') {
-      const tacts = val.split(/[,，、]+/).map(t => t.trim()).filter(t => t && t !== '未知' && t !== '影本').map(t => t.replace(/^影本[·.•]/, ''));
-      if (side === 'left') record.leftTactics = tacts;
-      else if (side === 'right') record.rightTactics = tacts;
-      continue;
-    }
-    if (key.includes('玩家') || key.includes('玩家名')) {
-      // 玩家名完整保留，不按竖线拆分（玩家名本身可能含丨）
-      const name = val.trim();
-      if (side === 'left') record.leftPlayer = name;
-      else if (side === 'right') record.rightPlayer = name;
-    } else if (key.includes('同盟')) {
-      // 同盟名来自独立区域，直接使用（丨是同盟名合法字符，不拆分）
-      let allianceVal = val.trim();
-      if (allianceVal === '无' || allianceVal === '未知') allianceVal = '';
-      if (side === 'left') record.leftAlliance = allianceVal;
-      else if (side === 'right') record.rightAlliance = allianceVal;
-    } else if (key.includes('阵型')) {
-      if (side === 'left') record.leftFormation = val;
-      else if (side === 'right') record.rightFormation = val;
-    } else if (key.includes('战损兵力') || key === '战损') {
-      const wanM = val.match(/([\d.]+)\s*万/);
-      if (wanM) {
-        const v = parseFloat(wanM[1]) * 10000;
-        if (side === 'left') record.leftLoss = v; else if (side === 'right') record.rightLoss = v;
-      } else {
-        const n = val.match(/([\d.]+)/);
-        if (n) {
-          const v = parseFloat(n[1]);
-          if (side === 'left') record.leftLoss = v; else if (side === 'right') record.rightLoss = v;
-        }
-      }
-    } else if (key.includes('总兵力') || key === '总兵') {
-      const wanM = val.match(/([\d.]+)\s*万/);
-      if (wanM) {
-        const v = parseFloat(wanM[1]) * 10000;
-        if (side === 'left') record.leftTotal = v; else if (side === 'right') record.rightTotal = v;
-      } else {
-        const n = val.match(/([\d.]+)/);
-        if (n) {
-          const v = parseFloat(n[1]);
-          if (side === 'left') record.leftTotal = v; else if (side === 'right') record.rightTotal = v;
-        }
-      }
-    } else if ((key.includes('胜负') || key.includes('结果')) && side === 'result') {
-      if (val.includes('胜')) record.result = '胜';
-      else if (val.includes('败')) record.result = '败';
-      else record.result = '平';
-    } else if (key.includes('日期') || key.includes('时间') || key.includes('战斗日期')) {
-      // 尝试解析 YYYY-MM-DD 格式日期
-      const dateMatch = val.match(/(\d{4})[.\-/年](\d{1,2})[.\-/月](\d{1,2})/);
-      if (dateMatch) {
-        const y = dateMatch[1], m = dateMatch[2].padStart(2,'0'), d = dateMatch[3].padStart(2,'0');
-        battleDate = `${y}-${m}-${d}`;
-      }
-    }
-  }
-
-  if (side === 'left') flush('left');
-  else if (side === 'right') flush('right');
-
-  if (record.leftLoss != null && record.leftTotal != null && record.leftTotal > 0)
-    record.leftLossRate = (record.leftLoss / record.leftTotal) * 100;
-  if (record.rightLoss != null && record.rightTotal != null && record.rightTotal > 0)
-    record.rightLossRate = (record.rightLoss / record.rightTotal) * 100;
-
-  // ========== 兜底：修复模型拆分玩家名的三类错误 ==========
-  const pipeRe2 = /[|｜丨]/;
-
-  // 先从原始文本提取所有候选名字（含丨的优先用于修复拆分）
-  const namePattern = /([一-龥a-zA-Z0-9·•\-|]{2,15})/g;
-  const allMatches = [...rawText.matchAll(namePattern)].map(m => m[1]);
-  const excludeWords = ['左侧','右侧','结果','胜负','胜','败','平','未知','雁形阵','箕形阵','鱼鳞阵','方圆阵','长蛇阵','锋矢阵','虎翼阵','阵型','战法','武将','兵力','总兵','战损','同盟','玩家','玩家名','战斗日期'];
-  const candidates = [...new Set(allMatches)].filter(n => {
-    if (n.length < 2 || n.length > 15) return false;
-    if (excludeWords.some(w => n.includes(w))) return false;
-    if (/^\d+$/.test(n)) return false;
-    return true;
-  });
-  const fullNameCandidates = candidates.filter(n => pipeRe2.test(n));
-  const plainCandidates = candidates.filter(n => !pipeRe2.test(n));
-
-  ['left', 'right'].forEach(side => {
-    const ply = record[side + 'Player'];
-    const ally = record[side + 'Alliance'];
-
-    // Case A: 玩家名含丨，同盟名==丨前缀 → 清空同盟
-    if (ply && ally && pipeRe2.test(ply)) {
-      const prefix = ply.split(pipeRe2)[0].trim();
-      if (prefix === ally) record[side + 'Alliance'] = '';
-    }
-
-    // Case B: 玩家名不含丨（已被模型拆分），从原始文本找回完整名
-    // 模型输出"玩家：天下"+"同盟：风云"，但原始文本中仍有"风云丨天下"
-    if (ally && (!ply || !pipeRe2.test(ply))) {
-      const matchedFull = fullNameCandidates.find(fn => {
-        const parts = fn.split(pipeRe2);
-        return parts.length >= 2 && parts[0].trim() === ally;
-      });
-      if (matchedFull) {
-        record[side + 'Player'] = matchedFull;
-        record[side + 'Alliance'] = '';
-      }
-    }
-  });
-
-  // Case C: 玩家名为空，用候补名填充（含丨的优先，去重避免左右同名）
-  if (!record.leftPlayer || !record.rightPlayer) {
-    const usedNames = new Set();
-    if (record.leftPlayer) usedNames.add(record.leftPlayer);
-    if (record.rightPlayer) usedNames.add(record.rightPlayer);
-    const pool = [...fullNameCandidates, ...plainCandidates].filter(n => !usedNames.has(n));
-    if (!record.leftPlayer && pool.length > 0) { record.leftPlayer = pool[0]; usedNames.add(pool[0]); }
-    if (!record.rightPlayer) {
-      const remaining = pool.filter(n => !usedNames.has(n));
-      if (remaining.length > 0) record.rightPlayer = remaining[0];
-    }
-  }
-
-  // 写入识别到的战斗日期（OCR 识别不到则为空，由调用方补默认值）
-  record.battleDate = battleDate || '';
-  correctByDatabase(record);
-  // 将内部数组转为独立字段
-  setFlat(record, 'left',  record.leftGenerals  || [], record.leftTactics  || []);
-  setFlat(record, 'right', record.rightGenerals || [], record.rightTactics || []);
-  delete record.leftGenerals; delete record.rightGenerals;
-  delete record.leftTactics;  delete record.rightTactics;
-  return record;
-}
-
-// ========== 数据库模糊纠错（OCR形近字修正）==========
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  const dp = [];
-  for (let i = 0; i <= m; i++) {
-    dp[i] = [i];
-    for (let j = 1; j <= n; j++) dp[i][j] = i === 0 ? j : 0;
-  }
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]
-        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-    }
-  }
-  return dp[m][n];
-}
-
-function bestMatch(name, list, nameKey) {
-  if (!name || name === '未知' || name.length < 2) return name;
-  let best = null, bestDist = Infinity;
-  for (const item of list) {
-    const d = levenshtein(name, item[nameKey]);
-    if (d === 0) return item[nameKey];
-    if (d < bestDist) { bestDist = d; best = item[nameKey]; }
-  }
-  // 允许纠错：名字≤4字符容1个字不同，>4字符容2个字不同
-  const threshold = name.length > 4 ? 2 : 1;
-  return (best && bestDist <= threshold) ? best : name;
-}
-
-function bestMatchHeroName(name) {
-  if (!name || name === '未知' || name.length < 2) return name;
-  // 去除武将名前缀中的数字和等级/层/兵标记（如"50级延"→"延"，"100层瑜"→"瑜"）
-  const cleaned = name.replace(/^\d+[级层兵\s]*/u, '').trim();
-  if (cleaned !== name && cleaned.length >= 1) {
-    if (cleaned.length === 1) {
-      // 单字符：尝试唯一后缀匹配（"延"→"魏延"；"瑜"有多个则不匹配）
-      const matches = ALL_HEROES.filter(h => h.name.endsWith(cleaned));
-      if (matches.length === 1) return matches[0].name;
-      return name; // 有歧义，保留原值由人工核查
-    }
-    // 清洗后≥2字符：做模糊匹配
-    const r = bestMatch(cleaned, ALL_HEROES, 'name');
-    if (r !== cleaned) return r;
-  }
-  return bestMatch(name, ALL_HEROES, 'name');
-}
-
-function correctByDatabase(record) {
-  if (typeof ALL_HEROES === 'undefined' || typeof ALL_TACTICS === 'undefined') return record;
-  // 合法战法名集合：装备战法 + 所有武将自带战法
-  const validTacticNames = new Set([
-    ...ALL_TACTICS.map(t => t.name),
-    ...ALL_HEROES.map(h => h.skill).filter(s => s),
-    ...ALL_HEROES.flatMap(h => h.suggest_skills || []),
-  ]);
-  ['left', 'right'].forEach(side => {
-    record[side + 'Generals'] = (record[side + 'Generals'] || []).map(bestMatchHeroName);
-    record[side + 'Tactics']  = (record[side + 'Tactics']  || []).map(n => {
-      if (!n || n === '未知') return '未知';
-      const matched = bestMatch(n, ALL_TACTICS, 'name');
-      // 先尝试在装备战法库中模糊匹配；若匹配到合法名则用之
-      if (validTacticNames.has(matched)) return matched;
-      // 装备战法未命中时，再尝试在自带战法中匹配
-      const matchedSelf = bestMatch(n, ALL_HEROES.map(h => ({ name: h.skill })).filter(x => x.name), 'name');
-      if (validTacticNames.has(matchedSelf)) return matchedSelf;
-      // 数据库未命中：若 OCR 识别结果本身是合理中文（≥2汉字），保留原值而非丢弃
-      // 这样可以保留数据库尚未收录的新战法，而不是将其丢失
-      const chineseChars = (n.match(/[一-鿿·•]/g) || []).length;
-      if (chineseChars >= 2) return n;
-      // 确实是乱码/单字/数字等无效内容才丢弃
-      return '未知';
-    });
-  });
-  return record;
 }
 
 // ========== 批量上传 ==========
@@ -933,51 +411,74 @@ async function startBatchProcess() {
       try {
         base64 = await readFileAsBase64(item.file);
         const abortSig = batchAbortController ? batchAbortController.signal : null;
-        // 优先使用本地 PaddleOCR（确定性、高准确率）；不可用时自动回退豆包
-        let record = await tryPaddleOCR(base64, abortSig);
-        if (record) {
-          correctByDatabase(record);  // 再过一遍数据库模糊纠错
-          if (record.leftLoss != null && record.leftTotal > 0)
-            record.leftLossRate = (record.leftLoss / record.leftTotal) * 100;
-          if (record.rightLoss != null && record.rightTotal > 0)
-            record.rightLossRate = (record.rightLoss / record.rightTotal) * 100;
-        } else {
-          const rawResult = await callOCRAPI(base64, abortSig);
-          record = parseOCRResponse(rawResult);
-        }
-        record.imageBase64 = base64;
-        record.imageName = item.name;
-        record.imageTime = new Date().toLocaleString('zh-CN');
-        if (typeof dbAdd === 'function') {
-          const newId = await dbAdd(record);
-          // 记录系统日志
-          if (typeof addSysLog === 'function') {
-            addSysLog('action', '上传战报: ' + (record.leftPlayer || record.rightPlayer || item.name) + (window.currentProjectId ? ' [项目ID:' + window.currentProjectId + ']' : ''));
+        const token = typeof getToken === 'function' ? getToken() : '';
+
+        updateOCRStatus('work', 'OCR 识别中...');
+        const resp = await fetch(getOcrUploadEndpoint(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+          },
+          body: JSON.stringify({
+            image: base64,
+            projectId: window.currentProjectId || null,
+            imageName: item.name,
+          }),
+          signal: abortSig,
+        });
+        updateOCRStatus('ok', 'OCR 就绪');
+
+        // 处理 401 强制退出
+        if (resp.status === 401) {
+          let errMsg = '';
+          try { errMsg = (await resp.json()).message || ''; } catch(e) {}
+          const isFatal = errMsg.includes('账号不存在') || errMsg.includes('已被禁用') || errMsg.includes('登录状态已过期');
+          if (isFatal) {
+            if (typeof setToken === 'function') setToken(null);
+            if (typeof clearSession === 'function') clearSession();
+            if (typeof currentUser !== 'undefined') currentUser = null;
+            setTimeout(() => {
+              alert((errMsg || '账号异常') + '，即将退出登录');
+              if (typeof showLogin === 'function') showLogin(); else location.reload();
+            }, 0);
           }
-          // 同步更新项目的 battleRecordIds
-          if (window.currentProjectId && typeof addBattleToProject === 'function' && newId) {
-            await addBattleToProject(window.currentProjectId, newId);
+          throw new Error('HTTP 401: ' + errMsg);
+        }
+
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+        const result = await resp.json();
+
+        // 积分不足：停止批处理
+        if (result.code === 402) {
+          processing--;
+          idx++;
+          renderOCRQueue();
+          updateOCRProgress();
+          ocrRunning = false;
+          if (btnStart) btnStart.disabled = false;
+          if (btnPause) btnPause.disabled = true;
+          showPointsInsufficientModal(0, 1);
+          return;
+        }
+
+        if (result.code !== 200) throw new Error(result.message || 'OCR 失败');
+
+        const record = result.data;
+        // 缓存到本地 IndexedDB（服务端已存入 MySQL，不重复同步云端）
+        if (typeof dbAddLocal === 'function') {
+          const localId = await dbAddLocal(record);
+          if (typeof addSysLog === 'function') {
+            addSysLog('action', '上传战报: ' + (record.leftPlayer || record.attackerName || item.name) + (window.currentProjectId ? ' [项目ID:' + window.currentProjectId + ']' : ''));
+          }
+          if (window.currentProjectId && typeof addBattleToProject === 'function' && localId) {
+            await addBattleToProject(window.currentProjectId, localId);
           }
         }
         item.status = 'done';
-        // OCR 成功后扣 1 积分（失败不扣）
-        if (typeof deductUserPoints === 'function' && currentUser) {
-          const deducted = await deductUserPoints(currentUser.phone, 1);
-          if (deducted) {
-            if (typeof updateUserNavPoints === 'function') updateUserNavPoints();
-          } else {
-            // 积分已耗尽，停止批处理
-            processing--;
-            idx++;
-            renderOCRQueue();
-            updateOCRProgress();
-            ocrRunning = false;
-            if (btnStart) btnStart.disabled = false;
-            if (btnPause) btnPause.disabled = true;
-            showPointsInsufficientModal(0, 1);
-            return;
-          }
-        }
+        // 积分已由服务端扣除，只需刷新 UI 显示
+        if (typeof updateUserNavPoints === 'function') updateUserNavPoints();
       } catch (e) {
         // 用户主动暂停导致的中止：将当前项重置为待处理，等待"继续"重新处理
         if (e.name === 'AbortError' && ocrPausedByUser) {
@@ -993,19 +494,19 @@ async function startBatchProcess() {
           updateOCRStatus('ok', '已暂停，点击"继续"恢复');
           return;
         }
+        // 识别失败：仅保存本地错误记录（不推送到 MySQL）
         try {
           if (!base64) base64 = await readFileAsBase64(item.file);
-          if (typeof dbAdd === 'function') {
+          if (typeof dbAddLocal === 'function') {
             const errRec = {
               imageBase64: base64,
               imageName: item.name,
               imageTime: new Date().toLocaleString('zh-CN'),
               _parseError: true, _errorMsg: e.message,
             };
-            const newId = await dbAdd(errRec);
-            // 同步更新项目的 battleRecordIds
-            if (window.currentProjectId && typeof addBattleToProject === 'function' && newId) {
-              await addBattleToProject(window.currentProjectId, newId);
+            const localId = await dbAddLocal(errRec);
+            if (window.currentProjectId && typeof addBattleToProject === 'function' && localId) {
+              await addBattleToProject(window.currentProjectId, localId);
             }
           }
         } catch (e2) { console.error('保存失败图片出错:', e2); }

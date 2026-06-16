@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
+const { parseOCRResponse, mapPaddleResult, setFlat, OCR_PROMPT } = require('./ocr-parser');
 
 const app = express();
 const PORT = 3000;
@@ -1046,6 +1047,154 @@ app.post('/api/ocr', requireActiveUser, async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== OCR 一站式上传（图片→识别→解析→存库）==========
+const OCR_MODEL = process.env.DOUBAO_MODEL || 'ep-m-20260426183050-krmx7';
+
+app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
+  try {
+    const { image, projectId, imageName, battleDate: clientDate } = req.body;
+    if (!image) return res.json({ code: 400, message: '缺少图片数据' });
+
+    // 1. 积分检查
+    const phone = req.authPhone;
+    const [uRows] = await pool.query('SELECT id, credit_balance FROM users WHERE phone = ? LIMIT 1', [phone]);
+    if (!uRows.length) return res.json({ code: 401, message: '用户不存在' });
+    const userId = uRows[0].id;
+    if ((uRows[0].credit_balance || 0) <= 0) return res.json({ code: 402, message: '积分不足' });
+
+    const cleanImage = image.replace(/^data:[^;]+;base64,/, '');
+
+    // 2. 优先 PaddleOCR
+    let record = null;
+    try {
+      const paddleResp = await fetch(PADDLE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: cleanImage }),
+        signal: AbortSignal.timeout(60000),
+      });
+      if (paddleResp.ok) {
+        const paddleData = await paddleResp.json();
+        if (paddleData.ok) record = mapPaddleResult(paddleData);
+      }
+    } catch (_) { /* PaddleOCR 不可用，回退豆包 */ }
+
+    // 3. 回退豆包 LLM
+    if (!record) {
+      const llmResp = await fetch(DOUBAO_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DOUBAO_API_KEY}` },
+        body: JSON.stringify({
+          model: OCR_MODEL,
+          max_tokens: 3000,
+          temperature: 0,
+          messages: [{ role: 'user', content: [
+            { type: 'image_url', image_url: { url: image } },
+            { type: 'text',      text: OCR_PROMPT }
+          ]}],
+        }),
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!llmResp.ok) {
+        const errBody = await llmResp.text();
+        return res.json({ code: 500, message: `LLM OCR 失败: ${llmResp.status} ${errBody.slice(0,200)}` });
+      }
+      const llmData = await llmResp.json();
+      const content = llmData.choices?.[0]?.message?.content || '';
+      if (!content) return res.json({ code: 500, message: 'LLM 返回空内容' });
+      record = parseOCRResponse(content);
+    }
+
+    // 4. 补充元数据
+    const now = new Date();
+    record.battleDate = record.battleDate || clientDate || now.toISOString().split('T')[0];
+    record.time = now.toLocaleString('zh-CN');
+
+    // 5. 平铺字段提取（已由 setFlat 填入 record）
+    const fv = v => (v && v !== '') ? v : null;
+    const insertParams = [
+      projectId || null,
+      record.leftPlayer || record.attackerName || '',
+      record.rightPlayer || record.enemyName || '',
+      record.result || '',
+      record.battleDate,
+      '',   // description
+      fv(record.leftLoss), fv(record.rightLoss),
+      fv(record.leftTotal), fv(record.rightTotal),
+      record.leftLossRate != null ? record.leftLossRate : null,
+      record.rightLossRate != null ? record.rightLossRate : null,
+      null, null, null, null,  // left/right generals/tactics JSON (废弃，留 null)
+      fv(record.leftFormation),  fv(record.rightFormation),
+      fv(record.leftAlliance),   fv(record.rightAlliance),
+      fv(record.leftGeneral1),   fv(record.leftGeneral2),   fv(record.leftGeneral3),
+      fv(record.rightGeneral1),  fv(record.rightGeneral2),  fv(record.rightGeneral3),
+      fv(record.leftTactic1_1),  fv(record.leftTactic1_2),  fv(record.leftTactic1_3),
+      fv(record.leftTactic2_1),  fv(record.leftTactic2_2),  fv(record.leftTactic2_3),
+      fv(record.leftTactic3_1),  fv(record.leftTactic3_2),  fv(record.leftTactic3_3),
+      fv(record.rightTactic1_1), fv(record.rightTactic1_2), fv(record.rightTactic1_3),
+      fv(record.rightTactic2_1), fv(record.rightTactic2_2), fv(record.rightTactic2_3),
+      fv(record.rightTactic3_1), fv(record.rightTactic3_2), fv(record.rightTactic3_3),
+      userId, 1, now, now,
+    ];
+
+    const [insertResult] = await pool.query(
+      'INSERT INTO battle_records ' +
+      '(project_id, attacker_name, enemy_name, result, battle_date, description, ' +
+      'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, ' +
+      'left_generals, right_generals, left_tactics, right_tactics, ' +
+      'left_formation, right_formation, left_alliance, right_alliance, ' +
+      'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
+      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, ' +
+      'left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, ' +
+      'left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
+      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, ' +
+      'right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, ' +
+      'right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
+      'created_by, status, created_at, updated_at) ' +
+      'VALUES (' + insertParams.map(() => '?').join(',') + ')',
+      insertParams
+    );
+    const newId = insertResult.insertId;
+
+    // 6. 存图片
+    if (image) {
+      const imgSize = Math.round(image.length * 0.75);
+      await pool.query(
+        'INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())',
+        [projectId || null, newId, image, imageName || '', imgSize, userId]
+      );
+    }
+
+    // 7. 更新项目 battle_count
+    if (projectId) {
+      await pool.query(
+        'UPDATE projects SET battle_count = (SELECT COUNT(*) FROM battle_records WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
+        [projectId, projectId]
+      );
+    }
+
+    // 8. 扣积分（成功才扣）
+    await pool.query('UPDATE users SET credit_balance = credit_balance - 1 WHERE id = ?', [userId]);
+    await pool.query(
+      'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) ' +
+      'SELECT ?, -1, credit_balance, ?, ?, ?, NOW() FROM users WHERE id = ?',
+      [userId, 'consume', `OCR识别: ${imageName || '战报'}`, userId, userId]
+    );
+
+    // 9. 返回完整记录（含 id，前端用于本地缓存）
+    record.id = newId;
+    record.cloudId = newId;
+    record.projectId = projectId;
+    record.attackerName = record.leftPlayer || '';
+    record.enemyName    = record.rightPlayer || '';
+
+    res.json({ code: 200, data: record });
+  } catch (err) {
+    console.error('[OCR-Upload]', err);
+    res.json({ code: 500, message: err.message });
   }
 });
 
