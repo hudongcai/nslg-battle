@@ -633,6 +633,8 @@ async function syncCloudToLocal() {
               await dbPutLocal(localRec);
               // 更新内存索引
               byCloudId.set(String(rec.id), localRec);
+              // 防止下一条相同 bizKey 的云端记录再次匹配同一本地记录（导致数据丢失）
+              byBizKey.delete(cloudBizKey);
             } else {
               // 图片不在同步阶段拉取
               rec._synced = true;
@@ -749,6 +751,8 @@ async function syncProjectRecords(projectId) {
             bizMatch._syncTime = Date.now();
             await dbPutLocal(bizMatch);
             byCloudId.set(cid, bizMatch);
+            // 防止相同 bizKey 的下一条云端记录再次匹配同一本地记录（导致数据丢失）
+            byBizKey.delete(ck);
           } else {
             // 云端有、本地无 → 写入（rec.id 是 MySQL 主键，IndexedDB 用它做 key）
             rec.cloudId = rec.id;
@@ -775,8 +779,33 @@ async function syncProjectRecords(projectId) {
       try { await dbDeleteLocal(local.id); deleted++; } catch(e) {}
     }
     if (deleted > 0) console.log(`[syncProjectRecords] 同步删除 ${deleted} 条云端已删记录`);
-    console.log(`[syncProjectRecords] 完成，写入 ${saved}/${cloudRecords.length} 条，清理 ${deleted} 条`);
-    return { saved, total: cloudRecords.length, deleted };
+
+    // 修复历史损坏状态：某些 cloudId 因 bizKey 碰撞被覆盖，导致云端记录在本地无对应项。
+    // 循环检测并补写，直到所有云端 cloudId 都在本地存在（最多迭代 10 次防止死循环）
+    let repaired = 0;
+    for (let pass = 0; pass < 10; pass++) {
+      const freshLocal = await dbGetAll();
+      const freshCloudIds = new Set(
+        freshLocal
+          .filter(r => r.cloudId && String(r.projectId) === String(projectId))
+          .map(r => String(r.cloudId))
+      );
+      const missing = cloudRecords.filter(r => !freshCloudIds.has(String(r.id)));
+      if (missing.length === 0) break;
+      for (const mr of missing) {
+        try {
+          mr.cloudId = mr.id;
+          mr._synced = true;
+          mr._syncTime = Date.now();
+          await dbPutLocal(mr);
+          repaired++;
+        } catch(e) {}
+      }
+    }
+    if (repaired > 0) console.log(`[syncProjectRecords] 修复 ${repaired} 条 bizKey 碰撞丢失记录`);
+
+    console.log(`[syncProjectRecords] 完成，写入 ${saved}/${cloudRecords.length} 条，清理 ${deleted} 条，修复 ${repaired} 条`);
+    return { saved, total: cloudRecords.length, deleted, repaired };
   } catch (e) {
     console.warn('[syncProjectRecords] 失败:', e);
   }
