@@ -193,53 +193,19 @@ function dbDeleteLocal(id) {
   });
 }
 
-function dbPut(rec) {
- return new Promise((resolve, reject) => {
+async function dbPut(rec) {
+  // 1. MySQL first：有 cloudId 则先更新云端
+  const cloudRecordId = rec.cloudId;
+  if (window.cloudSync && cloudRecordId) {
+    const ok = await window.cloudSync.updateRecord(cloudRecordId, rec);
+    if (!ok) throw new Error('云端更新失败，操作已取消');
+  }
+
+  // 2. MySQL 成功后，写入 IndexedDB
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
     const req = tx.objectStore('records').put(rec);
-    req.onsuccess = () => {
-      // 同步到云端
-      console.log('[dbPut] window.cloudSync 存在?', !!window.cloudSync, '| updateRecord 类型:', typeof window?.cloudSync?.updateRecord, '| rec.id:', rec.id, '| rec.cloudId:', rec.cloudId);
-      // 修复：必须用 cloudId 更新云端，而不是本地 id
-      const cloudRecordId = rec.cloudId || rec.id;
-      if(window.cloudSync && cloudRecordId){
-        try{
-          const cloudRec = {
-            projectId: rec.projectId || window.currentProjectId || null,
-            battleDate: (rec.battleDate || (rec.imageTime ? new Date(rec.imageTime).toISOString() : new Date().toISOString())).split('T')[0],
-            attackerName: rec.leftPlayer || rec.attackerName || '',
-            enemyName: rec.rightPlayer || rec.enemyName || '',
-            leftAlliance: rec.leftAlliance || '',
-            rightAlliance: rec.rightAlliance || '',
-            leftFormation: rec.leftFormation || '',
-            rightFormation: rec.rightFormation || '',
-            leftGeneral1: rec.leftGeneral1 || '', leftGeneral2: rec.leftGeneral2 || '', leftGeneral3: rec.leftGeneral3 || '',
-            rightGeneral1: rec.rightGeneral1 || '', rightGeneral2: rec.rightGeneral2 || '', rightGeneral3: rec.rightGeneral3 || '',
-            leftTactic1_1: rec.leftTactic1_1||'', leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
-            leftTactic2_1: rec.leftTactic2_1||'', leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
-            leftTactic3_1: rec.leftTactic3_1||'', leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
-            rightTactic1_1: rec.rightTactic1_1||'', rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
-            rightTactic2_1: rec.rightTactic2_1||'', rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
-            rightTactic3_1: rec.rightTactic3_1||'', rightTactic3_2: rec.rightTactic3_2||'', rightTactic3_3: rec.rightTactic3_3||'',
-            leftLoss: rec.leftLoss ?? null,
-            rightLoss: rec.rightLoss ?? null,
-            leftTotal: rec.leftTotal ?? null,
-            rightTotal: rec.rightTotal ?? null,
-            leftLossRate: rec.leftLossRate ?? null,
-            rightLossRate: rec.rightLossRate ?? null,
-            result: rec.result || '',
-            description: rec.description || ''
-          };
-          console.log('[dbPut] 准备调用 cloudSync.updateRecord, cloudRecordId:', cloudRecordId, 'rec.cloudId:', rec.cloudId, 'rec.id:', rec.id);
-          window.cloudSync.updateRecord(cloudRecordId, cloudRec).then(r => {
-            console.log('[dbPut] 战报更新云端返回:', r);
-          }).catch(e => console.error('[Cloud] 更新失败:', e));
-        }catch(e){console.error('[Cloud] 同步异常:', e);}
-      } else {
-        console.warn('[dbPut] 跳过云端同步: cloudSync=', !!window.cloudSync, 'rec.id=', rec.id);
-      }
-      resolve(rec.id);
-    };
+    req.onsuccess = () => resolve(rec.id);
     req.onerror = () => reject(req.error);
   });
 }
@@ -285,70 +251,32 @@ function dbGetAllLite() {
   });
 }
 
-function dbDelete(id) {
-  return new Promise((resolve, reject) => {
+async function dbDelete(id) {
+  // 1. 从内存取 cloudId
+  const rec = allRecords.find(r => r.id === id);
+  const cloudId = rec?.cloudId;
+
+  // 2. MySQL first：有 cloudId 则先删云端，失败直接抛出（不动本地）
+  if (window.cloudSync && cloudId) {
+    const ok = await window.cloudSync.deleteRecord(cloudId);
+    if (!ok) throw new Error('云端删除失败，操作已取消');
+  }
+
+  // 3. MySQL 删除成功后，再删 IndexedDB
+  await new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
     const req = tx.objectStore('records').delete(id);
-    req.onsuccess = async () => {
-      // 先从云端删除（用 cloudId 或尝试匹配）
-      console.log('[dbDelete] window.cloudSync 存在?', !!window.cloudSync, '| deleteRecord 类型:', typeof window?.cloudSync?.deleteRecord, '| id:', id);
-      if(window.cloudSync){
-        try{
-          // 获取被删记录，看是否有 cloudId
-          const rec = allRecords.find(r => r.id === id);
-          let cloudDelId = null;
-          if (rec && rec.cloudId) {
-            cloudDelId = rec.cloudId;
-          } else {
-            // 没有 cloudId，尝试通过业务字段匹配云端记录
-            // 兼容：rec 可能是本地字段名（attackerName/enemyName）或已映射名（leftPlayer/rightPlayer）
-            if (rec) {
-              const recDate = rec.battleDate || rec.time || '';
-              const recLeft  = rec.leftPlayer || rec.attackerName || '';
-              const recRight = rec.rightPlayer || rec.enemyName || '';
-              if (recDate || recLeft || recRight) {
-                try {
-                  const cloudRecords = await window.cloudSync.getRecords(rec.projectId || null);
-                  const match = cloudRecords.find(c => {
-                    const cDate = c.battleDate || c.time || '';
-                    const cLeft  = c.leftPlayer || '';
-                    const cRight = c.rightPlayer || '';
-                    return cDate === recDate &&
-                           cLeft === recLeft &&
-                           cRight === recRight;
-                  });
-                  if (match) cloudDelId = match.id;
-                } catch(e) {}
-              }
-            }
-          }
-          if (cloudDelId) {
-            console.log('[dbDelete] 准备调用 cloudSync.deleteRecord:', cloudDelId);
-            await window.cloudSync.deleteRecord(cloudDelId);
-            console.log('[Cloud] 云端删除成功, id:', cloudDelId);
-          } else {
-            console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id, 'rec:', rec ? {date: rec.battleDate||rec.time, left: rec.leftPlayer||rec.attackerName, right: rec.rightPlayer||rec.enemyName} : 'null');
-            // 仅对有数据的记录提示（空记录不需要提醒）
-            if (rec && (rec.leftPlayer || rec.attackerName || rec.rightPlayer || rec.enemyName)) {
-              const tip = typeof showToast === 'function' ? showToast : (msg => console.warn(msg));
-              tip('本地记录已删除，但未找到对应云端记录（可能从未同步到云端，无需处理）');
-            }
-          }
-        }catch(e){console.error('[Cloud] 删除异常:', e);}
-      } else {
-        console.warn('[dbDelete] window.cloudSync 不可用，跳过云端删除');
-      }
-
-      allRecords = allRecords.filter(r => r.id !== id);
-      gallerySelectedIds.delete(id);
-      updateGlobalStats();
-      renderDataTable();
-      renderGallery();
-      syncToLocalStorage();
-      resolve();
-    };
+    req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+
+  // 4. 更新内存和视图
+  allRecords = allRecords.filter(r => r.id !== id);
+  gallerySelectedIds.delete(id);
+  updateGlobalStats();
+  renderDataTable();
+  renderGallery();
+  syncToLocalStorage();
 }
 
 function dbClear() {
@@ -401,45 +329,6 @@ async function loadAllRecords() {
   } catch (e) {
     allRecords = [];
   }
-
-  // 去重1：同 cloudId 存在两条记录时（syncProjectRecords 旧逻辑遗留），
-  // 保留本地 id 较大的那条（含图片等本地数据），删除 id=cloudId 的影子记录
-  try {
-    const seen = new Map();
-    const toDelete = [];
-    for (const r of allRecords) {
-      if (!r.cloudId) continue;
-      const key = String(r.cloudId);
-      if (seen.has(key)) {
-        const prev = seen.get(key);
-        // id 较小的通常是 MySQL 主键直写的影子记录，删它
-        if (Number(r.id) > Number(prev.id)) {
-          toDelete.push(prev.id);
-          seen.set(key, r);
-        } else {
-          toDelete.push(r.id);
-        }
-      } else {
-        seen.set(key, r);
-      }
-    }
-    if (toDelete.length > 0) {
-      const delSet = new Set(toDelete.map(String));
-      allRecords = allRecords.filter(r => !delSet.has(String(r.id)));
-      toDelete.forEach(id => dbDeleteLocal(id).catch(() => {}));
-    }
-  } catch (e) {}
-
-  // 去重2：孤立记录（无 cloudId）数量 = 云同步记录数量，
-  // 说明刷新前 cloudId 未写回，保留云版本，删除孤立记录
-  try {
-    const withCloud = allRecords.filter(r => r.cloudId);
-    const noCloud   = allRecords.filter(r => !r.cloudId);
-    if (withCloud.length > 0 && noCloud.length > 0 && withCloud.length === noCloud.length) {
-      allRecords = withCloud;
-      noCloud.forEach(r => dbDeleteLocal(r.id).catch(() => {}));
-    }
-  } catch (e) {}
 
   // 健壮性：如果 currentProjectId 指向一个已删除的项目，自动清除过滤
   if (window.currentProjectId) {
