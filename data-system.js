@@ -328,6 +328,11 @@ function dbDelete(id) {
             console.log('[Cloud] 云端删除成功, id:', cloudDelId);
           } else {
             console.warn('[Cloud] 未找到云端匹配记录，跳过云端删除, localId:', id, 'rec:', rec ? {date: rec.battleDate||rec.time, left: rec.leftPlayer||rec.attackerName, right: rec.rightPlayer||rec.enemyName} : 'null');
+            // 仅对有数据的记录提示（空记录不需要提醒）
+            if (rec && (rec.leftPlayer || rec.attackerName || rec.rightPlayer || rec.enemyName)) {
+              const tip = typeof showToast === 'function' ? showToast : (msg => console.warn(msg));
+              tip('本地记录已删除，但未找到对应云端记录（可能从未同步到云端，无需处理）');
+            }
           }
         }catch(e){console.error('[Cloud] 删除异常:', e);}
       } else {

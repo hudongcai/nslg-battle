@@ -735,12 +735,34 @@ async function syncProjectRecords(projectId) {
       if (r.cloudId && r.imageBase64) imageCache.set(String(r.cloudId), r.imageBase64);
     }
 
-    // 2. 删除本地该项目全部记录（含无 cloudId 的孤立记录）
+    // 2. 识别孤立记录（无 cloudId = 离线新增或上次同步失败），尝试先上传到 MySQL
+    const orphans = projectLocal.filter(r => !r.cloudId);
+    const failedOrphans = [];
+    for (const orphan of orphans) {
+      try {
+        const created = await cloudCreateRecord(orphan);
+        if (created && created.id) {
+          orphan.cloudId = created.id;
+          // 缓存图片（上传后用新 cloudId 索引）
+          if (orphan.imageBase64) imageCache.set(String(created.id), orphan.imageBase64);
+          // 加入 cloudRecords，后续硬重置会一并写回
+          cloudRecords.push({ ...orphan, id: created.id, cloudId: created.id });
+          console.log(`[syncProjectRecords] 孤立记录已上传: localId=${orphan.id} → cloudId=${created.id}`);
+        } else {
+          failedOrphans.push(orphan);
+        }
+      } catch (e) {
+        console.warn('[syncProjectRecords] 孤立记录上传失败（将保留本地）:', orphan.id, e.message);
+        failedOrphans.push(orphan);
+      }
+    }
+
+    // 3. 删除本地该项目全部记录
     for (const r of projectLocal) {
       try { await dbDeleteLocal(r.id); } catch(e) {}
     }
 
-    // 3. 从云端完整写入
+    // 4. 从云端完整写入（含已成功上传的孤立记录）
     let saved = 0;
     for (const rec of cloudRecords) {
       try {
@@ -756,8 +778,21 @@ async function syncProjectRecords(projectId) {
       }
     }
 
-    console.log(`[syncProjectRecords] 硬重置完成：清理 ${projectLocal.length} 条本地记录，写入 ${saved}/${cloudRecords.length} 条`);
-    return { saved, total: cloudRecords.length, deleted: projectLocal.length };
+    // 5. 将上传失败的孤立记录保留在本地（标记待重试，等下次进入项目再试）
+    for (const orphan of failedOrphans) {
+      try {
+        delete orphan.cloudId;
+        orphan._pendingSync = true;
+        await dbPutLocal(orphan);
+      } catch (e) {}
+    }
+
+    const uploadedCount = orphans.length - failedOrphans.length;
+    let msg = `硬重置完成：清理 ${projectLocal.length} 条本地记录，写入 ${saved}/${cloudRecords.length} 条`;
+    if (orphans.length > 0) msg += `；孤立记录上传 ${uploadedCount}/${orphans.length}`;
+    if (failedOrphans.length > 0) msg += `，${failedOrphans.length} 条上传失败已保留本地`;
+    console.log(`[syncProjectRecords] ${msg}`);
+    return { saved, total: cloudRecords.length, deleted: projectLocal.length, orphansUploaded: uploadedCount };
   } catch (e) {
     console.warn('[syncProjectRecords] 失败:', e);
   }

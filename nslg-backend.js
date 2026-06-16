@@ -686,6 +686,18 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
 
     const now = new Date();
 
+    // 幂等检查：同一项目下 日期+攻方+守方+结果 完全相同视为重复提交，直接返回已有记录
+    if (projectId && battle_date && attacker_name && enemy_name) {
+      const [dup] = await pool.query(
+        'SELECT id FROM battle_records WHERE project_id=? AND battle_date=? AND attacker_name=? AND enemy_name=? AND result=? LIMIT 1',
+        [projectId, battle_date, attacker_name, enemy_name, result || '']
+      );
+      if (dup.length > 0) {
+        console.log('[battles] 重复提交，返回已有记录 id:', dup[0].id);
+        return res.json({ code: 200, data: { id: dup[0].id } });
+      }
+    }
+
     const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
     const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
     const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
