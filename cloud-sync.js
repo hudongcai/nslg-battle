@@ -736,10 +736,9 @@ async function syncProjectRecords(projectId) {
         const cid = String(rec.id);
         const existing = byCloudId.get(cid);
         if (existing) {
-          // 本地已有此 cloudId 的记录，只更新 _synced 标记，保留本地数据（含图片）
+          // 本地已有此 cloudId 的记录，跳过写入（节省 IndexedDB I/O）
           existing._synced = true;
           existing._syncTime = Date.now();
-          await dbPutLocal(existing);
         } else {
           // 尝试 bizKey 匹配（处理 cloudId 尚未写回的孤立记录）
           const ck = bizKey(rec);
@@ -764,8 +763,20 @@ async function syncProjectRecords(projectId) {
         console.warn('[syncProjectRecords] 单条失败:', rec.id, e);
       }
     }
-    console.log(`[syncProjectRecords] 完成，写入 ${saved}/${cloudRecords.length} 条`);
-    return { saved, total: cloudRecords.length };
+    // 同步删除：本地有 cloudId 且属于此项目，但云端已删的记录
+    const cloudIdSet = new Set(cloudRecords.map(r => String(r.id)));
+    const toDeleteLocal = allLocal.filter(r =>
+      r.cloudId &&
+      String(r.projectId) === String(projectId) &&
+      !cloudIdSet.has(String(r.cloudId))
+    );
+    let deleted = 0;
+    for (const local of toDeleteLocal) {
+      try { await dbDeleteLocal(local.id); deleted++; } catch(e) {}
+    }
+    if (deleted > 0) console.log(`[syncProjectRecords] 同步删除 ${deleted} 条云端已删记录`);
+    console.log(`[syncProjectRecords] 完成，写入 ${saved}/${cloudRecords.length} 条，清理 ${deleted} 条`);
+    return { saved, total: cloudRecords.length, deleted };
   } catch (e) {
     console.warn('[syncProjectRecords] 失败:', e);
   }

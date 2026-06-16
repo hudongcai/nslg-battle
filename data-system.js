@@ -82,11 +82,13 @@ async function dbAdd(rec) {
     rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
     rec.time = rec.time || new Date().toLocaleString('zh-CN');
     rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
+    rec.hasImage = !!(rec.imageBase64);
     const req = store.add(rec);
     req.onsuccess = () => {
       rec.id = req.result;
-      // 只添加到当前视图（已过滤的 allRecords）
-      allRecords.push({ ...rec });
+      // 推入 allRecords 不含 imageBase64（节省内存，按需从 IndexedDB 读取）
+      const { imageBase64: _img, ...liteRec } = rec;
+      allRecords.push({ ...liteRec });
       updateGlobalStats();
       syncToLocalStorage();
       renderDataTable();
@@ -163,12 +165,14 @@ async function dbAddLocal(rec) {
     rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
     rec.time = rec.time || new Date().toLocaleString('zh-CN');
     rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
+    rec.hasImage = !!(rec.imageBase64);
     const tx = db.transaction(['records'], 'readwrite');
     const store = tx.objectStore('records');
     const req = store.add(rec);
     req.onsuccess = () => {
       rec.id = req.result;
-      allRecords.push({ ...rec });
+      const { imageBase64: _img2, ...liteRec2 } = rec;
+      allRecords.push({ ...liteRec2 });
       updateGlobalStats();
       syncToLocalStorage();
       renderDataTable();
@@ -258,6 +262,29 @@ function dbGet(id) {
   });
 }
 
+// 轻量版 getAll：跳过 imageBase64，设 hasImage 标记，大幅减少内存占用
+function dbGetAllLite() {
+  return new Promise((resolve, reject) => {
+    if (!db) { resolve([]); return; }
+    const tx = db.transaction(['records'], 'readonly');
+    const results = [];
+    const req = tx.objectStore('records').openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (!cursor) { resolve(results); return; }
+      const val = cursor.value;
+      if (val.imageBase64) {
+        const { imageBase64, ...lite } = val;
+        results.push({ ...lite, hasImage: true });
+      } else {
+        results.push(val);
+      }
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 function dbDelete(id) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(['records'], 'readwrite');
@@ -330,7 +357,7 @@ function dbClear() {
 
 async function loadAllRecords() {
   try {
-    let records = await dbGetAll();
+    let records = await dbGetAllLite();
     // 旧数据迁移：为没有 projectId/uploader 的记录补全字段
     // 重要：只处理真正需要迁移的旧数据（无 cloudId），避免触发云端更新
     const migratePromises = [];

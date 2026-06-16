@@ -540,6 +540,7 @@ document.addEventListener('click', function(e) {
         <select id="galleryFilter" onchange="renderGallery()"><option value="">全部</option><option value="parsed">已解析</option><option value="pending">待处理</option><option value="error">失败</option></select>
       </div>
       <div id="imageGallery" style="display:flex;flex-wrap:wrap;gap:10px;max-height:296px;overflow-y:auto;"></div>
+      <div id="galleryPagination" style="display:flex;gap:6px;align-items:center;margin-top:6px;padding:2px 0;"></div>
       <div id="galleryEmpty" class="empty-state"><div class="icon">📭</div><div>暂无战报图片</div></div>
     </div>
     <div class="card">
@@ -888,21 +889,104 @@ function downloadCSV(headers,rows,filename){var BOM='\uFEFF';var csv=BOM+headers
 function openCSVWindow(csv,filename){const w=window.open('','_blank');if(!w){alert('请允许弹出窗口以导出CSV');return;}w.document.write('<html><head><title>'+filename+'</title></head><body><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre><p style="color:#666;font-size:12px;">按 Ctrl+S 保存此文件，文件名改为: '+filename+'</p></body></html>');w.document.close();}
 
 // ========== GALLERY ==========
-function renderGallery(){const container=document.getElementById('imageGallery');const empty=document.getElementById('galleryEmpty');const countEl=document.getElementById('galleryCount');
-  // 项目上下文中的非 owner 用户：不渲染图库（溯源功能仍正常）
-  if(window.currentProjectId && !window.currentProjectIsOwner){
-    countEl.textContent='—';
-    container.style.display='none';
-    empty.style.display='block';
+let galleryPage=1;
+const GALLERY_PER_PAGE=24;
+const _galleryImgCache=new Map(); // id → imageBase64，避免重复读 IndexedDB
+
+function renderGallery(){
+  const container=document.getElementById('imageGallery');
+  const empty=document.getElementById('galleryEmpty');
+  const countEl=document.getElementById('galleryCount');
+  const pagEl=document.getElementById('galleryPagination');
+  if(window.currentProjectId&&!window.currentProjectIsOwner){
+    countEl.textContent='—';container.style.display='none';empty.style.display='block';
     empty.innerHTML='<div class="icon">🔒</div><div style="color:var(--text2);font-size:12px;">图库仅项目所有者可见</div>';
-    return;
+    if(pagEl)pagEl.innerHTML='';return;
   }
-  const search=(document.getElementById('gallerySearch')?.value||'').toLowerCase();const filter=document.getElementById('galleryFilter')?.value||'';let records=allRecords.filter(r=>r.imageBase64);if(search)records=records.filter(r=>r.imageName&&r.imageName.toLowerCase().includes(search));if(filter==='parsed')records=records.filter(r=>r.leftGeneral1);if(filter==='pending')records=records.filter(r=>!r.leftGeneral1&&!r.rightGeneral1);if(filter==='error')records=records.filter(r=>r._parseError);countEl.textContent=records.length+' 张';empty.style.display=records.length>0?'none':'block';container.style.display=records.length>0?'flex':'none';records.sort((a,b)=>(b.id||0)-(a.id||0));try{container.innerHTML=records.map((r,idx)=>{const isParsed=!!(r.leftGeneral1||r.rightGeneral1);const isErr=r._parseError;const isChecked=gallerySelectedIds.has(r.id);const badgeCls=isErr?'badge-error':isParsed?'badge-parsed':'badge-pending';const badgeText=isErr?'失败':isParsed?'已解析':'待处理';return `<div class="gallery-item" data-id="${r.id}"><div style="position:relative;"><div style="position:absolute;top:5px;right:5px;z-index:5;"><input type="checkbox" ${isChecked?'checked':''} onchange="toggleGalleryItem(${r.id},this.checked)" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;"></div><img src="${r.imageBase64}" alt="${escHtml(r.imageName||'战报')}" style="width:180px;height:120px;object-fit:cover;border-radius:8px;cursor:pointer;" onclick="viewFullImageByRecord(${r.id})"><span class="gallery-badge ${badgeCls}">${badgeText}</span></div><div style="margin-top:4px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text2);" title="${escHtml(r.imageName||'')}">${escHtml(r.imageName||'战报')}</div></div>`;}).join('');window.__galleryRecords=records;updateGallerySelectionUI();}catch(e){container.innerHTML=`<div style="color:#e74c3c;padding:20px;">⚠️ 渲染异常：${e.message}</div>`;empty.style.display='none';container.style.display='block';}}
+  const search=(document.getElementById('gallerySearch')?.value||'').toLowerCase();
+  const filter=document.getElementById('galleryFilter')?.value||'';
+  let records=allRecords.filter(r=>r.hasImage||r.imageBase64);
+  if(search)records=records.filter(r=>r.imageName&&r.imageName.toLowerCase().includes(search));
+  if(filter==='parsed')records=records.filter(r=>r.leftGeneral1);
+  if(filter==='pending')records=records.filter(r=>!r.leftGeneral1&&!r.rightGeneral1);
+  if(filter==='error')records=records.filter(r=>r._parseError);
+  countEl.textContent=records.length+' 张';
+  empty.style.display=records.length>0?'none':'block';
+  container.style.display=records.length>0?'flex':'none';
+  records.sort((a,b)=>(b.id||0)-(a.id||0));
+  window.__galleryRecords=records;
+  updateGallerySelectionUI();
+  // 分页
+  const totalGPages=Math.max(1,Math.ceil(records.length/GALLERY_PER_PAGE));
+  if(galleryPage>totalGPages)galleryPage=totalGPages;
+  const startG=(galleryPage-1)*GALLERY_PER_PAGE;
+  const pageRecs=records.slice(startG,startG+GALLERY_PER_PAGE);
+  try{
+    container.innerHTML=pageRecs.map(r=>{
+      const isParsed=!!(r.leftGeneral1||r.rightGeneral1);
+      const isErr=r._parseError;
+      const isChecked=gallerySelectedIds.has(r.id);
+      const badgeCls=isErr?'badge-error':isParsed?'badge-parsed':'badge-pending';
+      const badgeText=isErr?'失败':isParsed?'已解析':'待处理';
+      // 占位图：点击从 IndexedDB 读取并展示原图（imageBase64 不再常驻内存）
+      const imgHtml=`<div id="gal-thumb-${r.id}" onclick="viewGalleryImg(${r.id})" style="width:180px;height:120px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border);flex-shrink:0;"><span style="font-size:28px;opacity:0.5;">🖼️</span></div>`;
+      return `<div class="gallery-item" data-id="${r.id}"><div style="position:relative;"><div style="position:absolute;top:5px;right:5px;z-index:5;"><input type="checkbox" ${isChecked?'checked':''} onchange="toggleGalleryItem(${r.id},this.checked)" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;"></div>${imgHtml}<span class="gallery-badge ${badgeCls}">${badgeText}</span></div><div style="margin-top:4px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text2);" title="${escHtml(r.imageName||'')}">${escHtml(r.imageName||'战报')}</div></div>`;
+    }).join('');
+    // 异步加载当前页缩略图
+    _loadGalleryPageThumbs(pageRecs);
+  }catch(e){
+    container.innerHTML=`<div style="color:#e74c3c;padding:20px;">⚠️ 渲染异常：${e.message}</div>`;
+    empty.style.display='none';container.style.display='block';
+  }
+  // 分页控件
+  if(pagEl){
+    if(totalGPages<=1){pagEl.innerHTML='';}
+    else{pagEl.innerHTML=`<button class="btn btn-sm" ${galleryPage<=1?'disabled':''} onclick="galleryPage--;renderGallery()">◀</button><span style="color:var(--text2);font-size:11px;"> ${galleryPage}/${totalGPages} </span><button class="btn btn-sm" ${galleryPage>=totalGPages?'disabled':''} onclick="galleryPage++;renderGallery()">▶</button>`;}
+  }
+}
+
+async function _loadGalleryPageThumbs(pageRecs){
+  for(const r of pageRecs){
+    const el=document.getElementById('gal-thumb-'+r.id);
+    if(!el)continue; // 已翻页
+    let b64=_galleryImgCache.get(r.id);
+    if(!b64){
+      try{const rec=await dbGet(r.id);b64=rec&&rec.imageBase64?rec.imageBase64:null;}catch(e){}
+      if(b64)_galleryImgCache.set(r.id,b64);
+    }
+    if(b64&&document.getElementById('gal-thumb-'+r.id)){
+      const img=document.createElement('img');
+      img.src=b64;img.alt='战报';
+      img.style.cssText='width:180px;height:120px;object-fit:cover;border-radius:8px;cursor:pointer;';
+      img.onclick=()=>_showImgModal(b64);
+      el.replaceWith(img);
+    }
+  }
+}
+
+function _showImgModal(b64){
+  const m=document.createElement('div');m.className='image-modal';m.onclick=()=>m.remove();
+  m.innerHTML=`<img src="${b64}" style="max-width:90vw;max-height:90vh;border-radius:8px;">`;
+  document.body.appendChild(m);
+}
+
+async function viewGalleryImg(id){
+  let b64=_galleryImgCache.get(id);
+  if(!b64){try{const rec=await dbGet(id);b64=rec&&rec.imageBase64?rec.imageBase64:null;if(b64)_galleryImgCache.set(id,b64);}catch(e){}}
+  if(!b64){alert('图片未找到');return;}
+  _showImgModal(b64);
+}
+
 function toggleGalleryItem(id,checked){if(checked)gallerySelectedIds.add(id);else gallerySelectedIds.delete(id);updateGallerySelectionUI();}
 function toggleGallerySelectAll(){const sa=document.getElementById('gallerySelectAll').checked;const records=window.__galleryRecords||[];if(sa)records.forEach(r=>gallerySelectedIds.add(r.id));else gallerySelectedIds.clear();document.querySelectorAll('.gallery-item input[type="checkbox"]').forEach(cb=>{const item=cb.closest('.gallery-item');const id=parseInt(item?.dataset?.id);cb.checked=sa||gallerySelectedIds.has(id);});updateGallerySelectionUI();}
-function updateGallerySelectionUI(){const count=gallerySelectedIds.size;document.getElementById('selectedCount').textContent=count;document.getElementById('btnBatchDelete').disabled=count===0;}
+function updateGallerySelectionUI(){const count=gallerySelectedIds.size;const el=document.getElementById('selectedCount');const btn=document.getElementById('btnBatchDelete');if(el)el.textContent=count;if(btn)btn.disabled=count===0;}
 async function batchDeleteGallery(){const ids=[...gallerySelectedIds];if(ids.length===0)return;if(!confirm(`确定删除 ${ids.length} 张图片？`))return;for(const id of ids){try{await dbDelete(id);}catch(e){}}gallerySelectedIds.clear();await loadAllRecords();renderDataTable();renderGallery();}
-function viewFullImageByRecord(id){const r=allRecords.find(r=>r.id===id);if(!r||!r.imageBase64)return;const m=document.createElement('div');m.className='image-modal';m.onclick=()=>m.remove();m.innerHTML=`<img src="${r.imageBase64}" style="max-width:90vw;max-height:90vh;border-radius:8px;">`;document.body.appendChild(m);}
+async function viewFullImageByRecord(id){
+  let b64=_galleryImgCache.get(id);
+  if(!b64){try{const rec=await dbGet(id);b64=rec&&rec.imageBase64?rec.imageBase64:null;if(b64)_galleryImgCache.set(id,b64);}catch(e){}}
+  if(!b64){alert('该记录没有保存原图');return;}
+  _showImgModal(b64);
+}
 
 // ========== TAB 2: WIN RATE ==========
 function computeWinRateData(){const recs=allRecords.map(r=>({...r,lGenKey:getTeamKey(getGenerals(r,'left')),lTacKey:getTacticsKey(getTactics(r,'left')),rGenKey:getTeamKey(getGenerals(r,'right')),rTacKey:getTacticsKey(getTactics(r,'right'))}));const leftGroups=[],rightGroups=[];const leftGroupOf=new Array(recs.length).fill(-1),rightGroupOf=new Array(recs.length).fill(-1);for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<leftGroups.length;g++){if(isSameTeamType(getGenerals(r,'left'),getTactics(r,'left'),getGenerals(recs[leftGroups[g][0]],'left'),getTactics(recs[leftGroups[g][0]],'left'))){matched=g;break;}}if(matched>=0){leftGroups[matched].push(i);leftGroupOf[i]=matched;}else{leftGroups.push([i]);leftGroupOf[i]=leftGroups.length-1;}}for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<rightGroups.length;g++){if(isSameTeamType(getGenerals(r,'right'),getTactics(r,'right'),getGenerals(recs[rightGroups[g][0]],'right'),getTactics(recs[rightGroups[g][0]],'right'))){matched=g;break;}}if(matched>=0){rightGroups[matched].push(i);rightGroupOf[i]=matched;}else{rightGroups.push([i]);rightGroupOf[i]=rightGroups.length-1;}}const pairMap={};for(let i=0;i<recs.length;i++){const lg=leftGroupOf[i],rg=rightGroupOf[i],pk=lg+'-'+rg;if(!pairMap[pk]){const repL=recs[leftGroups[lg][0]],repR=recs[rightGroups[rg][0]];pairMap[pk]={leftTeam:getTeamKey(getGenerals(repL,'left')),leftTactics:getTactics(repL,'left'),leftFormation:repL.leftFormation||'',leftGenerals:getGenerals(repL,'left'),rightTeam:getTeamKey(getGenerals(repR,'right')),rightTactics:getTactics(repR,'right'),rightFormation:repR.rightFormation||'',rightGenerals:getGenerals(repR,'right'),matches:[],leftLosses:[],rightLosses:[],recordIds:[]};}const entry=pairMap[pk];entry.matches.push(recs[i]);entry.recordIds.push(recs[i].id);if(recs[i].leftLoss!=null&&recs[i].leftTotal!=null&&recs[i].leftTotal>0)entry.leftLosses.push(recs[i].leftLoss);if(recs[i].rightLoss!=null&&recs[i].rightTotal!=null&&recs[i].rightTotal>0)entry.rightLosses.push(recs[i].rightLoss);}const rawData=Object.values(pairMap).map(entry=>{const wins=entry.matches.filter(r=>r.result==='胜').length,losses=entry.matches.filter(r=>r.result==='败').length;const total=entry.matches.length,winRate=total>0?wins/total*100:0;const avgLLoss=entry.leftLosses.length>0?entry.leftLosses.reduce((a,b)=>a+b,0)/entry.leftLosses.length:0;const avgRLoss=entry.rightLosses.length>0?entry.rightLosses.reduce((a,b)=>a+b,0)/entry.rightLosses.length:0;let lossRateVal=0;if(avgRLoss>0)lossRateVal=(avgLLoss/avgRLoss)*100;else if(avgLLoss>0)lossRateVal=999;const llr=entry.matches.filter(r=>r.leftLossRate!=null).map(r=>r.leftLossRate);const rlr=entry.matches.filter(r=>r.rightLossRate!=null).map(r=>r.rightLossRate);return{...entry,wins,losses,total,winRate,avgLeftLossPct:llr.length>0?(llr.reduce((a,b)=>a+b,0)/llr.length).toFixed(1):'0',avgRightLossPct:rlr.length>0?(rlr.reduce((a,b)=>a+b,0)/rlr.length).toFixed(1):'0',lossRateVal:lossRateVal.toFixed(0),avgLLoss,avgRLoss};});const result=new Map();rawData.forEach(d=>{const k=d.leftTeam+'||'+d.rightTeam;if(!result.has(k))result.set(k,d);});return Array.from(result.values()).map(d=>{if(d.winRate>=50)return d;return{leftTeam:d.rightTeam,rightTeam:d.leftTeam,leftGenerals:d.rightGenerals,rightGenerals:d.leftGenerals,leftTactics:d.rightTactics,rightTactics:d.leftTactics,leftFormation:d.rightFormation,rightFormation:d.leftFormation,winRate:100-d.winRate,wins:d.losses,losses:d.wins,total:d.total,avgLeftLossPct:d.avgRightLossPct,avgRightLossPct:d.avgLeftLossPct,avgLLoss:d.avgRLoss,avgRLoss:d.avgLLoss,lossRateVal:d.avgRLoss>0&&d.avgLLoss>0?((d.avgRLoss/d.avgLLoss)*100).toFixed(0):d.lossRateVal,matches:d.matches.map(r=>({...r,result:r.result==='胜'?'败':r.result==='败'?'胜':r.result})),recordIds:d.recordIds};});}
@@ -1570,8 +1654,8 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
     </div>
   </div>
 </div>
-  <script src="cloud-sync.js?v=202605112300"></script>
-  <script src="data-system.js?v=202605110006"></script>
+  <script src="cloud-sync.js?v=202606161"></script>
+  <script src="data-system.js?v=202606161"></script>
   <script src="counter-analysis.js?v=202605190003"></script>
   <script src="counter-analysis-enhanced.js?v=202605190002"></script>
   <script src="user-system.js?v=202605111900"></script>
@@ -1625,7 +1709,7 @@ function renderDataTable(){var data=getFilteredData();var total=data.length;var 
     <td style="min-width:70px;">${getTacticColDisplay(r,'right',2)}</td>
     <td style="color:var(--text2);">${escHtml(r.rightFormation||'')}</td><td class="num">${fmtNum(r.rightLoss)}</td><td class="num">${fmtNum(r.rightTotal)}</td>
     <td class="num" style="font-weight:bold;color:${getLossColor(r.rightLossRate)}">${r.rightLossRate!=null?Number(r.rightLossRate).toFixed(1)+'%':'-'}</td>
-    <td>${r.imageBase64?`<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;">📷 原图</a>`:'<span style="color:var(--text3);font-size:11px;">无</span>'}</td>
+    <td>${(r.hasImage||r.imageBase64)?`<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;">📷 原图</a>`:'<span style="color:var(--text3);font-size:11px;">无</span>'}</td>
     <td><button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button></td>
   </tr>`;}).join('');}var pagEl=document.getElementById('dataPagination');if(pagEl){var sizeSelect=`<select onchange="dataPerPage=+this.value;dataPage=1;renderDataTable()" style="font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">${[10,20,30,50,100].map(n=>`<option value="${n}"${n===dataPerPage?' selected':''}>${n}条/页</option>`).join('')}</select>`;if(totalPages<=1)pagEl.innerHTML=sizeSelect;else pagEl.innerHTML=`${sizeSelect}<button ${dataPage<=1?'disabled':''} onclick="dataPage--;renderDataTable()">◀</button><span style="color:var(--text2);font-size:11px;">${dataPage}/${totalPages}</span><button ${dataPage>=totalPages?'disabled':''} onclick="dataPage++;renderDataTable()">▶</button>`;}}
 </script>
