@@ -369,10 +369,18 @@
     return Object.values(stats).sort((a, b) => b.count - a.count).slice(0, 30);
   }
 
-  // 高频统计（无战法）：key 只用武将组合，全部显示不限数量
+  // 判断某条战报是否双方均无战法
+  function hasNoTactics(rec) {
+    const lt = normTacs(rec.leftTactics  || rec.left_tactics  || []);
+    const rt = normTacs(rec.rightTactics || rec.right_tactics || []);
+    return lt.length === 0 && rt.length === 0;
+  }
+
+  // 高频统计（无战法）：只统计双方均未使用战法的战报
   function analyzeEnemyFreqNoTacs(recs) {
     const stats = {};
     for (const rec of recs) {
+      if (!hasNoTactics(rec)) continue;
       const rg = normGens(rec.rightGenerals || rec.right_generals);
       if (!rg.length) continue;
       const k = teamKeyNoTacs(rg);
@@ -465,13 +473,14 @@
     c.records.push(rec);
   }
 
-  // 克制推荐（无战法）：key 只用武将组合，至少1胜进入列表，全部显示
+  // 克制推荐（无战法）：只取双方均无战法的战报，key 只用武将组合
   function analyzeRecommendNoTacs(recs) {
-    const enemies = analyzeEnemyFreqNoTacs(recs);
+    const noTacsRecs = recs.filter(hasNoTactics);
+    const enemies = analyzeEnemyFreqNoTacs(recs); // 敌方频率用原始记录（含战法）保证样本充足
     if (!enemies.length) return [];
     const enemyKeySet = new Set(enemies.map(e => teamKeyNoTacs(e.generals)));
     const matrix = {};
-    for (const rec of recs) {
+    for (const rec of noTacsRecs) {
       const lg = normGens(rec.leftGenerals  || rec.left_generals);
       const rg = normGens(rec.rightGenerals || rec.right_generals);
       if (!lg.length || !rg.length) continue;

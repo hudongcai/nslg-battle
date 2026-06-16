@@ -62,7 +62,9 @@ def match_hero(text: str):
     if len(text) < 2 or len(text) > 5:
         return None
     name, dist = best_match(text, HERO_NAMES)
-    return name if dist <= 1 else None
+    # 2字名要求完全匹配，防止同盟短码（如"逸云"）被误识别为武将（如"赵云"）
+    threshold = 0 if len(text) == 2 else 1
+    return name if dist <= threshold else None
 
 def match_tactic(text: str):
     text = re.sub(r'^影本[·.•]', '', text).strip()      # 去影本·前缀
