@@ -717,8 +717,9 @@ async function cloudGetMyAccess() {
 }
 
 // ========== 项目图片批量同步（仅 owner 调用）==========
-// 遍历当前项目所有记录，逐条从 battle_gallery 拉取图片并写入 IndexedDB
-// ========== 进入项目时全量同步该项目战报（解决历史截断遗留问题）==========
+// ========== 进入项目时全量同步该项目战报 ==========
+// 策略：硬重置 —— 先清空本地该项目所有记录，再从云端完整重写
+// 保证本地条数 = MySQL 条数，彻底消除孤立记录、bizKey 碰撞等历史脏数据
 async function syncProjectRecords(projectId) {
   if (!projectId) return;
   try {
@@ -726,61 +727,37 @@ async function syncProjectRecords(projectId) {
     const cloudRecords = await cloudGetRecords(projectId);
     if (!cloudRecords || !cloudRecords.length) return;
 
-    // 先加载本地所有记录，按 cloudId 和 bizKey 建立索引，避免重复写入
+    // 1. 读取本地该项目所有记录，缓存已下载的图片（避免重复拉取）
     const allLocal = await dbGetAll();
-    const byCloudId = new Map(allLocal.filter(r => r.cloudId).map(r => [String(r.cloudId), r]));
-    const bizKey = r => `${r.battleDate||''}|${r.leftPlayer||r.attackerName||''}|${r.rightPlayer||r.enemyName||''}`;
-    const byBizKey = new Map(allLocal.map(r => [bizKey(r), r]));
+    const projectLocal = allLocal.filter(r => String(r.projectId) === String(projectId));
+    const imageCache = new Map();
+    for (const r of projectLocal) {
+      if (r.cloudId && r.imageBase64) imageCache.set(String(r.cloudId), r.imageBase64);
+    }
 
+    // 2. 删除本地该项目全部记录（含无 cloudId 的孤立记录）
+    for (const r of projectLocal) {
+      try { await dbDeleteLocal(r.id); } catch(e) {}
+    }
+
+    // 3. 从云端完整写入
     let saved = 0;
     for (const rec of cloudRecords) {
       try {
-        const cid = String(rec.id);
-        const existing = byCloudId.get(cid);
-        if (existing) {
-          // 本地已有此 cloudId 的记录，跳过写入（节省 IndexedDB I/O）
-          existing._synced = true;
-          existing._syncTime = Date.now();
-        } else {
-          // 尝试 bizKey 匹配（处理 cloudId 尚未写回的孤立记录）
-          const ck = bizKey(rec);
-          const bizMatch = byBizKey.get(ck);
-          if (bizMatch) {
-            bizMatch.cloudId = rec.id;
-            bizMatch._synced = true;
-            bizMatch._syncTime = Date.now();
-            await dbPutLocal(bizMatch);
-            byCloudId.set(cid, bizMatch);
-            // 防止相同 bizKey 的下一条云端记录再次匹配同一本地记录（导致数据丢失）
-            byBizKey.delete(ck);
-          } else {
-            // 云端有、本地无 → 写入（rec.id 是 MySQL 主键，IndexedDB 用它做 key）
-            rec.cloudId = rec.id;
-            rec._synced = true;
-            rec._syncTime = Date.now();
-            await dbPutLocal(rec);
-            byCloudId.set(cid, rec);
-          }
-        }
+        rec.cloudId = rec.id;
+        rec._synced = true;
+        rec._syncTime = Date.now();
+        // 恢复本地已缓存的图片
+        if (imageCache.has(String(rec.id))) rec.imageBase64 = imageCache.get(String(rec.id));
+        await dbPutLocal(rec);
         saved++;
       } catch (e) {
         console.warn('[syncProjectRecords] 单条失败:', rec.id, e);
       }
     }
-    // 同步删除：本地有 cloudId 且属于此项目，但云端已删的记录
-    const cloudIdSet = new Set(cloudRecords.map(r => String(r.id)));
-    const toDeleteLocal = allLocal.filter(r =>
-      r.cloudId &&
-      String(r.projectId) === String(projectId) &&
-      !cloudIdSet.has(String(r.cloudId))
-    );
-    let deleted = 0;
-    for (const local of toDeleteLocal) {
-      try { await dbDeleteLocal(local.id); deleted++; } catch(e) {}
-    }
-    if (deleted > 0) console.log(`[syncProjectRecords] 同步删除 ${deleted} 条云端已删记录`);
-    console.log(`[syncProjectRecords] 完成，写入 ${saved}/${cloudRecords.length} 条，清理 ${deleted} 条`);
-    return { saved, total: cloudRecords.length, deleted };
+
+    console.log(`[syncProjectRecords] 硬重置完成：清理 ${projectLocal.length} 条本地记录，写入 ${saved}/${cloudRecords.length} 条`);
+    return { saved, total: cloudRecords.length, deleted: projectLocal.length };
   } catch (e) {
     console.warn('[syncProjectRecords] 失败:', e);
   }
