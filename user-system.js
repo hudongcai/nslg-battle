@@ -863,7 +863,8 @@ async function renderUserManage(){
   const perms = await getRolePermissions(currentUser.role);
   if(!perms||!perms['userManage'])return;
 
-  // 优先从云端同步用户数据
+  // 优先从云端同步用户数据，直接用云端数据渲染（保证积分等字段最新）
+  let users = null;
   if(window.cloudSync && window.cloudSync.getToken && window.cloudSync.getToken()){
     try{
       const cloudUsers = await window.cloudSync.getUsers();
@@ -873,12 +874,12 @@ async function renderUserManage(){
         if(local && local.password) u.password = local.password;
         await userDBPut(u);
       }
+      if(cloudUsers.length > 0) users = cloudUsers;
     }catch(e){
       console.warn('[UserManage] 云端用户同步失败，使用本地数据:', e.message);
     }
   }
-
-  const users  = await userDBGetAll();
+  if(!users) users = await userDBGetAll();
   const roles  = await roleDBGetAll();
   const tbody  = document.getElementById('userTableBody');
   if(!tbody) return;

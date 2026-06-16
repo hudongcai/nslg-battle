@@ -86,7 +86,8 @@ const dbConfig = {
   user:     process.env.DB_USER     || 'nslg-battle-server',
   password: process.env.DB_PASS     || 'hu6956521',
   database: process.env.DB_NAME     || 'nslg_battle',
-  charset: 'utf8mb4'
+  charset: 'utf8mb4',
+  dateStrings: true
 };
 
 let pool;
