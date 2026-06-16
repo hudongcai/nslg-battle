@@ -831,7 +831,7 @@ function openTacticPanel(col,anchor,mode){
   var sorted=[...vals].sort((a,b)=>a.localeCompare(b,'zh'));
   var f=window.tacticColFilters[col];
   var sel=document.getElementById('tacticPanelSel');
-  sel.innerHTML='<option value="">全部</option>'+sorted.map(v=>`<option value="${escHtml(v)}"${v===f.sel?' selected':''}>${escHtml(v)}</option>`).join('');
+  sel.innerHTML='<option value="">全部</option><option value="__EMPTY__"'+( f.sel==='__EMPTY__'?' selected':'')+'>（空）</option>'+sorted.map(v=>`<option value="${escHtml(v)}"${v===f.sel?' selected':''}>${escHtml(v)}</option>`).join('');
   document.getElementById('tacticPanelTxt').value=f.txt;
   var rect=anchor.getBoundingClientRect();
   panel.style.left=Math.max(4,Math.min(rect.left-60,window.innerWidth-210))+'px';
@@ -1581,7 +1581,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="points-mall.js?v=202606131"></script>
 <script>
 // 战法列显示（覆盖 data-system.js 版本，在所有外部 JS 之后执行确保不被覆盖）
-function getTacticColDisplay(r,side,slot){var p=side==='left'?'leftTactic':'rightTactic';var s=slot+1;var vals=[r[p+'1_'+s]||'',r[p+'2_'+s]||'',r[p+'3_'+s]||''].filter(function(v){return v&&v!=='未知';});if(!vals.length)return'-';return'<div style="display:flex;flex-direction:column;gap:2px;">'+vals.map(function(v){return'<div style="white-space:nowrap;font-size:10px;color:var(--text2);">'+escHtml(v)+'</div>';}).join('')+'</div>';}
+function getTacticColDisplay(r,side,slot){var p=side==='left'?'leftTactic':'rightTactic';var s=slot+1;var raw=[r[p+'1_'+s]||'',r[p+'2_'+s]||'',r[p+'3_'+s]||''];var hasAny=raw.some(function(v){return v&&v!=='未知';});if(!hasAny)return'-';return'<div style="display:flex;flex-direction:column;gap:2px;">'+raw.map(function(v){if(!v||v==='未知')return'<div style="height:14px;min-height:14px;"></div>';return'<div style="white-space:nowrap;font-size:10px;color:var(--text2);">'+escHtml(v)+'</div>';}).join('')+'</div>';}
 function getFilteredData(){
   var data=[...allRecords];
   var search=(document.getElementById('dataSearch')?.value||'').toLowerCase();
@@ -1602,7 +1602,7 @@ function getFilteredData(){
   ];
   tacSlots.forEach(function(slot){
     var f=slot.f,keys=slot.keys;
-    if(f.sel||f.txt){var txt=f.txt.toLowerCase();data=data.filter(function(r){return keys.some(function(k){var v=r[k]||'';if(!v)return false;if(f.sel&&v!==f.sel)return false;if(txt&&!v.toLowerCase().includes(txt))return false;return true;});});}
+    if(f.sel||f.txt){var txt=f.txt.toLowerCase();data=data.filter(function(r){if(f.sel==='__EMPTY__'){return keys.some(function(k){var v=r[k]||'';return!v||v==='未知';});}return keys.some(function(k){var v=r[k]||'';if(!v||v==='未知')return false;if(f.sel&&v!==f.sel)return false;if(txt&&!v.toLowerCase().includes(txt))return false;return true;});});}
   });
   data.sort(function(a,b){return(b.id||0)-(a.id||0);});
   return data;
