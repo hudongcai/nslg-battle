@@ -424,6 +424,35 @@ async function loadAllRecords() {
   updateGlobalStats();
 }
 
+// 修复历史数据：将本地 IndexedDB 中有武将/战法数据但云端为空的记录重新推送
+async function repairCloudGeneralsTactics() {
+  if (!window.cloudSync || !window.cloudSync.updateRecord) {
+    alert('云端同步不可用，无法修复'); return;
+  }
+  if (!db) await openDB();
+  const localRecords = await dbGetAll();
+  const toFix = localRecords.filter(r => {
+    if (!r.cloudId) return false;
+    return r.leftGeneral1 || r.leftGeneral2 || r.leftGeneral3 ||
+           r.rightGeneral1 || r.rightGeneral2 || r.rightGeneral3;
+  });
+  if (toFix.length === 0) { alert('没有需要修复的记录（本地无武将数据）'); return; }
+  const confirmed = confirm(`发现 ${toFix.length} 条本地有武将数据的记录，将重新同步至云端。继续？`);
+  if (!confirmed) return;
+  let ok = 0, fail = 0;
+  for (const r of toFix) {
+    try {
+      await window.cloudSync.updateRecord(r.cloudId, r);
+      ok++;
+    } catch (e) {
+      fail++;
+      console.warn('[repair] 更新失败 cloudId=' + r.cloudId, e);
+    }
+  }
+  alert(`修复完成：成功 ${ok} 条，失败 ${fail} 条`);
+  if (ok > 0 && typeof renderDataTable === 'function') renderDataTable();
+}
+
 function syncToLocalStorage() {
   try {
     setTimeout(() => {

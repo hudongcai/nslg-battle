@@ -691,11 +691,41 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
     const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
 
     // 从 body 或从数组中提取 24 个独立字段
-    const lg = Array.isArray(left_generals)  ? left_generals  : [];
-    const rg = Array.isArray(right_generals) ? right_generals : [];
-    const lt = Array.isArray(left_tactics)   ? left_tactics   : [];
-    const rt = Array.isArray(right_tactics)  ? right_tactics  : [];
-    const f = (arr, i) => arr[i] || null;
+    // 兼容前端发送的个别字段（leftGeneral1 / left_general_1）和旧数组格式（leftGenerals）
+    const f = (arr, i) => (arr[i] && arr[i] !== '') ? arr[i] : null;
+    const fv = v => (v && v !== '') ? v : null;
+    const lg = Array.isArray(left_generals) ? left_generals : [
+      fv(body.leftGeneral1 || body.left_general_1),
+      fv(body.leftGeneral2 || body.left_general_2),
+      fv(body.leftGeneral3 || body.left_general_3),
+    ];
+    const rg = Array.isArray(right_generals) ? right_generals : [
+      fv(body.rightGeneral1 || body.right_general_1),
+      fv(body.rightGeneral2 || body.right_general_2),
+      fv(body.rightGeneral3 || body.right_general_3),
+    ];
+    const lt = Array.isArray(left_tactics) ? left_tactics : [
+      fv(body.leftTactic1_1 || body.left_tactic_1_1),
+      fv(body.leftTactic1_2 || body.left_tactic_1_2),
+      fv(body.leftTactic1_3 || body.left_tactic_1_3),
+      fv(body.leftTactic2_1 || body.left_tactic_2_1),
+      fv(body.leftTactic2_2 || body.left_tactic_2_2),
+      fv(body.leftTactic2_3 || body.left_tactic_2_3),
+      fv(body.leftTactic3_1 || body.left_tactic_3_1),
+      fv(body.leftTactic3_2 || body.left_tactic_3_2),
+      fv(body.leftTactic3_3 || body.left_tactic_3_3),
+    ];
+    const rt = Array.isArray(right_tactics) ? right_tactics : [
+      fv(body.rightTactic1_1 || body.right_tactic_1_1),
+      fv(body.rightTactic1_2 || body.right_tactic_1_2),
+      fv(body.rightTactic1_3 || body.right_tactic_1_3),
+      fv(body.rightTactic2_1 || body.right_tactic_2_1),
+      fv(body.rightTactic2_2 || body.right_tactic_2_2),
+      fv(body.rightTactic2_3 || body.right_tactic_2_3),
+      fv(body.rightTactic3_1 || body.right_tactic_3_1),
+      fv(body.rightTactic3_2 || body.right_tactic_3_2),
+      fv(body.rightTactic3_3 || body.right_tactic_3_3),
+    ];
 
     const [resultRow] = await pool.query(
       'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, ' +
@@ -759,12 +789,41 @@ app.put('/api/battles/:id', async (req, res) => {
     const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
     const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
 
-    // 24 个独立字段
-    const lg = Array.isArray(left_generals)  ? left_generals  : [];
-    const rg = Array.isArray(right_generals) ? right_generals : [];
-    const lt = Array.isArray(left_tactics)   ? left_tactics   : [];
-    const rt = Array.isArray(right_tactics)  ? right_tactics  : [];
-    const f = (arr, i) => arr[i] || null;
+    // 24 个独立字段（兼容个别字段 leftGeneral1/left_general_1 和旧数组格式）
+    const f = (arr, i) => (arr[i] && arr[i] !== '') ? arr[i] : null;
+    const fv = v => (v && v !== '') ? v : null;
+    const lg = Array.isArray(left_generals) ? left_generals : [
+      fv(req.body.leftGeneral1 || req.body.left_general_1),
+      fv(req.body.leftGeneral2 || req.body.left_general_2),
+      fv(req.body.leftGeneral3 || req.body.left_general_3),
+    ];
+    const rg = Array.isArray(right_generals) ? right_generals : [
+      fv(req.body.rightGeneral1 || req.body.right_general_1),
+      fv(req.body.rightGeneral2 || req.body.right_general_2),
+      fv(req.body.rightGeneral3 || req.body.right_general_3),
+    ];
+    const lt = Array.isArray(left_tactics) ? left_tactics : [
+      fv(req.body.leftTactic1_1 || req.body.left_tactic_1_1),
+      fv(req.body.leftTactic1_2 || req.body.left_tactic_1_2),
+      fv(req.body.leftTactic1_3 || req.body.left_tactic_1_3),
+      fv(req.body.leftTactic2_1 || req.body.left_tactic_2_1),
+      fv(req.body.leftTactic2_2 || req.body.left_tactic_2_2),
+      fv(req.body.leftTactic2_3 || req.body.left_tactic_2_3),
+      fv(req.body.leftTactic3_1 || req.body.left_tactic_3_1),
+      fv(req.body.leftTactic3_2 || req.body.left_tactic_3_2),
+      fv(req.body.leftTactic3_3 || req.body.left_tactic_3_3),
+    ];
+    const rt = Array.isArray(right_tactics) ? right_tactics : [
+      fv(req.body.rightTactic1_1 || req.body.right_tactic_1_1),
+      fv(req.body.rightTactic1_2 || req.body.right_tactic_1_2),
+      fv(req.body.rightTactic1_3 || req.body.right_tactic_1_3),
+      fv(req.body.rightTactic2_1 || req.body.right_tactic_2_1),
+      fv(req.body.rightTactic2_2 || req.body.right_tactic_2_2),
+      fv(req.body.rightTactic2_3 || req.body.right_tactic_2_3),
+      fv(req.body.rightTactic3_1 || req.body.right_tactic_3_1),
+      fv(req.body.rightTactic3_2 || req.body.right_tactic_3_2),
+      fv(req.body.rightTactic3_3 || req.body.right_tactic_3_3),
+    ];
 
     const now = new Date();
 

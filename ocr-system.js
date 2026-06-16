@@ -573,7 +573,11 @@ function correctByDatabase(record) {
       // 装备战法未命中时，再尝试在自带战法中匹配
       const matchedSelf = bestMatch(n, ALL_HEROES.map(h => ({ name: h.skill })).filter(x => x.name), 'name');
       if (validTacticNames.has(matchedSelf)) return matchedSelf;
-      // 两者均未命中：是"缘分"等无效标签，丢弃
+      // 数据库未命中：若 OCR 识别结果本身是合理中文（≥2汉字），保留原值而非丢弃
+      // 这样可以保留数据库尚未收录的新战法，而不是将其丢失
+      const chineseChars = (n.match(/[一-鿿·•]/g) || []).length;
+      if (chineseChars >= 2) return n;
+      // 确实是乱码/单字/数字等无效内容才丢弃
       return '未知';
     });
   });

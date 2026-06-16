@@ -557,6 +557,7 @@ document.addEventListener('click', function(e) {
   <option value="all">全部数据</option>
 </select>
         <button class="btn btn-sm btn-secondary" onclick="tableSelectAll()">全选</button><button class="btn btn-sm btn-secondary" onclick="tableInvertSelect()">反选</button><button class="btn btn-sm btn-danger" id="btnDeleteSelected" disabled style="opacity:.4;cursor:not-allowed" onclick="deleteSelected()">删除选中(<span id="dataSelectedCount">0</span>)</button>
+        <button class="btn btn-sm btn-secondary" onclick="repairCloudGeneralsTactics()" title="将本地有武将/战法数据但云端为空的记录重新同步" style="margin-left:8px;">🔧 修复云端武将战法</button>
       </div>
       <div style="overflow-x:auto;"><table id="dataTable"><thead><tr>
         <th style="width:32px;min-width:32px;padding:0;text-align:center;"><input type="checkbox" id="checkAll" onchange="tableCheckAll(this)" title="全选/取消" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></th><th>#</th><th>时间</th><th>结果</th>
