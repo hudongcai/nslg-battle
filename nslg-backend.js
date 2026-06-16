@@ -1080,32 +1080,11 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
         const paddleData = await paddleResp.json();
         if (paddleData.ok) record = mapPaddleResult(paddleData);
       }
-    } catch (_) { /* PaddleOCR 不可用，回退豆包 */ }
+    } catch (_) { /* PaddleOCR 不可用 */ }
 
-    // 3. 回退豆包 LLM
+    // 3. 豆包回退已关闭，PaddleOCR 失败直接报错
     if (!record) {
-      const llmResp = await fetch(DOUBAO_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DOUBAO_API_KEY}` },
-        body: JSON.stringify({
-          model: OCR_MODEL,
-          max_tokens: 3000,
-          temperature: 0,
-          messages: [{ role: 'user', content: [
-            { type: 'image_url', image_url: { url: image } },
-            { type: 'text',      text: OCR_PROMPT }
-          ]}],
-        }),
-        signal: AbortSignal.timeout(120000),
-      });
-      if (!llmResp.ok) {
-        const errBody = await llmResp.text();
-        return res.json({ code: 500, message: `LLM OCR 失败: ${llmResp.status} ${errBody.slice(0,200)}` });
-      }
-      const llmData = await llmResp.json();
-      const content = llmData.choices?.[0]?.message?.content || '';
-      if (!content) return res.json({ code: 500, message: 'LLM 返回空内容' });
-      record = parseOCRResponse(content);
+      return res.json({ code: 503, message: 'OCR 服务不可用，请检查本地 PaddleOCR 是否正在运行' });
     }
 
     // 4. 补充元数据
