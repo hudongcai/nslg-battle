@@ -28,7 +28,7 @@ WINNER_MAP   = {'胜': 'left', '败': 'right', '平': 'draw'}
 # ── RapidOCR 初始化 ───────────────────────────────────────────────────
 print("初始化 RapidOCR ...")
 _ocr = RapidOCR()
-print("✅ RapidOCR 就绪")
+print("RapidOCR ready")
 
 app = FastAPI(title="战报 OCR 服务")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -160,20 +160,19 @@ def extract_troops(blocks):
             return max(int(a['text']), int(nb['text']))
     return 0
 
-def assign_to_columns(tac_blocks, hero_xs):
+def assign_to_columns(tac_blocks, hero_xs, n_real_heroes=3):
     """按 x 距离将战法归属到最近的武将列，每列按 y 排序。
-    如果英雄列分配不均衡（某列为空），则回退到 x 聚类分配。"""
+    仅在三位武将全部真实识别时才回退聚类，避免补位假坐标导致退化分组。"""
     cols = [[] for _ in hero_xs]
     for tb in tac_blocks:
         col = min(range(len(hero_xs)), key=lambda i: abs(cx(tb) - hero_xs[i]))
         cols[col].append(tb)
 
-    # 检测分配质量：如果某列为空而其他列溢出，说明 hero_xs 不准，回退聚类
+    # 只有全部武将真实识别时才允许回退聚类（假坐标时回退会导致退化分组）
     col_lens = [len(c) for c in cols]
-    if any(cl == 0 for cl in col_lens) and len(tac_blocks) >= 3:
+    if n_real_heroes == 3 and any(cl == 0 for cl in col_lens) and len(tac_blocks) >= 3:
         # 用战术块 x 坐标做 3-means 聚类
         xs = sorted([cx(tb) for tb in tac_blocks])
-        # 简单分位数分割
         n = len(xs)
         cuts = [xs[int(n * 1/6)], xs[int(n * 3/6)], xs[int(n * 5/6)]]
         cols = [[] for _ in range(3)]
@@ -227,10 +226,15 @@ def process_side(blocks, side, img_h):
 
     generals = [h['matched'] for h in hero_blocks]
     hero_xs  = [cx(h) for h in hero_blocks]
+    n_real_heroes = len(generals)
 
-    # 补足3个武将（未知占位）
+    # 补足3个武将（未知占位），用实际间距外推而非固定120
     while len(generals) < 3:
-        gap = hero_xs[-1] + 120 if hero_xs else 120
+        if len(hero_xs) >= 2:
+            spacing = hero_xs[-1] - hero_xs[-2]
+            gap = hero_xs[-1] + spacing
+        else:
+            gap = hero_xs[-1] + 120 if hero_xs else 120
         generals.append('未知')
         hero_xs.append(gap)
 
@@ -239,7 +243,7 @@ def process_side(blocks, side, img_h):
     for tb in tac_blocks:
         if not any(abs(cy(tb) - cy(st)) < 15 and tb['matched'] == st['matched'] for st in seen_tacs):
             seen_tacs.append(tb)
-    cols = assign_to_columns(seen_tacs, hero_xs)
+    cols = assign_to_columns(seen_tacs, hero_xs, n_real_heroes)
 
     tactics = []
     for col in cols:
