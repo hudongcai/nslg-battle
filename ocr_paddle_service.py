@@ -277,60 +277,76 @@ def _match_all_templates(crop_feat: np.ndarray, tpl_list: list,
     return best_count, best_info
 
 
-def count_stars(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int, debug_label: str = '') -> int:
-    """模板匹配统计豆豆数量（0-5）。
-
-    策略：多模板 (原始 + 暗背景 + 亮背景) × (CLAHE → 原始灰度 → 边缘 → 低阈值兜底)
+def _count_stars_by_color(crop_rgb: np.ndarray) -> int:
+    """用橙红火焰色统计亮豆豆数量（主方法）。
+    亮豆豆：HSV H<25°, S>80, V>150（来自 doudou/ 样本校准）
+    暗豆豆：V<130，不计入。
     """
+    ch, cw = crop_rgb.shape[:2]
+    if cw < 8 or ch < 4:
+        return 0
+    bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+
+    # 亮橙红掩码（含 H≈0/180 两端红色）
+    m1 = cv2.inRange(hsv, np.array([0, 80, 150]), np.array([25, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([160, 80, 150]), np.array([180, 255, 255]))
+    mask = cv2.bitwise_or(m1, m2)
+
+    # 形态学膨胀，连通同一豆豆内的碎片
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    mask = cv2.dilate(mask, k, iterations=1)
+
+    # 水平投影：每列的亮像素数
+    proj = np.sum(mask > 0, axis=0).astype(float)
+
+    # 平滑后找峰值，最少间距 = 区域宽度 / 8（5个豆豆中最小间距）
+    from scipy.signal import find_peaks
+    from scipy.ndimage import gaussian_filter1d
+    proj_smooth = gaussian_filter1d(proj, sigma=3)
+    min_dist = max(8, cw // 8)
+    threshold = max(2.0, proj_smooth.max() * 0.25)
+    peaks, _ = find_peaks(proj_smooth, height=threshold, distance=min_dist)
+    return min(5, len(peaks))
+
+
+def count_stars(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int, debug_label: str = '') -> int:
+    """统计豆豆数量（0-5）。主方法：橙红色像素水平投影计峰值。"""
     h, w = img_array.shape[:2]
     x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
     if x2 <= x1 or y2 <= y1:
         return 0
 
-    crop_bgr = cv2.cvtColor(img_array[y1:y2, x1:x2], cv2.COLOR_RGB2BGR)
-    crop_gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
-    ch, cw = crop_gray.shape[:2]
+    crop_rgb = img_array[y1:y2, x1:x2]
+    ch, cw = crop_rgb.shape[:2]
 
+    # 主方法：橙红色像素水平投影（由 doudou/ 样本校准）
+    color_count = _count_stars_by_color(crop_rgb)
+    if color_count > 0:
+        _debug_msg('count_stars %s -> %d | color' % (debug_label, color_count))
+        return color_count
+
+    # 兜底：模板匹配（图像颜色偏差时备用）
+    crop_bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    crop_gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     crop_clahe = clahe.apply(crop_gray)
-
     ref_h, ref_w = _DOT_TPL_GRAY.shape[:2]
-    if w <= 2000:
-        scales = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20]
-    else:
-        scales = [0.12, 0.14, 0.16, 0.18, 0.20, 0.22, 0.25, 0.28]
-
-    best_count = 0
-    best_info = 'no_match'
-
-    # 1) CLAHE 灰度 0.70 — 尝试所有模板
-    count, info = _match_all_templates(crop_clahe, _DOT_TPL_LIST, scales, ref_h, ref_w, 0.70, cw, ch, 'clahe')
-    if count: best_count, best_info = count, info
-
-    # 2) 原始灰度 0.70
-    if best_count < 5:
-        count, info = _match_all_templates(crop_gray, _DOT_TPL_LIST, scales, ref_h, ref_w, 0.70, cw, ch, 'raw')
-        if count > best_count: best_count, best_info = count, info
-
-    # 3) 边缘 0.40 — 附 top-confidence 守卫，抑制弱匹配假阳性
-    if best_count < 5:
-        crop_edge = cv2.Canny(crop_clahe, 50, 150)
-        count, info = _match_all_templates(crop_edge, _DOT_TPL_LIST, scales, ref_h, ref_w, 0.40, cw, ch, 'edge')
+    scales = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20] if w <= 2000 else \
+             [0.12, 0.14, 0.16, 0.18, 0.20, 0.22, 0.25, 0.28]
+    best_count, best_info = 0, 'no_match'
+    for feat, feat_name, th in [
+        (crop_clahe, 'clahe', 0.70),
+        (crop_gray,  'raw',   0.70),
+        (crop_clahe, 'lo',    0.55),
+    ]:
+        count, info = _match_all_templates(feat, _DOT_TPL_LIST, scales, ref_h, ref_w, th, cw, ch, feat_name)
         if count > best_count:
-            # 解析 top 置信度；info 格式如 "edge[light]_s=0.08 sw=24 raw=23->nms=3 top=0.617"
-            import re as _re
-            top_match = _re.search(r'top=([\d.]+)', info)
-            top_conf = float(top_match.group(1)) if top_match else 0
-            # 低置信度 + count>1 的弱匹配拒绝（防止噪声误检为多个星标）
-            if top_conf >= 0.55 or (count == 1 and top_conf >= 0.45):
-                best_count, best_info = count, info
+            best_count, best_info = count, info
+        if best_count >= 5:
+            break
 
-    # 4) 低阈值灰度 0.55
-    if best_count < 5:
-        count, info = _match_all_templates(crop_clahe, _DOT_TPL_LIST, scales, ref_h, ref_w, 0.55, cw, ch, 'lo')
-        if count > best_count: best_count, best_info = count, info
-
-    _debug_msg('count_stars %s -> %d | %s' % (debug_label, best_count, best_info))
+    _debug_msg('count_stars %s -> %d | tpl:%s' % (debug_label, best_count, best_info))
     return best_count
 
 
