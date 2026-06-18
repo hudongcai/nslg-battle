@@ -11,7 +11,7 @@ const OCR_CONFIG = {
   maxTokens: 3000,
   temperature: 0,     // 确定性输出，避免每次结果不一致
   timeout: 120000,    // 视觉模型识别大图可能较久，从60s提升到120s
-  batchConcurrency: 2,
+  batchConcurrency: 1,
   batchInterval: 1500,
 };
 
@@ -29,6 +29,27 @@ let ocrRunning = false;
 let ocrPaused = false;
 let batchAbortController = null;  // 用于中止正在进行的 OCR 请求（暂停时使用）
 let ocrPausedByUser = false;      // 标记是否为用户主动暂停导致的中止
+let _labelConfigCache = null;      // 标注配置缓存（按 projectId）
+let _labelConfigProjectId = null;  // 缓存对应的 projectId
+
+// 获取标注配置（带缓存）
+async function getLabelConfig(projectId) {
+  if (!projectId) return null;
+  if (_labelConfigCache && _labelConfigProjectId === projectId) return _labelConfigCache;
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const resp = await fetch('/api/label-config/' + projectId, {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    });
+    const data = await resp.json();
+    if (data.code === 200 && data.data && data.data.categories) {
+      _labelConfigCache = data.data.categories;
+      _labelConfigProjectId = projectId;
+      return _labelConfigCache;
+    }
+  } catch (e) { /* 无配置时使用自动检测 */ }
+  return null;
+}
 
 // ========== 初始化 ==========
 function initOCR() {
@@ -414,17 +435,21 @@ async function startBatchProcess() {
         const token = typeof getToken === 'function' ? getToken() : '';
 
         updateOCRStatus('work', 'OCR 识别中...');
+        // 获取标注配置（有缓存，首次加载后复用）
+        const labelCfg = await getLabelConfig(window.currentProjectId);
+        const reqBody = {
+          image: base64,
+          projectId: window.currentProjectId || null,
+          imageName: item.name,
+        };
+        if (labelCfg) reqBody.labelConfig = labelCfg;
         const resp = await fetch(getOcrUploadEndpoint(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
           },
-          body: JSON.stringify({
-            image: base64,
-            projectId: window.currentProjectId || null,
-            imageName: item.name,
-          }),
+          body: JSON.stringify(reqBody),
           signal: abortSig,
         });
         updateOCRStatus('ok', 'OCR 就绪');
@@ -463,6 +488,21 @@ async function startBatchProcess() {
           return;
         }
 
+        // OCR 服务不可用 → 立即停止整个批处理
+        if (result.code === 503) {
+          ocrRunning = false;
+          if (btnStart) btnStart.disabled = false;
+          if (btnPause) { btnPause.disabled = true; btnPause.textContent = '⏸ 暂停'; }
+          updateOCRStatus('error', 'OCR 服务不可用');
+          item.status = 'pending';  // 回退，等 OCR 恢复后重试
+          item.error = null;
+          processing--;
+          renderOCRQueue();
+          updateOCRProgress();
+          alert('OCR 服务不可用，批处理已暂停。\n请确认 OCR 服务运行正常后点击"开始处理"继续。');
+          return;
+        }
+
         if (result.code !== 200) throw new Error(result.message || 'OCR 失败');
 
         const record = result.data;
@@ -480,18 +520,32 @@ async function startBatchProcess() {
         // 积分已由服务端扣除，只需刷新 UI 显示
         if (typeof updateUserNavPoints === 'function') updateUserNavPoints();
       } catch (e) {
-        // 用户主动暂停导致的中止：将当前项重置为待处理，等待"继续"重新处理
+        // 用户主动暂停导致的中止
         if (e.name === 'AbortError' && ocrPausedByUser) {
           item.status = 'pending';
           item.error = null;
           processing--;
           renderOCRQueue();
           updateOCRProgress();
-          // 停止循环，由"继续"按钮重新启动 startBatchProcess
           ocrRunning = false;
           if (btnStart) btnStart.disabled = false;
-          if (btnPause) { btnPause.disabled = false; /* 保持"继续"文字 */ }
+          if (btnPause) { btnPause.disabled = false; }
           updateOCRStatus('ok', '已暂停，点击"继续"恢复');
+          return;
+        }
+        // OCR 服务不可达 → 立即停止
+        const msg = e.message || '';
+        if (msg.includes('503') || msg.includes('服务不可用') || msg.includes('OCR') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+          ocrRunning = false;
+          if (btnStart) btnStart.disabled = false;
+          if (btnPause) { btnPause.disabled = true; btnPause.textContent = '⏸ 暂停'; }
+          updateOCRStatus('error', 'OCR 服务不可用');
+          item.status = 'pending';
+          item.error = null;
+          processing--;
+          renderOCRQueue();
+          updateOCRProgress();
+          alert('OCR 服务不可用，批处理已暂停。\n请确认 OCR 服务运行正常后点击"开始处理"继续。');
           return;
         }
         // 识别失败：仅保存本地错误记录（不推送到 MySQL）

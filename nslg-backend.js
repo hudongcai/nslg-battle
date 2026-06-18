@@ -97,6 +97,55 @@ async function initDB() {
     pool = mysql.createPool(dbConfig);
     const [rows] = await pool.query('SELECT 1');
     console.log('✅ MySQL 连接成功');
+    // 确保星标配置表存在
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS star_box_configs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id INT NOT NULL,
+        image_width INT NOT NULL DEFAULT 0,
+        image_height INT NOT NULL DEFAULT 0,
+        boxes_json LONGTEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_project (project_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    // 确保通用标注配置表存在
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS label_configs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id BIGINT NOT NULL,
+        image_width INT NOT NULL DEFAULT 0,
+        image_height INT NOT NULL DEFAULT 0,
+        categories_json LONGTEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_project (project_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    // 兼容旧 INT 列
+    await pool.query(`ALTER TABLE label_configs MODIFY COLUMN project_id BIGINT NOT NULL`).catch(()=>{});
+    // 清理历史 OCR 噪音数据
+    const [r1] = await pool.query(
+      `UPDATE battle_records SET left_alliance = '' WHERE left_alliance = '...' OR CHAR_LENGTH(left_alliance) <= 1`
+    );
+    const [r2] = await pool.query(
+      `UPDATE battle_records SET right_alliance = '' WHERE right_alliance = '...' OR CHAR_LENGTH(right_alliance) <= 1`
+    );
+    if (r1.affectedRows > 0 || r2.affectedRows > 0) {
+      console.log(`🧹 清理噪音: left ${r1.affectedRows}, right ${r2.affectedRows}`);
+    }
+    // 确保全局标注配置存在（project_id=0，所有项目自动回退使用）
+    const [globalCfg] = await pool.query('SELECT id FROM label_configs WHERE project_id = 0');
+    if (globalCfg.length === 0) {
+      // 从已有配置中任选一份复制到全局
+      await pool.query(`
+        INSERT IGNORE INTO label_configs (project_id, image_width, image_height, categories_json)
+        SELECT 0, image_width, image_height, categories_json
+        FROM label_configs WHERE project_id IN (1, 2) LIMIT 1
+      `);
+      console.log('📐 全局标注配置已创建 (project_id=0)');
+    }
   } catch (err) {
     console.error('❌ MySQL 连接失败:', err.message);
     process.exit(1);
@@ -642,16 +691,22 @@ app.get('/api/battles', async (req, res) => {
         right_tactics: r.right_tactics,
         left_general_1: r.left_general_1, left_general_2: r.left_general_2, left_general_3: r.left_general_3,
         right_general_1: r.right_general_1, right_general_2: r.right_general_2, right_general_3: r.right_general_3,
-        left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
-        left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
-        left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
-        right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
-        right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
-        right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
+        left_tactic_1_1: r.left_tactic_1_1, left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
+        left_tactic_2_1: r.left_tactic_2_1, left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
+        left_tactic_3_1: r.left_tactic_3_1, left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
+        right_tactic_1_1: r.right_tactic_1_1, right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
+        right_tactic_2_1: r.right_tactic_2_1, right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
+        right_tactic_3_1: r.right_tactic_3_1, right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
         left_formation: r.left_formation,
         right_formation: r.right_formation,
         left_alliance: r.left_alliance,
         right_alliance: r.right_alliance,
+        left_general_1_stars: r.left_general_1_stars,
+        left_general_2_stars: r.left_general_2_stars,
+        left_general_3_stars: r.left_general_3_stars,
+        right_general_1_stars: r.right_general_1_stars,
+        right_general_2_stars: r.right_general_2_stars,
+        right_general_3_stars: r.right_general_3_stars,
         created_at: r.created_at,
         updated_at: r.updated_at
       }))
@@ -661,7 +716,7 @@ app.get('/api/battles', async (req, res) => {
   }
 });
 
-app.post('/api/battles', requireActiveUser, async (req, res) => {
+app.post('/api/battles', globalUserCheck, async (req, res) => {
   try {
     const body = req.body;
     const projectId = body.projectId;
@@ -684,6 +739,12 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
     const right_alliance  = body.right_alliance  ?? body.rightAlliance;
     const left_loss_rate  = body.left_loss_rate  ?? body.leftLossRate  ?? null;
     const right_loss_rate = body.right_loss_rate ?? body.rightLossRate ?? null;
+    const left_general_1_stars  = body.left_general_1_stars  ?? body.leftGeneral1Stars  ?? 0;
+    const left_general_2_stars  = body.left_general_2_stars  ?? body.leftGeneral2Stars  ?? 0;
+    const left_general_3_stars  = body.left_general_3_stars  ?? body.leftGeneral3Stars  ?? 0;
+    const right_general_1_stars = body.right_general_1_stars ?? body.rightGeneral1Stars ?? 0;
+    const right_general_2_stars = body.right_general_2_stars ?? body.rightGeneral2Stars ?? 0;
+    const right_general_3_stars = body.right_general_3_stars ?? body.rightGeneral3Stars ?? 0;
 
     const now = new Date();
 
@@ -746,17 +807,21 @@ app.post('/api/battles', requireActiveUser, async (req, res) => {
       'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_generals, right_generals, ' +
       'left_tactics, right_tactics, left_formation, right_formation, left_alliance, right_alliance, ' +
       'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
-      'left_tactic_1_2, left_tactic_1_3, left_tactic_2_2, left_tactic_2_3, left_tactic_3_2, left_tactic_3_3, ' +
-      'right_tactic_1_2, right_tactic_1_3, right_tactic_2_2, right_tactic_2_3, right_tactic_3_2, right_tactic_3_3, ' +
+      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
+      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
+      'left_general_1_stars, left_general_2_stars, left_general_3_stars, ' +
+      'right_general_1_stars, right_general_2_stars, right_general_3_stars, ' +
       'created_by, status, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [projectId, attacker_name, enemy_name, result, battle_date, description,
        left_loss, right_loss, left_total, right_total, left_loss_rate ?? null, right_loss_rate ?? null,
        left_generals_str, right_generals_str,
        left_tactics_str, right_tactics_str, left_formation, right_formation, left_alliance, right_alliance,
        f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
-       f(lt,1), f(lt,2), f(lt,4), f(lt,5), f(lt,7), f(lt,8),
-       f(rt,1), f(rt,2), f(rt,4), f(rt,5), f(rt,7), f(rt,8),
+       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
+       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
+       left_general_1_stars, left_general_2_stars, left_general_3_stars,
+       right_general_1_stars, right_general_2_stars, right_general_3_stars,
        1, 1, now, now]
     );
     
@@ -850,12 +915,12 @@ app.put('/api/battles/:id', async (req, res) => {
       'left_formation = ?, right_formation = ?, ' +
       'left_general_1 = ?, left_general_2 = ?, left_general_3 = ?, ' +
       'right_general_1 = ?, right_general_2 = ?, right_general_3 = ?, ' +
-      'left_tactic_1_2 = ?, left_tactic_1_3 = ?, ' +
-      'left_tactic_2_2 = ?, left_tactic_2_3 = ?, ' +
-      'left_tactic_3_2 = ?, left_tactic_3_3 = ?, ' +
-      'right_tactic_1_2 = ?, right_tactic_1_3 = ?, ' +
-      'right_tactic_2_2 = ?, right_tactic_2_3 = ?, ' +
-      'right_tactic_3_2 = ?, right_tactic_3_3 = ?, ' +
+      'left_tactic_1_1 = ?, left_tactic_1_2 = ?, left_tactic_1_3 = ?, ' +
+      'left_tactic_2_1 = ?, left_tactic_2_2 = ?, left_tactic_2_3 = ?, ' +
+      'left_tactic_3_1 = ?, left_tactic_3_2 = ?, left_tactic_3_3 = ?, ' +
+      'right_tactic_1_1 = ?, right_tactic_1_2 = ?, right_tactic_1_3 = ?, ' +
+      'right_tactic_2_1 = ?, right_tactic_2_2 = ?, right_tactic_2_3 = ?, ' +
+      'right_tactic_3_1 = ?, right_tactic_3_2 = ?, right_tactic_3_3 = ?, ' +
       'updated_at = ? WHERE id = ?',
       [attacker_name, enemy_name, result, battle_date, description,
        left_alliance || '', right_alliance || '',
@@ -864,8 +929,8 @@ app.put('/api/battles/:id', async (req, res) => {
        left_generals_str, right_generals_str, left_tactics_str, right_tactics_str,
        left_formation, right_formation,
        f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
-       f(lt,1), f(lt,2), f(lt,4), f(lt,5), f(lt,7), f(lt,8),
-       f(rt,1), f(rt,2), f(rt,4), f(rt,5), f(rt,7), f(rt,8),
+       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
+       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
        now, id]
     );
 
@@ -1025,12 +1090,14 @@ const PADDLE_URL  = 'http://127.0.0.1:8003/ocr';
 // PaddleOCR / RapidOCR 本地服务路由
 app.post('/api/ocr-paddle', requireActiveUser, async (req, res) => {
   try {
-    const { image } = req.body;
+    const { image, labelConfig } = req.body;
     if (!image) return res.status(400).json({ ok: false, error: '缺少 image 参数' });
+    const body = { image };
+    if (labelConfig) body.labelConfig = labelConfig;
     const resp = await fetch(PADDLE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     });
     if (!resp.ok) return res.status(502).json({ ok: false, error: `OCR服务异常: ${resp.status}` });
@@ -1068,7 +1135,7 @@ const OCR_MODEL = process.env.DOUBAO_MODEL || 'ep-m-20260426183050-krmx7';
 
 app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
   try {
-    const { image, projectId, imageName, battleDate: clientDate } = req.body;
+    const { image, projectId, imageName, battleDate: clientDate, labelConfig } = req.body;
     if (!image) return res.json({ code: 400, message: '缺少图片数据' });
 
     // 1. 积分检查
@@ -1083,15 +1150,24 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
     // 2. 优先 PaddleOCR
     let record = null;
     try {
+      const body = { image: cleanImage };
+      if (labelConfig) body.labelConfig = labelConfig;
       const paddleResp = await fetch(PADDLE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: cleanImage }),
-        signal: AbortSignal.timeout(60000),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120000),
       });
       if (paddleResp.ok) {
         const paddleData = await paddleResp.json();
-        if (paddleData.ok) record = mapPaddleResult(paddleData);
+        console.log('[DEBUG] PaddleOCR raw stars:', JSON.stringify({ls: paddleData.leftStars, rs: paddleData.rightStars}));
+        if (paddleData.ok) {
+          record = mapPaddleResult(paddleData);
+          console.log('[DEBUG] mapPaddleResult stars:', JSON.stringify({
+            l1s: record.leftGeneral1Stars, l2s: record.leftGeneral2Stars, l3s: record.leftGeneral3Stars,
+            r1s: record.rightGeneral1Stars, r2s: record.rightGeneral2Stars, r3s: record.rightGeneral3Stars,
+          }));
+        }
       }
     } catch (_) { /* PaddleOCR 不可用 */ }
 
@@ -1123,12 +1199,14 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
       fv(record.leftAlliance),   fv(record.rightAlliance),
       fv(record.leftGeneral1),   fv(record.leftGeneral2),   fv(record.leftGeneral3),
       fv(record.rightGeneral1),  fv(record.rightGeneral2),  fv(record.rightGeneral3),
-      fv(record.leftTactic1_2),  fv(record.leftTactic1_3),
-      fv(record.leftTactic2_2),  fv(record.leftTactic2_3),
-      fv(record.leftTactic3_2),  fv(record.leftTactic3_3),
-      fv(record.rightTactic1_2), fv(record.rightTactic1_3),
-      fv(record.rightTactic2_2), fv(record.rightTactic2_3),
-      fv(record.rightTactic3_2), fv(record.rightTactic3_3),
+      fv(record.leftTactic1_1),  fv(record.leftTactic1_2),  fv(record.leftTactic1_3),
+      fv(record.leftTactic2_1),  fv(record.leftTactic2_2),  fv(record.leftTactic2_3),
+      fv(record.leftTactic3_1),  fv(record.leftTactic3_2),  fv(record.leftTactic3_3),
+      fv(record.rightTactic1_1), fv(record.rightTactic1_2), fv(record.rightTactic1_3),
+      fv(record.rightTactic2_1), fv(record.rightTactic2_2), fv(record.rightTactic2_3),
+      fv(record.rightTactic3_1), fv(record.rightTactic3_2), fv(record.rightTactic3_3),
+      record.leftGeneral1Stars  ?? 0, record.leftGeneral2Stars  ?? 0, record.leftGeneral3Stars  ?? 0,
+      record.rightGeneral1Stars ?? 0, record.rightGeneral2Stars ?? 0, record.rightGeneral3Stars ?? 0,
       userId, 1, now, now,
     ];
 
@@ -1139,12 +1217,14 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
       'left_generals, right_generals, left_tactics, right_tactics, ' +
       'left_formation, right_formation, left_alliance, right_alliance, ' +
       'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
-      'left_tactic_1_2, left_tactic_1_3, ' +
-      'left_tactic_2_2, left_tactic_2_3, ' +
-      'left_tactic_3_2, left_tactic_3_3, ' +
-      'right_tactic_1_2, right_tactic_1_3, ' +
-      'right_tactic_2_2, right_tactic_2_3, ' +
-      'right_tactic_3_2, right_tactic_3_3, ' +
+      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, ' +
+      'left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, ' +
+      'left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
+      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, ' +
+      'right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, ' +
+      'right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
+      'left_general_1_stars, left_general_2_stars, left_general_3_stars, ' +
+      'right_general_1_stars, right_general_2_stars, right_general_3_stars, ' +
       'created_by, status, created_at, updated_at) ' +
       'VALUES (' + insertParams.map(() => '?').join(',') + ')',
       insertParams
@@ -1259,6 +1339,56 @@ app.get('/api/gallery/imagenames', requireActiveUser, async (req, res) => {
   }
 });
 
+// ========== 战报原图直出（二进制，支持 <img> 懒加载） ==========
+app.get('/api/gallery/image/:battleId', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT image_data FROM battle_gallery WHERE battle_id = ? AND status = 1 LIMIT 1',
+      [req.params.battleId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 404, message: '无图片' });
+    }
+    let raw = rows[0].image_data;
+    if (!raw) return res.status(404).json({ code: 404, message: '图片数据为空' });
+
+    // image_data 存储的是 base64 字符串（可能带 data:image/...;base64, 前缀）
+    let mime = 'image/png';
+    if (typeof raw === 'string') {
+      const prefixMatch = raw.match(/^data:(image\/[\w+-]+);base64,/);
+      if (prefixMatch) {
+        mime = prefixMatch[1];
+        raw = raw.slice(prefixMatch[0].length);
+      }
+    } else {
+      // 已经是二进制（Buffer）
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.send(raw);
+    }
+
+    const buf = Buffer.from(raw, 'base64');
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(buf);
+  } catch (err) {
+    res.status(500).json({ code: 500, message: err.message });
+  }
+});
+
+// 检查战报是否有原图（供前端表格批量判断，避免每行单独查询）
+app.get('/api/gallery/has-image/:battleId', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT 1 FROM battle_gallery WHERE battle_id = ? AND status = 1 LIMIT 1',
+      [req.params.battleId]
+    );
+    res.json({ code: 200, data: { hasImage: rows.length > 0 } });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // ========== 截图工具安装包下载 ==========
 const path = require('path');
 const fs   = require('fs');
@@ -1273,6 +1403,113 @@ app.get('/api/download/screenshot-tool', (req, res) => {
       res.status(500).json({ code: 500, message: '下载失败：' + err.message });
     }
   });
+});
+
+// ========== 星标框选配置 API ==========
+// 保存星标框选配置（按项目）
+app.post('/api/star-boxes', requireActiveUser, async (req, res) => {
+  try {
+    const { projectId, imageWidth, imageHeight, boxes } = req.body;
+    if (!projectId || !boxes || !Array.isArray(boxes) || boxes.length !== 6) {
+      return res.json({ code: 400, message: '参数错误：需要 projectId 和 6 个框选区域' });
+    }
+    const boxesJson = JSON.stringify(boxes);
+    await pool.query(
+      `INSERT INTO star_box_configs (project_id, image_width, image_height, boxes_json)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE image_width=VALUES(image_width), image_height=VALUES(image_height), boxes_json=VALUES(boxes_json), updated_at=NOW()`,
+      [projectId, imageWidth || 0, imageHeight || 0, boxesJson]
+    );
+    res.json({ code: 200, message: '保存成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 获取星标框选配置（按项目）
+app.get('/api/star-boxes/:projectId', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM star_box_configs WHERE project_id = ? LIMIT 1',
+      [req.params.projectId]
+    );
+    if (rows.length === 0) {
+      return res.json({ code: 200, data: null });
+    }
+    const row = rows[0];
+    res.json({
+      code: 200,
+      data: {
+        id: row.id,
+        projectId: row.project_id,
+        imageWidth: row.image_width,
+        imageHeight: row.image_height,
+        boxes: JSON.parse(row.boxes_json || '[]'),
+        updatedAt: row.updated_at
+      }
+    });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// ========== 通用标注配置 API（扩展版，覆盖所有字段类型）==========
+// 保存标注配置（按项目，global=true 时存为全局配置 project_id=0）
+app.post('/api/label-config', requireActiveUser, async (req, res) => {
+  try {
+    const { projectId, imageWidth, imageHeight, categories, global } = req.body;
+    if (!categories || typeof categories !== 'object') {
+      return res.json({ code: 400, message: '参数错误：需要 categories 对象' });
+    }
+    const pid = global ? 0 : (projectId || 0);
+    if (!pid && !global) {
+      return res.json({ code: 400, message: '参数错误：需要 projectId 或 global=true' });
+    }
+    const categoriesJson = JSON.stringify(categories);
+    await pool.query(
+      `INSERT INTO label_configs (project_id, image_width, image_height, categories_json)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE image_width=VALUES(image_width), image_height=VALUES(image_height), categories_json=VALUES(categories_json), updated_at=NOW()`,
+      [pid, imageWidth || 0, imageHeight || 0, categoriesJson]
+    );
+    res.json({ code: 200, message: '保存成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 获取标注配置（按项目，无则自动回退全局配置）
+app.get('/api/label-config/:projectId', async (req, res) => {
+  try {
+    let [rows] = await pool.query(
+      'SELECT * FROM label_configs WHERE project_id = ? LIMIT 1',
+      [req.params.projectId]
+    );
+    // 没有项目专属配置 → 回退全局配置 (project_id=0)
+    if (rows.length === 0) {
+      [rows] = await pool.query(
+        'SELECT * FROM label_configs WHERE project_id = 0 LIMIT 1'
+      );
+    }
+    if (rows.length === 0) {
+      return res.json({ code: 200, data: null });
+    }
+    const row = rows[0];
+    res.json({
+      code: 200,
+      data: {
+        id: row.id,
+        projectId: row.project_id,
+        imageWidth: row.image_width,
+        imageHeight: row.image_height,
+        categories: JSON.parse(row.categories_json || '{}'),
+        updatedAt: row.updated_at,
+        isGlobal: row.project_id === 0
+      }
+    });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
 });
 
 app.listen(PORT, async () => {

@@ -54,9 +54,9 @@ function setFlat(rec, side, generals, tactics) {
   const gp = side === 'left' ? 'leftGeneral' : 'rightGeneral';
   const tp = side === 'left' ? 'leftTactic'  : 'rightTactic';
   rec[gp+'1'] = generals[0] || ''; rec[gp+'2'] = generals[1] || ''; rec[gp+'3'] = generals[2] || '';
-  rec[tp+'1_2'] = tactics[1] || ''; rec[tp+'1_3'] = tactics[2] || '';
-  rec[tp+'2_2'] = tactics[4] || ''; rec[tp+'2_3'] = tactics[5] || '';
-  rec[tp+'3_2'] = tactics[7] || ''; rec[tp+'3_3'] = tactics[8] || '';
+  rec[tp+'1_1'] = tactics[0] || ''; rec[tp+'1_2'] = tactics[1] || ''; rec[tp+'1_3'] = tactics[2] || '';
+  rec[tp+'2_1'] = tactics[3] || ''; rec[tp+'2_2'] = tactics[4] || ''; rec[tp+'2_3'] = tactics[5] || '';
+  rec[tp+'3_1'] = tactics[6] || ''; rec[tp+'3_2'] = tactics[7] || ''; rec[tp+'3_3'] = tactics[8] || '';
 }
 
 // ─── 数据库纠错 ────────────────────────────────────────────────────────────
@@ -92,29 +92,32 @@ function parseOCRResponse(text) {
     result: '',
     leftPlayer: '', leftAlliance: '', leftGenerals: [], leftTactics: [],
     leftFormation: '', leftLoss: null, leftTotal: null,
+    leftStars: [0, 0, 0],
     rightPlayer: '', rightAlliance: '', rightGenerals: [], rightTactics: [],
     rightFormation: '', rightLoss: null, rightTotal: null,
+    rightStars: [0, 0, 0],
   };
   const rawText = text;
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   let side = '';
-  let generalMap = {}, tacticsMap = {}, battleDate = '';
+  let generalMap = {}, tacticsMap = {}, starsMap = {}, battleDate = '';
 
   function flush(sideKey) {
     const indices = Object.keys(generalMap).map(Number).sort((a, b) => a - b);
     if (indices.length > 0) {
-      const gens = [], tacs = [];
+      const gens = [], tacs = [], stars = [];
       indices.forEach(i => {
         const g = generalMap[i];
         if (g) gens.push(g);
         let heroTacs = tacticsMap[i] || [];
         if (g && g !== '未知' && heroTacs.length < 3) heroTacs = autoFillHeroSkill(g, heroTacs);
         tacs.push(...heroTacs);
+        stars.push(starsMap[i] != null ? starsMap[i] : 0);
       });
-      if (sideKey === 'left')  { record.leftGenerals  = gens; record.leftTactics  = tacs; }
-      else if (sideKey === 'right') { record.rightGenerals = gens; record.rightTactics = tacs; }
+      if (sideKey === 'left')  { record.leftGenerals  = gens; record.leftTactics  = tacs; record.leftStars = stars; }
+      else if (sideKey === 'right') { record.rightGenerals = gens; record.rightTactics = tacs; record.rightStars = stars; }
     }
-    generalMap = {}; tacticsMap = {};
+    generalMap = {}; tacticsMap = {}; starsMap = {};
   }
 
   for (const line of lines) {
@@ -129,6 +132,8 @@ function parseOCRResponse(text) {
     const key = line.substring(0, ci).trim();
     const val = line.substring(ci + 1).trim();
 
+    const sm = key.match(/星级\s*(\d+)/);
+    if (sm) { starsMap[parseInt(sm[1])] = parseInt(val) || 0; continue; }
     const gm = key.match(/武将\s*(\d+)/);
     if (gm) { generalMap[parseInt(gm[1])] = val; continue; }
     const tm = key.match(/战法\s*(\d+)/);
@@ -204,6 +209,16 @@ function parseOCRResponse(text) {
   }
 
   record.battleDate = battleDate || '';
+  // 星级（红度）扁平化
+  const ls = record.leftStars  || [0, 0, 0];
+  const rs = record.rightStars || [0, 0, 0];
+  record.leftGeneral1Stars  = ls[0] ?? 0;
+  record.leftGeneral2Stars  = ls[1] ?? 0;
+  record.leftGeneral3Stars  = ls[2] ?? 0;
+  record.rightGeneral1Stars = rs[0] ?? 0;
+  record.rightGeneral2Stars = rs[1] ?? 0;
+  record.rightGeneral3Stars = rs[2] ?? 0;
+  delete record.leftStars; delete record.rightStars;
   correctByDatabase(record);
   setFlat(record,'left',  record.leftGenerals||[],  record.leftTactics||[]);
   setFlat(record,'right', record.rightGenerals||[], record.rightTactics||[]);
@@ -241,6 +256,15 @@ function mapPaddleResult(data) {
   setFlat(rec,'right', rec.rightGenerals, rec.rightTactics);
   delete rec.leftGenerals; delete rec.rightGenerals;
   delete rec.leftTactics;  delete rec.rightTactics;
+  // 星级（红度）
+  const ls = data.leftStars  || [0, 0, 0];
+  const rs = data.rightStars || [0, 0, 0];
+  rec.leftGeneral1Stars  = ls[0] ?? 0;
+  rec.leftGeneral2Stars  = ls[1] ?? 0;
+  rec.leftGeneral3Stars  = ls[2] ?? 0;
+  rec.rightGeneral1Stars = rs[0] ?? 0;
+  rec.rightGeneral2Stars = rs[1] ?? 0;
+  rec.rightGeneral3Stars = rs[2] ?? 0;
   return rec;
 }
 
@@ -254,7 +278,7 @@ const OCR_PROMPT = `你是三国谋定天下游戏战报识别专家。请仔细
   ② 同盟名称区：位于玩家区下方（中间有空白），字体较小/颜色不同，**只显示同盟名，没有玩家名**
   ③ 阵型标签：显示阵型名称（如"方圆阵"、"雁行阵"、"鱼鳞阵"、"锋矢阵"、"箕形阵"等）
   **极其重要**：玩家名中若出现"丨"（如"风云丨天下"），这只是玩家的取名风格，"丨"左侧的文字是玩家名的一部分，**严禁**把"丨"左侧的文字当作同盟名填入同盟字段。同盟字段**只能**从画面上玩家名下方的同盟名称区域读取
-- 每侧中部：三位武将的头像卡片横向排列，头像下方有武将名字
+- 每侧中部：三位武将的头像卡片横向排列，头像下方有武将名字，头像上方/角上通常有红色星标（★或红心）表示武将进阶次数（红度/星级）
 - 每侧底部：三列战法框，每列对应上方的武将，每个框内列出该武将的战法名称（战法名旁边可能有"×数字"表示叠加层数，忽略这些数字，只取战法名称）
 - 每侧顶部数字区：显示"战损:XXXX"（已损失兵力）和总兵力数字（通常格式为"XXXX/XXXXX"，斜线前为战损、斜线后为总兵）
 
@@ -266,7 +290,8 @@ const OCR_PROMPT = `你是三国谋定天下游戏战报识别专家。请仔细
 5. 武将名：读取三个头像下方的名字，从左到右为武将1、2、3。必须输出武将1、武将2、武将3三行；若某位名字确实无法辨认，填"未知"。**武将名只能是纯汉字（通常2-4个字），严禁包含任何数字**；头像旁显示的数字（等级、兵力层数等）是装饰信息，绝对不属于武将名
 6. 战法：每位武将**恰好有3个战法**（第1个为武将自带战法，第2、3个为装备战法）。武将1/2/3各自的战法须独立输出（战法1、战法2、战法3三行）；请逐格仔细读取，确保每位武将输出**恰好3个**战法名，用英文逗号分隔。**识别策略：战法文字即使模糊，也必须尽力辨认并输出最接近的汉字；只有当该格完全没有任何可见文字（空白格）时，才填"未知"**——绝对不允许因为"不确定"就放弃输出可见的战法名。注意："影本·XXXX"是一个完整战法名，必须用点号连接输出为"影本·XXXX"，**严禁**用逗号分隔写成"影本,XXXX"（这会导致误判！）。忽略"×数字"叠层标记。**严禁**将武将羁绊效果名（如"缘分"、"羁绊"、"义结金兰"等武将关系标签）输出为战法名，这些标签出现在武将头像卡内部，不是战法框的内容。**重要：同一武将在不同战报中的战法可能完全不同**——你必须逐格读取本张截图中实际显示的战法名称，绝对不得根据武将"通常使用"的战法进行替换或猜测
 7. 结果："胜"或"败"或"平"，从画面中央大字判断（左侧视角：中央显示"胜"则左侧=胜）
-8. 无法识别的文字填"未知"，数字填0
+8. 红度（星级）：每位武将头像上方/角上的红色星标（★或红心）数量，代表武将进阶次数。逐个武将读取星标数量，输出为整数（0-5）。必须输出星级1、星级2、星级3三行，分别对应武将1、2、3。无法识别时填0
+9. 无法识别的文字填"未知"，数字填0
 
 【输出格式（严格按此格式，不要增减字段）】
 【左侧】
@@ -277,10 +302,13 @@ const OCR_PROMPT = `你是三国谋定天下游戏战报识别专家。请仔细
 总兵：数字
 武将1：武将名
 战法1：战法A,战法B,战法C
+星级1：数字
 武将2：武将名
 战法2：战法D,战法E,战法F
+星级2：数字
 武将3：武将名
 战法3：战法G,战法H,战法I
+星级3：数字
 【右侧】
 同盟：xxx
 玩家：xxx
@@ -289,10 +317,13 @@ const OCR_PROMPT = `你是三国谋定天下游戏战报识别专家。请仔细
 总兵：数字
 武将1：武将名
 战法1：战法A,战法B,战法C
+星级1：数字
 武将2：武将名
 战法2：战法D,战法E,战法F
+星级2：数字
 武将3：武将名
 战法3：战法G,战法H,战法I
+星级3：数字
 【结果】
 胜负：胜或败或平
 【日期】
@@ -313,12 +344,15 @@ const OCR_PROMPT = `你是三国谋定天下游戏战报识别专家。请仔细
 战法2：D,E,F
 战法3：小乔         ← 严禁！武将名出现在战法行
 战法3：G,H,I
-✅ 正确输出（严格交替，武将N在前，战法N在后）：
+✅ 正确输出（严格交替，武将N在前，战法N在中，星级N在后）：
 武将1：陆逊
 战法1：A,B,C
+星级1：4
 武将2：孙权
 战法2：D,E,F
+星级2：2
 武将3：小乔
-战法3：G,H,I`;
+战法3：G,H,I
+星级3：1`;
 
 module.exports = { parseOCRResponse, mapPaddleResult, setFlat, correctByDatabase, OCR_PROMPT };
