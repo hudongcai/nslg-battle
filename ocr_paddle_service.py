@@ -410,8 +410,6 @@ def extract_player_alliance(blocks, side, img_h):
         else:
             if len(top_texts) >= 1: player   = top_texts[-1]['text']
             if len(top_texts) >= 2: alliance = top_texts[0]['text']
-    # 清理 OCR 将相邻文字拼入同一块时产生的 | 分隔符，取第一段
-    player = player.split('|')[0].strip()
     return player, alliance
 
 
