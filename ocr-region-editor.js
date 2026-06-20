@@ -933,6 +933,41 @@ function leDeleteScheme() {
   _setStatus(`已删除方案"${name}"`);
 }
 
+// ── 从数据库已绑定配置还原方案 ───────────────────────────────────────
+async function leRestoreFromDB() {
+  try {
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+    // 尝试当前项目，没有则用全局(0)
+    const pid = _leProjectId || 0;
+    const res = await fetch(`${base}/label-config/${pid}`);
+    const json = await res.json();
+    if (json.code !== 200 || !json.data?.categories) {
+      _setStatus('❌ 数据库中未找到配置'); return;
+    }
+    const { imageWidth, imageHeight, categories, isGlobal } = json.data;
+    const schemeName = isGlobal ? '数据库全局配置' : `数据库项目${pid}配置`;
+    // 将 categories 结构转换为 boxes 数组（与 LE_BOX_DEFS 一一对应）
+    const boxes = LE_BOX_DEFS.map(def => {
+      const cat = categories[def.cat];
+      const box = cat?.boxes?.find(b => b.key === def.key);
+      if (box) return { rx1: box.rx1, ry1: box.ry1, rx2: box.rx2, ry2: box.ry2 };
+      // 找不到则用默认值
+      const d = (LE_DEFAULTS[def.cat] || {})[def.key] || [0.1, 0.1, 0.3, 0.2];
+      return { rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
+    });
+    const names = _getSchemeNames();
+    if (names.includes(schemeName) && !confirm(`"${schemeName}"已存在，覆盖？`)) return;
+    _saveSchemeData(schemeName, { name: schemeName, imageB64: '', imageW: imageWidth || 0, imageH: imageHeight || 0, boxes });
+    if (!names.includes(schemeName)) { names.push(schemeName); _saveSchemeNames(names); }
+    _renderSchemeSelect();
+    const sel = document.getElementById('leSchemeSelect');
+    if (sel) sel.value = schemeName;
+    _setStatus(`✅ 已从数据库还原"${schemeName}"（${imageWidth}×${imageHeight}）`);
+  } catch (e) {
+    _setStatus('❌ 还原失败：' + e.message);
+  }
+}
+
 // ── 从系统默认坐标生成方案 ────────────────────────────────────────────
 function leCreateDefaultScheme() {
   const DEFAULT_NAME = '系统默认方案';
