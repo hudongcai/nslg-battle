@@ -1654,6 +1654,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
         <button onclick="leRunStars('both')" style="padding:5px 14px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:13px;">⭐ 六武将豆豆测试</button>
         <button onclick="leUploadRef()" style="padding:5px 14px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;">📁 上传参考图</button>
         <button onclick="leDeleteScheme()" style="padding:5px 10px;border-radius:6px;background:transparent;color:#e74c3c;border:1px solid #e74c3c;cursor:pointer;font-size:12px;" title="删除当前方案">🗑</button>
+        <button onclick="leCreateDefaultScheme()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="将系统内置默认坐标生成为可选方案">📋 系统默认</button>
         <button onclick="leExportSchemes()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="导出全部方案为JSON文件">📤 导出方案</button>
         <button onclick="leImportSchemes()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="从JSON文件导入方案">📥 导入方案</button>
         <input type="file" id="leFileInput" accept="image/*" style="display:none;" onchange="leOnFileSelected(this)">

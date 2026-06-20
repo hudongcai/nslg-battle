@@ -933,6 +933,26 @@ function leDeleteScheme() {
   _setStatus(`已删除方案"${name}"`);
 }
 
+// ── 从系统默认坐标生成方案 ────────────────────────────────────────────
+function leCreateDefaultScheme() {
+  const DEFAULT_NAME = '系统默认方案';
+  const names = _getSchemeNames();
+  if (names.includes(DEFAULT_NAME)) {
+    if (!confirm(`"${DEFAULT_NAME}"已存在，是否覆盖？`)) return;
+  }
+  const boxes = LE_BOX_DEFS.map(def => {
+    const d = (LE_DEFAULTS[def.cat] || {})[def.key] || [0.1, 0.1, 0.3, 0.2];
+    return { rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
+  });
+  const schemeData = { name: DEFAULT_NAME, imageB64: '', imageW: 0, imageH: 0, boxes };
+  _saveSchemeData(DEFAULT_NAME, schemeData);
+  if (!names.includes(DEFAULT_NAME)) { names.push(DEFAULT_NAME); _saveSchemeNames(names); }
+  _renderSchemeSelect();
+  const sel = document.getElementById('leSchemeSelect');
+  if (sel) sel.value = DEFAULT_NAME;
+  _setStatus(`✅ 已生成"${DEFAULT_NAME}"，可在下拉中选择`);
+}
+
 // ── 导出所有方案 ──────────────────────────────────────────────────────
 function leExportSchemes() {
   const names = _getSchemeNames();
