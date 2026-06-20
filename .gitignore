@@ -28,3 +28,44 @@ do-git-push.ps1
 # Cloudflare 隧道凭证（含私钥，禁止提交）
 migration/cloudflare_tunnel_credentials.json
 migration/cloudflare_config.yml
+
+# 调试产物（OCR/识别调试图片和脚本）
+debug_*.png
+debug_*.json
+test_*.png
+test_result*.json
+dot_template*.png
+dot_templates_out/
+extracted_dots/
+star-labeler.html
+
+# Python 运行时
+__pycache__/
+*.pyc
+
+# 临时分析脚本
+analyze_samples.py
+build_templates.py
+create_dot_templates.py
+debug_dots_region.py
+debug_ocr_positions.py
+test_dots.py
+extract_test_imgs.js
+
+# 工作目录
+screenshots/
+release/
+doudou/
+claude-hud/
+migration/
+everything-claude-code/
+
+# ECC 插件产物（不追踪）
+.claude/agents/
+.claude/commands/
+.claude/hooks/
+.claude/scripts/
+.claude/skills/
+.claude/.agents/
+.claude/AGENTS.md
+.claude/launch.json

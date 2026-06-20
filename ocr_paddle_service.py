@@ -1163,35 +1163,29 @@ def test_ocr(req: TestOcrRequest):
 
         def _best_hero(texts, label):
             # 生成候选：原始各文本 + 两两拼接 + 全部拼接（处理单字被切开的情况）
-            # 预处理：含数字的文本直接作为噪音去除
-            texts = [t for t in texts if not re.search(r'\d', t)]
-            texts = [t for t in texts if t]
+            # 预处理：先去掉前导数字（如"50 司马懿"→"司马懿"），再过滤仍含数字的噪音
+            texts = [re.sub(r'^\d+\s*', '', t).strip() for t in texts]
+            texts = [t for t in texts if t and not re.search(r'\d', t)]
             candidates = list(texts)
-            cleaned_parts = [re.sub(r'^\d+', '', t).strip() for t in texts]
-            if len(cleaned_parts) > 1:
-                for i in range(len(cleaned_parts) - 1):
-                    pair = cleaned_parts[i] + cleaned_parts[i + 1]
+            if len(texts) > 1:
+                for i in range(len(texts) - 1):
+                    pair = texts[i] + texts[i + 1]
                     if pair not in candidates:
                         candidates.append(pair)
-                full = ''.join(cleaned_parts)
+                full = ''.join(texts)
                 if full not in candidates:
                     candidates.append(full)
             for t in candidates:
-                cleaned = re.sub(r'^\d+', '', t).strip()
-                if len(cleaned) < 2 or len(cleaned) > 5:
+                if len(t) < 2 or len(t) > 5:
                     continue
-                # 含数字的候选作为噪音跳过
-                if re.search(r'\d', cleaned):
-                    log(f'[{label}] ⏭️ 跳过噪音(含数字): "{cleaned}"')
-                    continue
-                fixed = _fix_hero_chars(cleaned)
+                fixed = _fix_hero_chars(t)
                 name, dist = best_match(fixed, h_names)
                 threshold = 1  # 允许截断/形近字（如"葛亮"→"诸葛亮"）
                 if dist <= threshold:
-                    log(f'[{label}] ✅ "{cleaned}" → 字典匹配 "{name}" (距离{dist})')
+                    log(f'[{label}] ✅ "{t}" → 字典匹配 "{name}" (距离{dist})')
                     return name
                 else:
-                    log(f'[{label}] ❌ "{cleaned}" → 最近 "{name}" 距离{dist} (超阈值)')
+                    log(f'[{label}] ❌ "{t}" → 最近 "{name}" 距离{dist} (超阈值)')
             return ''
 
         def _best_tactic(texts, label):

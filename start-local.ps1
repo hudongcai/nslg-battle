@@ -2,11 +2,13 @@
 param(
     [switch]$FrontendOnly,
     [switch]$BackendOnly,
-    [switch]$NoTunnel
+    [switch]$NoTunnel,
+    [switch]$NoScreenshot
 )
 
-$projectDir = "E:\nslg-battle4"
-$pythonPath = "C:\Users\Administrator\.workbuddy\binaries\python\versions\3.13.12\python.exe"
+$projectDir = "C:\nslg-battle"
+$screenshotDir = "C:\AutoScreenshotTool2"
+$pythonPath = "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe"
 $cloudflaredConfig = "C:\Users\Administrator\.cloudflared\config.yml"
 
 Set-Location $projectDir
@@ -26,7 +28,7 @@ function Stop-PortProcess($port) {
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  三谋战报系统 - 开发环境启动" -ForegroundColor Cyan
+Write-Host "  三谋战报系统 + 截图工具 - 启动" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -84,6 +86,18 @@ if (-not $FrontendOnly -and -not $NoTunnel) {
     }
 }
 
+# ── 4. AutoScreenshotTool2 ───────────────────
+if (-not $NoScreenshot) {
+    if (Test-Path $screenshotDir) {
+        Write-Host "[4/4] 启动 AutoScreenshotTool2..." -ForegroundColor Green
+        Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$screenshotDir'; & '$pythonPath' main.py --setup" -WindowStyle Normal
+        Start-Sleep -Seconds 2
+        Write-Host "[截图] OK  截图目录: $screenshotDir\screenshots" -ForegroundColor Green
+    } else {
+        Write-Host "[4/4] 跳过截图工具：目录不存在 ($screenshotDir)" -ForegroundColor DarkGray
+    }
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  访问地址" -ForegroundColor Cyan
@@ -91,9 +105,11 @@ if (-not $BackendOnly)  { Write-Host "  前端: http://localhost:8080" -Foregrou
 if (-not $FrontendOnly) { Write-Host "  后端: http://localhost:3000" -ForegroundColor White }
 if (-not $FrontendOnly -and -not $NoTunnel) {
                           Write-Host "  生产: https://api.zhenwu.fun/api" -ForegroundColor White }
+if (-not $NoScreenshot) { Write-Host "  截图: $screenshotDir\screenshots" -ForegroundColor White }
 Write-Host ""
 Write-Host "  参数说明:" -ForegroundColor DarkGray
-Write-Host "    -FrontendOnly  仅启动前端" -ForegroundColor DarkGray
-Write-Host "    -BackendOnly   仅启动后端+隧道" -ForegroundColor DarkGray
-Write-Host "    -NoTunnel      跳过 Cloudflare 隧道" -ForegroundColor DarkGray
+Write-Host "    -FrontendOnly   仅启动前端" -ForegroundColor DarkGray
+Write-Host "    -BackendOnly    仅启动后端+隧道" -ForegroundColor DarkGray
+Write-Host "    -NoTunnel       跳过 Cloudflare 隧道" -ForegroundColor DarkGray
+Write-Host "    -NoScreenshot   跳过 AutoScreenshotTool2" -ForegroundColor DarkGray
 Write-Host "========================================" -ForegroundColor Cyan
