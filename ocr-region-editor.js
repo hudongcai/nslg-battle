@@ -240,7 +240,7 @@ function leSaveConfig() {
     name = name.trim();
   }
   const schemeData = {
-    imageB64: _leCurrentImageB64,
+    imageB64: '',   // 不存入localStorage，避免超限；图片仅保留在内存
     imageW: _leImgW,
     imageH: _leImgH,
     boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
@@ -255,7 +255,7 @@ function leSaveConfig() {
     if (sel) sel.value = name;
     _setStatus(`✅ 方案"${name}"已保存`);
   } catch (e) {
-    _setStatus('❌ 保存失败（图片可能过大）: ' + e.message);
+    _setStatus('❌ 保存失败: ' + e.message);
   }
 }
 
@@ -272,20 +272,24 @@ function leNewScheme() {
     return;
   }
   const schemeData = {
-    imageB64: _leCurrentImageB64,
+    imageB64: '',   // 不存入localStorage，避免超限
     imageW: _leImgW,
     imageH: _leImgH,
     boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
     testAllianceSlots: _getTestAllianceSlots(),
     testPlayerNames: _leTestPlayerNames.slice(),
   };
-  _saveSchemeData(trimmedName, schemeData);
-  names.push(trimmedName);
-  _saveSchemeNames(names);
-  _renderSchemeSelect();
-  const sel = document.getElementById('leSchemeSelect');
-  if (sel) sel.value = trimmedName;
-  _setStatus(`✅ 已创建方案"${trimmedName}"`);
+  try {
+    _saveSchemeData(trimmedName, schemeData);
+    names.push(trimmedName);
+    _saveSchemeNames(names);
+    _renderSchemeSelect();
+    const sel = document.getElementById('leSchemeSelect');
+    if (sel) sel.value = trimmedName;
+    _setStatus(`✅ 已创建方案"${trimmedName}"`);
+  } catch (e) {
+    _setStatus('❌ 保存失败: ' + e.message);
+  }
 }
 
 // ── 绑定生效（将选中方案的坐标写入指定项目/全局的 label_config DB）──
