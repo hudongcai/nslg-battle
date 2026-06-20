@@ -568,7 +568,7 @@ document.addEventListener('click', function(e) {
       </div>
       <div style="overflow-x:auto;"><table id="dataTable"><thead><tr>
         <th style="width:32px;min-width:32px;padding:0;text-align:center;"><input type="checkbox" id="checkAll" onchange="tableCheckAll(this)" title="全选/取消" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></th><th>#</th><th>时间</th><th>结果</th>
-        <th>左玩家</th><th style="min-width:77px;">左同盟</th><th style="min-width:56px;">左武将</th><th style="min-width:28px;">左红度</th>
+        <th>左玩家</th><th style="min-width:77px;">左同盟</th><th style="min-width:56px;white-space:nowrap;">左武将<span data-gen-col="lgen" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="gen-fp-btn" onclick="openGeneralPanel('lgen',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="gen-fp-btn" onclick="openGeneralPanel('lgen',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th><th style="min-width:28px;">左红度</th>
         <th style="min-width:70px;white-space:nowrap;">左战法1<span data-tac-col="lt1" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt1',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt1',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">左战法2<span data-tac-col="lt2" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt2',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt2',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">左战法3<span data-tac-col="lt3" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt3',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt3',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
@@ -576,7 +576,7 @@ document.addEventListener('click', function(e) {
         <th id="th-leftLoss" onclick="toggleDataSort('leftLoss')" style="min-width:60px;cursor:pointer;">左战损<span class="sort-arrow">↕</span></th>
         <th id="th-leftTotal" onclick="toggleDataSort('leftTotal')" style="min-width:60px;cursor:pointer;">左总兵<span class="sort-arrow">↕</span></th>
         <th id="th-leftLossRate" onclick="toggleDataSort('leftLossRate')" style="min-width:60px;cursor:pointer;">左战损率<span class="sort-arrow">↕</span></th>
-        <th>右玩家</th><th style="min-width:77px;">右同盟</th><th style="min-width:56px;">右武将</th><th style="min-width:28px;">右红度</th>
+        <th>右玩家</th><th style="min-width:77px;">右同盟</th><th style="min-width:56px;white-space:nowrap;">右武将<span data-gen-col="rgen" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="gen-fp-btn" onclick="openGeneralPanel('rgen',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="gen-fp-btn" onclick="openGeneralPanel('rgen',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th><th style="min-width:28px;">右红度</th>
         <th style="min-width:70px;white-space:nowrap;">右战法1<span data-tac-col="rt1" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('rt1',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('rt1',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">右战法2<span data-tac-col="rt2" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('rt2',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('rt2',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">右战法3<span data-tac-col="rt3" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('rt3',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('rt3',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
@@ -869,7 +869,50 @@ function updateTacticFilterIndicators(){
 document.addEventListener('click',function(e){
   var panel=document.getElementById('tacticFilterPanel');
   if(panel&&panel.style.display!=='none'&&!panel.contains(e.target)&&!e.target.classList.contains('tac-fp-btn')){closeTacticPanel();}
+  var gpanel=document.getElementById('generalFilterPanel');
+  if(gpanel&&gpanel.style.display!=='none'&&!gpanel.contains(e.target)&&!e.target.classList.contains('gen-fp-btn')){closeGeneralPanel();}
 });
+window.generalColFilters={lgen:{sel:'',txt:''},rgen:{sel:'',txt:''}};
+var _genPanelCol=null;
+var _genSlotKeys={lgen:['leftGeneral1','leftGeneral2','leftGeneral3'],rgen:['rightGeneral1','rightGeneral2','rightGeneral3']};
+var _genColNames={lgen:'左武将',rgen:'右武将'};
+function openGeneralPanel(col,anchor,mode){
+  _genPanelCol=col;
+  var panel=document.getElementById('generalFilterPanel');if(!panel)return;
+  document.getElementById('generalPanelTitle').textContent=_genColNames[col]+' 筛选';
+  var keys=_genSlotKeys[col];
+  var vals=new Set();
+  for(var r of allRecords)for(var k of keys){var v=r[k];if(v&&v.trim())vals.add(v.trim());}
+  var sorted=[...vals].sort(function(a,b){return a.localeCompare(b,'zh');});
+  var f=window.generalColFilters[col];
+  var sel=document.getElementById('generalPanelSel');
+  sel.innerHTML='<option value="">全部</option><option value="__EMPTY__"'+(f.sel==='__EMPTY__'?' selected':'')+'>（空）</option>'+sorted.map(function(v){return'<option value="'+escHtml(v)+'"'+(v===f.sel?' selected':'')+'>'+escHtml(v)+'</option>';}).join('');
+  document.getElementById('generalPanelTxt').value=f.txt;
+  var rect=anchor.getBoundingClientRect();
+  panel.style.left=Math.max(4,Math.min(rect.left-60,window.innerWidth-210))+'px';
+  panel.style.top=(rect.bottom+6)+'px';
+  panel.style.display='block';
+  if(mode==='sel'){sel.focus();}else{document.getElementById('generalPanelTxt').focus();}
+}
+function applyGeneralFilter(){
+  if(!_genPanelCol)return;
+  window.generalColFilters[_genPanelCol].sel=document.getElementById('generalPanelSel').value;
+  window.generalColFilters[_genPanelCol].txt=document.getElementById('generalPanelTxt').value;
+  dataPage=1;renderDataTable();updateGeneralFilterIndicators();closeGeneralPanel();
+}
+function clearGeneralFilter(){
+  if(!_genPanelCol)return;
+  window.generalColFilters[_genPanelCol].sel='';window.generalColFilters[_genPanelCol].txt='';
+  document.getElementById('generalPanelSel').value='';document.getElementById('generalPanelTxt').value='';
+  dataPage=1;renderDataTable();updateGeneralFilterIndicators();closeGeneralPanel();
+}
+function closeGeneralPanel(){var p=document.getElementById('generalFilterPanel');if(p)p.style.display='none';}
+function updateGeneralFilterIndicators(){
+  ['lgen','rgen'].forEach(function(k){
+    var span=document.querySelector('[data-gen-col="'+k+'"]');
+    if(span){var active=!!(window.generalColFilters[k].sel||window.generalColFilters[k].txt);span.querySelectorAll('.gen-fp-btn').forEach(function(btn){btn.style.color=active?'var(--accent)':'var(--text3)';});}
+  });
+}
 async function showRecordImage(id){
   const record=await dbGet(id);
   if(!record){alert('记录不存在');return;}
@@ -1939,10 +1982,16 @@ function getFilteredData(){
     var f=slot.f,keys=slot.keys;
     if(f.sel||f.txt){var txt=f.txt.toLowerCase();data=data.filter(function(r){if(f.sel==='__EMPTY__'){return keys.some(function(k){var v=r[k]||'';return!v||v==='未知';});}return keys.some(function(k){var v=r[k]||'';if(!v||v==='未知')return false;if(f.sel&&v!==f.sel)return false;if(txt&&!v.toLowerCase().includes(txt))return false;return true;});});}
   });
+  var gcf=window.generalColFilters||{};
+  var gsk=window._genSlotKeys||{};
+  [{f:gcf.lgen||{sel:'',txt:''},keys:gsk.lgen||[]},{f:gcf.rgen||{sel:'',txt:''},keys:gsk.rgen||[]}].forEach(function(col){
+    var f=col.f,keys=col.keys;
+    if(f.sel||f.txt){var txt=f.txt.toLowerCase();data=data.filter(function(r){if(f.sel==='__EMPTY__'){return keys.some(function(k){var v=r[k]||'';return!v;});}return keys.some(function(k){var v=r[k]||'';if(!v)return false;if(f.sel&&v!==f.sel)return false;if(txt&&!v.toLowerCase().includes(txt))return false;return true;});});}
+  });
   data.sort(function(a,b){return(b.id||0)-(a.id||0);});
   return data;
 }
-function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(page.length===0){tbody.innerHTML='<tr><td colspan="28" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
+function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(typeof updateGeneralFilterIndicators==='function')updateGeneralFilterIndicators();if(page.length===0){tbody.innerHTML='<tr><td colspan="28" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
     <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td><td class="num">${start+i+1}</td><td style="color:var(--text2);font-size:11px;">${r.time||'-'}</td>
     <td><span class="result-badge result-${r.result==='胜'?'win':r.result==='败'?'lose':'draw'}">${r.result||'-'}</span></td>
     <td style="white-space:nowrap;">${escHtml(r.leftPlayer||'')}</td><td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.leftAlliance||'')}</td>
@@ -2005,6 +2054,20 @@ appInit();
     });
 })();
 </script>
+
+<!-- 武将列浮动筛选面板 -->
+<div id="generalFilterPanel" style="display:none;position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 4px 16px rgba(0,0,0,0.5);min-width:200px;">
+  <div id="generalPanelTitle" style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;"></div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">▼ 下拉筛选</div>
+  <select id="generalPanelSel" style="width:100%;font-size:12px;padding:4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;"></select>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">🔍 关键词搜索</div>
+  <input id="generalPanelTxt" type="text" placeholder="输入武将关键词..." onkeydown="if(event.key==='Enter')applyGeneralFilter()" style="width:100%;font-size:12px;padding:5px 8px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;margin-bottom:10px;">
+  <div style="display:flex;gap:6px;">
+    <button onclick="applyGeneralFilter()" style="flex:1;font-size:12px;padding:5px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">确认</button>
+    <button onclick="clearGeneralFilter()" style="font-size:12px;padding:5px 10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">清除</button>
+    <button onclick="closeGeneralPanel()" style="font-size:12px;padding:5px 8px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">✕</button>
+  </div>
+</div>
 
 <!-- 战法列浮动筛选面板 -->
 <div id="tacticFilterPanel" style="display:none;position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 4px 16px rgba(0,0,0,0.5);min-width:200px;">
