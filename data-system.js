@@ -32,15 +32,15 @@ function setFlat(rec, side, generals, tactics) {
   const gp = side === 'left' ? 'leftGeneral' : 'rightGeneral';
   const tp = side === 'left' ? 'leftTactic'  : 'rightTactic';
   rec[gp + '1'] = generals[0] || ''; rec[gp + '2'] = generals[1] || ''; rec[gp + '3'] = generals[2] || '';
-  rec[tp + '1_2'] = tactics[1] || ''; rec[tp + '1_3'] = tactics[2] || '';
-  rec[tp + '2_2'] = tactics[4] || ''; rec[tp + '2_3'] = tactics[5] || '';
-  rec[tp + '3_2'] = tactics[7] || ''; rec[tp + '3_3'] = tactics[8] || '';
+  rec[tp + '1_1'] = tactics[0] || ''; rec[tp + '1_2'] = tactics[1] || ''; rec[tp + '1_3'] = tactics[2] || '';
+  rec[tp + '2_1'] = tactics[3] || ''; rec[tp + '2_2'] = tactics[4] || ''; rec[tp + '2_3'] = tactics[5] || '';
+  rec[tp + '3_1'] = tactics[6] || ''; rec[tp + '3_2'] = tactics[7] || ''; rec[tp + '3_3'] = tactics[8] || '';
 }
 
 // ========== IndexedDB ==========
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('SanmoBattleDB', 4); // v4: 武将/战法扁平化
+    const req = indexedDB.open('SanmoBattleDB', 5); // v5: 战法 _1/_2/_3 三字段（v4→v5 平移 _2→_1, _3→_2）
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
       // v1: records
@@ -62,6 +62,33 @@ function openDB() {
             delete rec.leftTactics;  delete rec.rightTactics;
             changed = true;
           }
+          if (changed) cursor.update(rec);
+          cursor.continue();
+        };
+      }
+      // v5: 战法字段平移 _2→_1, _3→_2, 新增 _3=空（配合后端 tactics 9元组加入 slot1）
+      if (e.oldVersion < 5 && e.oldVersion >= 4) {
+        const tx = e.target.transaction;
+        const store = tx.objectStore('records');
+        store.openCursor().onsuccess = function(ev) {
+          const cursor = ev.target.result;
+          if (!cursor) return;
+          const rec = cursor.value;
+          let changed = false;
+          ['leftTactic', 'rightTactic'].forEach(tp => {
+            for (let hi = 1; hi <= 3; hi++) {
+              const key1 = tp + hi + '_1';
+              const key2 = tp + hi + '_2';
+              const key3 = tp + hi + '_3';
+              // 仅当 _1 为空且 _2 或 _3 有值时平移（避免覆盖已纠正的记录）
+              if (!rec[key1] && (rec[key2] || rec[key3])) {
+                rec[key1] = rec[key2] || '';  // old _2 → new _1
+                rec[key2] = rec[key3] || '';  // old _3 → new _2
+                rec[key3] = '';                // new _3 empty
+                changed = true;
+              }
+            }
+          });
           if (changed) cursor.update(rec);
           cursor.continue();
         };
@@ -108,11 +135,13 @@ async function dbAdd(rec) {
             rightFormation: rec.rightFormation || '',
             leftGeneral1: rec.leftGeneral1 || '', leftGeneral2: rec.leftGeneral2 || '', leftGeneral3: rec.leftGeneral3 || '',
             rightGeneral1: rec.rightGeneral1 || '', rightGeneral2: rec.rightGeneral2 || '', rightGeneral3: rec.rightGeneral3 || '',
-            leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
-            leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
-            leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
-            rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
-            rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
+            leftGeneral1Stars: rec.leftGeneral1Stars ?? 0, leftGeneral2Stars: rec.leftGeneral2Stars ?? 0, leftGeneral3Stars: rec.leftGeneral3Stars ?? 0,
+            rightGeneral1Stars: rec.rightGeneral1Stars ?? 0, rightGeneral2Stars: rec.rightGeneral2Stars ?? 0, rightGeneral3Stars: rec.rightGeneral3Stars ?? 0,
+            leftTactic1_1: rec.leftTactic1_1||'', leftTactic1_2: rec.leftTactic1_2||'', leftTactic1_3: rec.leftTactic1_3||'',
+            leftTactic2_1: rec.leftTactic2_1||'', leftTactic2_2: rec.leftTactic2_2||'', leftTactic2_3: rec.leftTactic2_3||'',
+            leftTactic3_1: rec.leftTactic3_1||'', leftTactic3_2: rec.leftTactic3_2||'', leftTactic3_3: rec.leftTactic3_3||'',
+            rightTactic1_1: rec.rightTactic1_1||'', rightTactic1_2: rec.rightTactic1_2||'', rightTactic1_3: rec.rightTactic1_3||'',
+            rightTactic2_1: rec.rightTactic2_1||'', rightTactic2_2: rec.rightTactic2_2||'', rightTactic2_3: rec.rightTactic2_3||'',
             rightTactic3_1: rec.rightTactic3_1||'', rightTactic3_2: rec.rightTactic3_2||'', rightTactic3_3: rec.rightTactic3_3||'',
             leftLoss: rec.leftLoss ?? null,
             rightLoss: rec.rightLoss ?? null,
@@ -154,6 +183,22 @@ function dbPutLocal(rec) {
     const req = tx.objectStore('records').put(rec);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+  });
+}
+
+// 批量写入 IndexedDB（单个事务），用于云同步等大批量写入场景
+function dbPutAllLocal(records) {
+  return new Promise((resolve, reject) => {
+    if (!records || records.length === 0) return resolve(0);
+    const tx = db.transaction(['records'], 'readwrite');
+    const store = tx.objectStore('records');
+    let count = 0;
+    for (const rec of records) {
+      store.put(rec);
+      count++;
+    }
+    tx.oncomplete = () => resolve(count);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -467,6 +512,7 @@ async function switchTab(tabId, btn) {
   }
 
   console.log('[switchTab] 切换到:', tabId);
+  try { localStorage.setItem('lastTab', tabId); } catch(e) {}
 
   // 先隐藏所有 tab-content（强制用 !important 等价于设置 inline style）
   document.querySelectorAll('.tab-content').forEach(el => {
@@ -507,7 +553,7 @@ async function switchTab(tabId, btn) {
   const bar = document.getElementById('projectBar');
   const tp = document.getElementById('tab-project');
   const ssn = document.getElementById('systemSubNav');
-  const SYS_TABS = ['user','syslog','datamgmt','rolemanage','dataperm','cloudservice'];
+  const SYS_TABS = ['user','syslog','datamgmt','rolemanage','dataperm','cloudservice','ocrdict','ocrpending','labeleditor'];
   if (PROJECT_TABS.includes(tabId)) {
     // 进入项目内 tab：显示项目子导航，隐藏系统子导航
     if (sn) sn.style.display = 'flex';
@@ -531,6 +577,9 @@ async function switchTab(tabId, btn) {
     if (bar) bar.style.display = 'none';
     if (tp) tp.style.display = 'none';
   }
+  if (tabId === 'ocrdict') { if (typeof onOcrDictTabShow === 'function') onOcrDictTabShow(); }
+  if (tabId === 'ocrpending') { if (typeof onOcrPendingTabShow === 'function') onOcrPendingTabShow(); }
+  if (tabId === 'labeleditor') { if (typeof onLabelEditorTabShow === 'function') onLabelEditorTabShow(); }
   if (tabId === 'data') { renderDataTable(); renderGallery(); }
   if (tabId === 'winrate') { const el = document.getElementById('tab-winrate'); if (el && typeof createCounterAnalysisUI === 'function') createCounterAnalysisUI(el).catch(e => console.error('[createCounterAnalysisUI] 失败:', e)); }
   if (tabId === 'library') { renderHeroes(); renderTactics(); }
@@ -790,6 +839,17 @@ function getTeamDisplay(generals) {
   return generals.slice(0, 3).map(g => escHtml(g)).join('<br>');
 }
 
+function getStarsDisplay(rec, side) {
+  const p = side === 'left' ? 'leftGeneral' : 'rightGeneral';
+  const vals = [rec[p+'1Stars'], rec[p+'2Stars'], rec[p+'3Stars']];
+  const hasAny = vals.some(v => v != null && v !== '');
+  if (!hasAny) return '<span style="color:var(--text3);font-size:11px;">-<br>-<br>-</span>';
+  return vals.map(v => {
+    const n = v != null && v !== '' ? Number(v) : 0;
+    return `<span style="font-size:11px;color:${n > 0 ? 'var(--accent)' : 'var(--text3)'};">${n}</span>`;
+  }).join('<br>');
+}
+
 function getTacticsDisplay(generals, tactics) {
   if (!generals || generals.length === 0) return '-';
   let html = '<div style="display:flex;flex-direction:column;gap:3px;">';
@@ -905,7 +965,7 @@ function renderDataTable() {
   // 初始化表头排序指示器
   updateDataTableHeaders();
   if (page.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="26" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
   } else {
     tbody.innerHTML = page.map((r, i) => `
       <tr>
@@ -916,6 +976,7 @@ function renderDataTable() {
         <td style="white-space:nowrap;">${escHtml(r.leftPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.leftAlliance || '')}</td>
         <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(getGenerals(r, 'left'))}</td>
+        <td style="min-width:28px;text-align:center;">${getStarsDisplay(r,'left')}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'left',1)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'left',2)}</td>
         <td style="color:var(--text2);">${escHtml(r.leftFormation || '')}</td>
@@ -925,13 +986,14 @@ function renderDataTable() {
         <td style="white-space:nowrap;">${escHtml(r.rightPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.rightAlliance || '')}</td>
         <td style="white-space:nowrap;min-width:56px;">${getTeamDisplay(getGenerals(r, 'right'))}</td>
+        <td style="min-width:28px;text-align:center;">${getStarsDisplay(r,'right')}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'right',1)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'right',2)}</td>
         <td style="color:var(--text2);">${escHtml(r.rightFormation || '')}</td>
         <td class="num">${fmtNum(r.rightLoss)}</td>
         <td class="num">${fmtNum(r.rightTotal)}</td>
         <td class="num" style="font-weight:bold;color:${getLossColor(r.rightLossRate)}">${r.rightLossRate != null ? Number(r.rightLossRate).toFixed(1) + '%' : '-'}</td>
-        <td>${r.imageBase64 ? `<a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;">🖼️ 原图</a>` : '<span style="color:var(--text3);font-size:11px;">无</span>'}</td>
+        <td style="text-align:center;"><a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;" title="点击查看原图">🔍 原图</a></td>
         <td><button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button></td>
       </tr>`).join('');
   }
@@ -1019,12 +1081,83 @@ function updateDataTableHeaders() {
 }
 
 async function showRecordImage(id) {
-  const record = await dbGet(id);
-  if (!record || !record.imageBase64) { alert('该记录没有保存原图'); return; }
+  let imgSrc = null;
+
+  // 1. 先查本地 IndexedDB
+  try {
+    const record = await dbGet(id);
+    if (record && record.imageBase64) {
+      imgSrc = record.imageBase64;
+    }
+  } catch (e) { /* ignore */ }
+
+  // 2. 本地无图，尝试云端加载
+  if (!imgSrc) {
+    // 从 allRecords 获取 cloudId
+    const memRec = allRecords.find(r => r.id === id);
+    const cloudId = memRec ? (memRec.cloudId || memRec.cloud_id || id) : id;
+
+    // 显示 loading 弹窗
+    const loadingModal = document.createElement('div');
+    loadingModal.className = 'image-modal';
+    loadingModal.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;">
+      <div style="text-align:center;color:var(--text2);">
+        <div class="image-modal-spinner"></div>
+        <div style="margin-top:12px;">加载原图中…</div>
+      </div>
+    </div>`;
+    document.body.appendChild(loadingModal);
+
+    try {
+      // 先尝试二进制直出端点（更高效）
+      const imgUrl = `${typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : ''}/api/gallery/image/${cloudId}`;
+      const testRes = await fetch(imgUrl, { method: 'HEAD' });
+      if (testRes.ok) {
+        imgSrc = imgUrl;
+      } else {
+        // 回退到 JSON 端点（base64）
+        const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+        const res = await fetch(`${base}/gallery/by-battle/${cloudId}`);
+        const json = await res.json();
+        if (json.code === 200 && json.data && json.data.image_data) {
+          imgSrc = json.data.image_data;
+        }
+      }
+    } catch (e) {
+      console.warn('[showRecordImage] 云端加载失败:', e.message);
+    }
+
+    loadingModal.remove();
+
+    if (!imgSrc) {
+      alert('该记录暂无原图（本地和云端均未找到）');
+      return;
+    }
+  }
+
+  // 3. 显示图片弹窗
+  // 确保 imgSrc 是字符串（兼容旧 base64 字符串和 Buffer 对象）
+  if (typeof imgSrc !== 'string') {
+    if (imgSrc && imgSrc.type === 'Buffer' && Array.isArray(imgSrc.data)) {
+      // Buffer JSON 对象 → base64 data URI
+      const bytes = new Uint8Array(imgSrc.data);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      imgSrc = 'data:image/png;base64,' + btoa(binary);
+    } else {
+      console.warn('[showRecordImage] imgSrc 不是有效字符串:', typeof imgSrc);
+      alert('图片数据格式错误，无法显示');
+      return;
+    }
+  }
   const m = document.createElement('div');
   m.className = 'image-modal';
-  m.onclick = () => m.remove();
-  m.innerHTML = `<img src="${record.imageBase64}" style="max-width:90vw;max-height:90vh;border-radius:8px;">`;
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+  m.innerHTML = `
+    <div style="position:relative;display:inline-block;max-width:90vw;max-height:90vh;">
+      <img src="${imgSrc.replace(/"/g, '&quot;')}" style="max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5);">
+      <button onclick="this.closest('.image-modal').remove()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:16px;line-height:32px;text-align:center;" title="关闭">✕</button>
+    </div>`;
   document.body.appendChild(m);
 }
 

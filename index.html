@@ -490,7 +490,7 @@ document.addEventListener('click', function(e) {
   <button id="subSysLog" onclick="switchTab('syslog',this)">📋 系统日志</button>
   <button id="subOcrDict" onclick="switchTab('ocrdict',this)">📖 字段库管理</button>
   <button id="subOcrPending" onclick="switchTab('ocrpending',this)">🔍 待审核战法</button>
-  <button id="subLabelEditor" onclick="switchTab('labeleditor',this)">📐 区域编辑</button>
+  <button id="subLabelEditor" onclick="switchTab('labeleditor',this)">📐 OCR采集模板设置</button>
 </div>
 
 <!-- 项目内子导航（默认隐藏） -->
@@ -880,10 +880,19 @@ async function showRecordImage(id){
       const base=typeof CLOUD_API_BASE!=='undefined'?CLOUD_API_BASE:'/api';
       const res=await fetch(`${base}/gallery/by-battle/${cid}`);
       const json=await res.json();
-      if(json.code===200&&json.data&&json.data.image_data)img=json.data.image_data;
+      if(json.code===200&&json.data&&json.data.image_data){
+        img=json.data.image_data;
+        // 兼容 Buffer JSON 对象 → base64
+        if(typeof img!=='string'&&img&&img.type==='Buffer'&&Array.isArray(img.data)){
+          const bytes=new Uint8Array(img.data);
+          let binary='';
+          for(let i=0;i<bytes.length;i++)binary+=String.fromCharCode(bytes[i]);
+          img='data:image/png;base64,'+btoa(binary);
+        }
+      }
     }catch(e){}
   }
-  if(!img){alert('该记录暂无图片');return;}
+  if(!img||typeof img!=='string'){alert('该记录暂无图片');return;}
   const m=document.createElement('div');m.className='image-modal';m.onclick=()=>m.remove();
   m.innerHTML=`<img src="${img}" style="max-width:90vw;max-height:90vh;border-radius:8px;">`;
   document.body.appendChild(m);
@@ -1571,33 +1580,82 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   </div>
 </div>
 
-<!-- Tab: 区域编辑 -->
+<!-- Tab: OCR采集模板设置 -->
 <div id="tab-labeleditor" class="tab-content" style="display:none;">
   <div style="padding:0 40px;">
     <div style="background:linear-gradient(135deg,var(--card),rgba(26,32,56,.8));border-radius:var(--radius);border:1px solid var(--border);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap;">
-        <h3 style="margin:0;color:var(--accent);">📐 OCR 区域编辑</h3>
-        <select id="leProjectSel" onchange="leOnProjectChange()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text1);font-size:13px;">
+      <!-- Row 1: 绑定行（项目用哪个方案） -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+        <span style="font-size:12px;color:var(--text3);white-space:nowrap;font-weight:bold;">所需引用方案的项目:</span>
+        <select id="leProjectSel" onchange="leOnProjectChange()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;">
           <option value="0">全局配置（所有项目通用）</option>
         </select>
-        <button onclick="leUploadRef()" style="padding:5px 14px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;">📁 上传参考图</button>
-        <input type="file" id="leFileInput" accept="image/*" style="display:none;" onchange="leOnFileSelected(this)">
+        <span style="color:var(--text3);font-size:18px;padding:0 4px;line-height:1;user-select:none;">|</span>
+        <select id="leBindSchemeSelect" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;min-width:130px;">
+          <option value="">— 选择方案 —</option>
+        </select>
+        <button onclick="leBindScheme()" style="padding:5px 14px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:13px;font-weight:bold;">绑定生效</button>
+        <span id="leBindStatus" style="font-size:12px;color:var(--text3);"></span>
+      </div>
+
+      <!-- Row 2: 编辑行（方案内容编辑） -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--text3);white-space:nowrap;font-weight:bold;">OCR图片信息采集方案配置:</span>
+        <select id="leSchemeSelect" onchange="leLoadScheme(this.value)" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;min-width:130px;">
+          <option value="">— 选择方案 —</option>
+        </select>
+        <button onclick="leNewScheme()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:bold;" title="新建方案">＋</button>
         <button onclick="leSaveConfig()" style="padding:5px 14px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:13px;font-weight:bold;">💾 保存配置</button>
         <button onclick="leRunTest()" style="padding:5px 14px;border-radius:6px;background:#2563eb;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:bold;">▶ 测试识别</button>
-        <button onclick="leRunTestSingle()" style="padding:5px 14px;border-radius:6px;background:#0e7490;color:#fff;border:none;cursor:pointer;font-size:13px;">▶ 测试当前框</button>
-        <button onclick="leRunStars('both')" style="padding:5px 14px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:13px;">⭐ 豆豆双校验</button>
+        <button onclick="leRunTestSingle()" style="padding:5px 14px;border-radius:6px;background:#0e7490;color:#fff;border:none;cursor:pointer;font-size:13px;">▶ 测试当前库框</button>
+        <button onclick="leRunStars('both')" style="padding:5px 14px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:13px;">⭐ 六武将豆豆测试</button>
+        <button onclick="leUploadRef()" style="padding:5px 14px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;">📁 上传参考图</button>
+        <button onclick="leDeleteScheme()" style="padding:5px 10px;border-radius:6px;background:transparent;color:#e74c3c;border:1px solid #e74c3c;cursor:pointer;font-size:12px;" title="删除当前方案">🗑</button>
+        <input type="file" id="leFileInput" accept="image/*" style="display:none;" onchange="leOnFileSelected(this)">
         <span id="leStatus" style="font-size:12px;color:var(--text3);"></span>
       </div>
 
-      <!-- 方案管理 -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;padding:10px 14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
-        <span style="font-size:12px;color:var(--text3);white-space:nowrap;">方案：</span>
-        <select id="leSchemeSelect" onchange="leLoadScheme(this.value)" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;min-width:140px;">
-          <option value="">— 选择方案 —</option>
-        </select>
-        <button onclick="leSaveAsScheme()" style="padding:4px 12px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:12px;font-weight:bold;">💾 另存为方案</button>
-        <button onclick="leDeleteScheme()" style="padding:4px 12px;border-radius:6px;background:transparent;color:#e74c3c;border:1px solid #e74c3c;cursor:pointer;font-size:12px;">🗑 删除方案</button>
-        <span style="font-size:11px;color:var(--text3);">（方案保存在本浏览器，含图片和框框位置，刷新后可还原）</span>
+      <!-- 模拟名单 -->
+      <div style="margin-bottom:14px;padding:10px 14px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:12px;color:var(--text3);font-weight:bold;">👥 模拟名单</span>
+          <span style="font-size:11px;color:var(--text3);">测试时用于同盟名/玩家名字典匹配，随方案保存</span>
+        </div>
+        <!-- 引用项目 -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+          <span style="font-size:11px;color:var(--text3);white-space:nowrap;">引用项目：</span>
+          <select id="lePLProjectRef" style="flex:1;min-width:0;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:11px;">
+            <option value="">-- 选择项目 --</option>
+          </select>
+          <button onclick="leRefFromProject()" style="padding:2px 10px;border-radius:5px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-size:11px;white-space:nowrap;">引用</button>
+          <span id="lePLRefMsg" style="font-size:11px;color:var(--text3);"></span>
+        </div>
+        <!-- 同盟名 6槽 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;font-size:12px;margin-bottom:8px;">
+          <div>
+            <div style="color:var(--accent);margin-bottom:4px;font-size:11px;font-weight:bold;">◀ 左方同盟</div>
+            <div style="display:flex;flex-direction:column;gap:3px;">
+              <div style="display:flex;gap:6px;align-items:center;"><span style="color:var(--text3);width:14px;">1</span><input id="lePL_left1_alliance" placeholder="同盟名" style="flex:1;min-width:0;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:12px;"></div>
+              <div style="display:flex;gap:6px;align-items:center;"><span style="color:var(--text3);width:14px;">2</span><input id="lePL_left2_alliance" placeholder="同盟名" style="flex:1;min-width:0;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:12px;"></div>
+              <div style="display:flex;gap:6px;align-items:center;"><span style="color:var(--text3);width:14px;">3</span><input id="lePL_left3_alliance" placeholder="同盟名" style="flex:1;min-width:0;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:12px;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="color:#e74c3c;margin-bottom:4px;font-size:11px;font-weight:bold;">右方同盟 ▶</div>
+            <div style="display:flex;flex-direction:column;gap:3px;">
+              <div style="display:flex;gap:6px;align-items:center;"><span style="color:var(--text3);width:14px;">1</span><input id="lePL_right1_alliance" placeholder="同盟名" style="flex:1;min-width:0;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:12px;"></div>
+              <div style="display:flex;gap:6px;align-items:center;"><span style="color:var(--text3);width:14px;">2</span><input id="lePL_right2_alliance" placeholder="同盟名" style="flex:1;min-width:0;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:12px;"></div>
+              <div style="display:flex;gap:6px;align-items:center;"><span style="color:var(--text3);width:14px;">3</span><input id="lePL_right3_alliance" placeholder="同盟名" style="flex:1;min-width:0;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:12px;"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 玩家名导入 -->
+        <div style="display:flex;align-items:center;gap:8px;padding-top:6px;border-top:1px solid var(--border);">
+          <span style="font-size:11px;color:var(--text3);">玩家名单：</span>
+          <span id="lePLPlayerCount" style="font-size:11px;color:var(--text2);">0 个</span>
+          <button onclick="leImportPlayerNames()" style="padding:2px 10px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:11px;">📋 导入玩家名</button>
+          <button onclick="leClearPlayerNames()" style="padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;">清空</button>
+        </div>
       </div>
 
       <div id="leNoImg" style="text-align:center;padding:60px 0;color:var(--text3);">上传一张战报参考截图，然后拖拽调整各字段的识别区域</div>
@@ -1627,7 +1685,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
             <div style="font-size:12px;color:var(--text3);font-weight:bold;">豆豆专项测试</div>
             <button onclick="leRunStars('color')" style="padding:4px 10px;border-radius:6px;background:transparent;color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;">颜色法单独</button>
             <button onclick="leRunStars('template')" style="padding:4px 10px;border-radius:6px;background:transparent;color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;">模板法单独</button>
-            <button onclick="leRunStars('both')" style="padding:4px 10px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:12px;">双校验整体</button>
+            <button onclick="leRunStars('both')" style="padding:4px 10px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:12px;">六武将豆豆测试</button>
           </div>
         </div>
       </div>
@@ -1835,7 +1893,8 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
     </div>
   </div>
 </div>
-  <script src="cloud-sync.js?v=202606163"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="cloud-sync.js?v=20260619"></script>
   <script src="data-system.js?v=202606163"></script>
   <script src="counter-analysis.js?v=202605190003"></script>
   <script src="counter-analysis-enhanced.js?v=202605190002"></script>
@@ -1846,7 +1905,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data-perm.js?v=202605111120"></script>
   <script src="points-mall.js?v=202606131"></script>
   <script src="ocr-dict-system.js?v=20260619002"></script>
-  <script src="ocr-region-editor.js?v=20260619007"></script>
+  <script src="ocr-region-editor.js?v=20260619010"></script>
 <script>
 // ========== 防抖工具（性能优化）==========
 var _debounceTimers={};

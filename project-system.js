@@ -1,7 +1,7 @@
 /* ==========================================================
    PROJECT SYSTEM - 项目管理、权限控制
    ========================================================== */
-console.log('[project-system.js] v202605111115 加载');
+console.log('[project-system.js] v20260619001 加载');
 
 // ========== 项目数据结构 ==========
 // project: {id, name, desc, creator, createAt, visibility, memberPhones:[], battleRecordIds:[]}
@@ -155,6 +155,7 @@ async function renderProjectManage(){
       <div class="pc-actions" onclick="event.stopPropagation();">
         ${canEdit?`<button onclick="editProject('${p.id}')">编辑</button>`:''}
         ${canMember?`<button onclick="manageProjectMembers('${p.id}')">成员</button>`:''}
+        ${canManage?`<button onclick="managePlayerDict('${p.id}')">玩家字典</button>`:''}
         ${canDelete?`<button style="color:#ff5252;border-color:rgba(255,82,82,.2);" onclick="deleteProject('${p.id}')">删除</button>`:''}
       </div>
     </div>`;
@@ -186,26 +187,46 @@ async function showCreateProject(projectId){
   const projVis = isEdit
     ? (proj.visibility || (proj.is_public == 1 ? 'public' : 'private'))
     : 'private';
+
+  // 同盟名：最多3个，从 JSON 数组读取
+  const leftAl  = isEdit ? (Array.isArray(proj.left_alliances)  ? proj.left_alliances  : []) : [];
+  const rightAl = isEdit ? (Array.isArray(proj.right_alliances) ? proj.right_alliances : []) : [];
+  const alInput = (vals, prefix) => [0,1,2].map(i =>
+    `<input id="${prefix}${i}" style="width:100%;margin-bottom:4px;" value="${escHtml(vals[i]||'')}" placeholder="同盟${i+1}（选填）">`
+  ).join('');
+
+  const inputStyle = 'width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);box-sizing:border-box;';
+
   const overlay = document.createElement('div');
   overlay.id = 'projectModal';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;';
   overlay.innerHTML = `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:420px;max-width:90vw;">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:480px;max-width:94vw;max-height:90vh;overflow-y:auto;">
       <h3 style="margin:0 0 16px 0;color:var(--accent);">${isEdit?'编辑项目':'新建项目'}</h3>
       <div style="margin-bottom:12px;">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">项目名称 *</label>
-        <input id="projName" style="width:100%;" value="${isEdit?escHtml(proj.name):''}" placeholder="输入项目名称">
+        <input id="projName" style="${inputStyle}" value="${isEdit?escHtml(proj.name):''}" placeholder="输入项目名称">
       </div>
       <div style="margin-bottom:12px;">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">项目描述</label>
-        <textarea id="projDesc" style="width:100%;height:60px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px;font-size:12px;resize:vertical;">${isEdit?escHtml(proj.desc||''):''}</textarea>
+        <textarea id="projDesc" style="width:100%;height:60px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px;font-size:12px;resize:vertical;box-sizing:border-box;">${isEdit?escHtml(proj.desc||proj.description||''):''}</textarea>
       </div>
-      <div style="margin-bottom:16px;">
+      <div style="margin-bottom:12px;">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">可见性</label>
-        <select id="projVisibility" style="width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);">
+        <select id="projVisibility" style="${inputStyle}">
           <option value="public" ${projVis==='public'?'selected':''}>🌐 公开 - 所有用户可见</option>
           <option value="private" ${projVis==='private'?'selected':''}>🔒 私有 - 仅成员可见</option>
         </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:6px;">左方同盟（最多3个）</label>
+          ${alInput(leftAl, 'projLeftAl')}
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:6px;">右方同盟（最多3个）</label>
+          ${alInput(rightAl, 'projRightAl')}
+        </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn btn-secondary" onclick="closeProjectModal()">取消</button>
@@ -216,10 +237,16 @@ async function showCreateProject(projectId){
 }
 function closeProjectModal(){const el=document.getElementById('projectModal');if(el)el.remove();}
 
+function _readAllianceInputs(prefix){
+  return [0,1,2].map(i=>(document.getElementById(prefix+i)||{}).value||'').map(s=>s.trim()).filter(Boolean);
+}
+
 async function saveProject(projectId){
   const name = document.getElementById('projName').value.trim();
   const desc = document.getElementById('projDesc').value.trim();
   const visibility = document.getElementById('projVisibility').value;
+  const left_alliances  = _readAllianceInputs('projLeftAl');
+  const right_alliances = _readAllianceInputs('projRightAl');
   if(!name){alert('请输入项目名称');return;}
   try{
     let proj;
@@ -227,22 +254,18 @@ async function saveProject(projectId){
       // 编辑现有项目
       proj = await getProjectWithFallback(projectId);
       if(!proj){alert('项目不存在');return;}
-      proj.name = name; proj.desc = desc; proj.visibility = visibility; proj.updatedAt = Date.now();
+      Object.assign(proj, { name, desc, visibility, left_alliances, right_alliances, updatedAt: Date.now() });
       await projDBPut(proj);
 
-      // 同步到云端
-      console.log('[saveProject-edit] window.cloudSync 存在?', !!window.cloudSync, '| updateProject 类型:', typeof window?.cloudSync?.updateProject);
       if(window.cloudSync){
         try{
-          console.log('[Cloud] 准备更新项目到云端:', projectId, { name, description: desc, visibility });
-          await window.cloudSync.updateProject(projectId, { name, description: desc, visibility });
-          console.log('[Cloud] 项目更新已同步到云端');
+          await window.cloudSync.updateProject(projectId, { name, description: desc, visibility, left_alliances, right_alliances });
         }catch(e){console.error('[Cloud] 同步失败:', e);}
       }
     }else{
       // 创建新项目：先调云端获取真实 ID，再存本地
       const newProj = {
-        name, desc, visibility,
+        name, desc, visibility, left_alliances, right_alliances,
         creator: currentUser.phone,
         creator_phone: currentUser.phone,
         memberPhones: [],
@@ -252,25 +275,17 @@ async function saveProject(projectId){
         updatedAt: Date.now()
       };
 
-      // 先同步到云端（获取后端分配的整数 ID）
       if(window.cloudSync){
         try{
           const result = await window.cloudSync.createProject(newProj);
-          console.log('[Cloud] 云端创建项目返回:', JSON.stringify(result));
-          if(result && result.id){
-            newProj.id = result.id;
-          }
+          if(result && result.id) newProj.id = result.id;
         }catch(e){console.error('[Cloud] 同步失败:', e);}
       }
 
-      // 若云端未返回 ID（离线模式），用临时本地 ID
-      if(!newProj.id){
-        newProj.id = 'tmp_' + Date.now();
-      }
+      if(!newProj.id) newProj.id = 'tmp_' + Date.now();
 
       await projDBPut(newProj);
 
-      // 自动给创建者授予编辑和删除权限
       if(typeof permDBPut === 'function'){
         await permDBPut({
           id: currentUser.phone + '_' + newProj.id,
@@ -290,6 +305,125 @@ async function saveProject(projectId){
 }
 
 function editProject(id){showCreateProject(id);}
+
+// ========== 玩家字典管理 ==========
+async function managePlayerDict(projectId){
+  const token = window.cloudSync ? window.cloudSync.getToken() : (localStorage.getItem('nslg_token') || '');
+  const authHeaders = { 'Content-Type':'application/json', Authorization: 'Bearer '+token };
+  const BASE = window.cloudSync ? window.cloudSync.BASE_URL||'' : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'playerDictModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:600px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="margin:0;color:var(--accent);">玩家字典</h3>
+        <button class="btn btn-secondary" onclick="document.getElementById('playerDictModal').remove()">关闭</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+        <select id="pdSide" style="padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);">
+          <option value="left">左方</option>
+          <option value="right">右方</option>
+          <option value="unknown">未知</option>
+        </select>
+        <label class="btn btn-secondary" style="cursor:pointer;margin:0;">
+          导入 Excel
+          <input type="file" id="pdExcelFile" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importPlayerDictExcel('${projectId}')">
+        </label>
+        <span id="pdImportMsg" style="font-size:12px;color:var(--text2);"></span>
+        <a href="#" onclick="downloadPlayerDictTemplate();return false;" style="font-size:12px;color:var(--accent);">下载模板</a>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">
+        Excel 第一列填玩家名即可（无需表头）；也支持带表头格式：player_name | alliance_name | side
+      </div>
+      <div style="flex:1;overflow-y:auto;" id="pdTableWrap">加载中...</div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  async function reload(){
+    const wrap = document.getElementById('pdTableWrap');
+    if(!wrap) return;
+    try{
+      const r = await fetch(`${BASE}/api/projects/${projectId}/player-dict`, { headers: authHeaders });
+      const d = await r.json();
+      const rows = d.data || [];
+      if(!rows.length){ wrap.innerHTML = '<div style="color:var(--text2);padding:20px;text-align:center;">暂无玩家</div>'; return; }
+      const sideLabel = {left:'左方',right:'右方',unknown:'未知'};
+      wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="color:var(--text2);border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;">玩家名</th>
+          <th style="text-align:left;padding:6px 8px;">联盟</th>
+          <th style="text-align:left;padding:6px 8px;">阵营</th>
+          <th style="padding:6px 8px;"></th>
+        </tr></thead>
+        <tbody>${rows.map(r=>`<tr style="border-bottom:1px solid rgba(255,255,255,.05);">
+          <td style="padding:6px 8px;">${escHtml(r.player_name)}</td>
+          <td style="padding:6px 8px;color:var(--text2);">${escHtml(r.alliance_name||'')}</td>
+          <td style="padding:6px 8px;color:var(--text2);">${sideLabel[r.side]||r.side}</td>
+          <td style="padding:6px 8px;text-align:right;">
+            <button class="btn btn-danger" style="padding:2px 8px;font-size:11px;" onclick="deletePlayerDictEntry('${projectId}',${r.id})">删</button>
+          </td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }catch(e){ if(wrap) wrap.innerHTML = '<div style="color:#f55;">加载失败: '+e.message+'</div>'; }
+  }
+
+  window._pdReload = reload;
+  window._pdProjectId = projectId;
+  reload();
+}
+
+async function deletePlayerDictEntry(projectId, entryId){
+  if(!confirm('确认删除？'))return;
+  const token = window.cloudSync ? window.cloudSync.getToken() : (localStorage.getItem('nslg_token') || '');
+  const BASE = window.cloudSync ? window.cloudSync.BASE_URL||'' : '';
+  await fetch(`${BASE}/api/projects/${projectId}/player-dict/${entryId}`, {
+    method:'DELETE', headers:{ Authorization:'Bearer '+token }
+  });
+  if(window._pdReload) window._pdReload();
+}
+
+async function importPlayerDictExcel(projectId){
+  const fileInput = document.getElementById('pdExcelFile');
+  const msgEl = document.getElementById('pdImportMsg');
+  const side = document.getElementById('pdSide').value;
+  if(!fileInput.files.length) return;
+  const file = fileInput.files[0];
+  msgEl.textContent = '上传中...';
+  const token = window.cloudSync ? window.cloudSync.getToken() : (localStorage.getItem('nslg_token') || '');
+  const BASE = window.cloudSync ? window.cloudSync.BASE_URL||'' : '';
+  try{
+    const buf = await file.arrayBuffer();
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const r = await fetch(`${BASE}/api/projects/${projectId}/player-dict/import`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json', Authorization:'Bearer '+token},
+      body: JSON.stringify({ fileBase64: b64, side })
+    });
+    const d = await r.json();
+    if(d.code===200){
+      msgEl.textContent = `导入成功：${d.data.added} 条，跳过 ${d.data.skipped} 条`;
+      fileInput.value = '';
+      if(window._pdReload) window._pdReload();
+    } else {
+      msgEl.textContent = '导入失败: '+(d.message||'未知错误');
+    }
+  }catch(e){ msgEl.textContent = '错误: '+e.message; }
+}
+
+function downloadPlayerDictTemplate(){
+  const XLSX2 = window.XLSX;
+  if(!XLSX2){ alert('XLSX 库未加载，请手动创建 Excel 文件\n列：player_name | alliance_name | side'); return; }
+  const ws = XLSX2.utils.aoa_to_sheet([
+    ['player_name','alliance_name','side'],
+    ['蔷薇|云初月','天下无双','left'],
+    ['玩家B','','right'],
+  ]);
+  const wb = XLSX2.utils.book_new();
+  XLSX2.utils.book_append_sheet(wb, ws, '玩家字典');
+  XLSX2.writeFile(wb, '玩家字典模板.xlsx');
+}
 
 // ========== 成员管理 ==========
 async function manageProjectMembers(projectId){

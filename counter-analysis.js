@@ -376,11 +376,10 @@
     return lt.length === 0 && rt.length === 0;
   }
 
-  // 高频统计（无战法）：只统计双方均未使用战法的战报
+  // 高频统计（无战法）：所有记录，仅以武将组合区分，不区分战法与阵型
   function analyzeEnemyFreqNoTacs(recs) {
     const stats = {};
     for (const rec of recs) {
-      if (!hasNoTactics(rec)) continue;
       const rg = normGens(getGenerals(rec, 'right'));
       if (!rg.length) continue;
       const k = teamKeyNoTacs(rg);
@@ -473,14 +472,13 @@
     c.records.push(rec);
   }
 
-  // 克制推荐（无战法）：只取双方均无战法的战报，key 只用武将组合
+  // 克制推荐（无战法）：所有记录，key 只用武将组合（不区分战法与阵型）
   function analyzeRecommendNoTacs(recs) {
-    const noTacsRecs = recs.filter(hasNoTactics);
-    const enemies = analyzeEnemyFreqNoTacs(recs); // 敌方频率用原始记录（含战法）保证样本充足
+    const enemies = analyzeEnemyFreqNoTacs(recs);
     if (!enemies.length) return [];
     const enemyKeySet = new Set(enemies.map(e => teamKeyNoTacs(e.generals)));
     const matrix = {};
-    for (const rec of noTacsRecs) {
+    for (const rec of recs) {
       const lg = normGens(getGenerals(rec, 'left'));
       const rg = normGens(getGenerals(rec, 'right'));
       if (!lg.length || !rg.length) continue;
@@ -789,10 +787,10 @@ ${clone.innerHTML}
       <div class="ca-root">
         <div class="ca-tabs">
           <button class="ca-tab active" onclick="switchCounterTab('relationship')" id="caTabRelBtn">克制关系</button>
-          <button class="ca-tab" onclick="switchCounterTab('enemy')" id="caTabEnemyBtn">敌方高频</button>
-          <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐</button>
-          <button class="ca-tab" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">高频(无战法)</button>
-          <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">克制(无战法)</button>
+          <button class="ca-tab" onclick="switchCounterTab('enemy')" id="caTabEnemyBtn">敌方高频（有战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐（有战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频（无战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">克制推荐（无战法）</button>
         </div>
 
         <div id="caPanelRelationship">

@@ -5,7 +5,7 @@
  */
 
 // 根据当前页面域名自动确定 API 地址 - 直接调用 MySQL API，绕过 Cloudflare Worker
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
 const CLOUD_API_BASE = isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
 
 // JSON 安全解析（后端返回的 JSON 字段可能是字符串）
@@ -216,6 +216,8 @@ async function cloudGetProject(projectId) {
     member_count: p.member_count || 0,
     battle_count: p.battle_count || 0,
     battleRecordIds: p.battleRecordIds || [],
+    left_alliances: Array.isArray(p.left_alliances) ? p.left_alliances : [],
+    right_alliances: Array.isArray(p.right_alliances) ? p.right_alliances : [],
     created_at: p.created_at,
     updated_at: p.updated_at
   };
@@ -258,11 +260,13 @@ async function cloudUpdateUserPoints(phone, points, options = {}) {
 async function cloudCreateProject(project) {
   // 统一字段名：前端用 desc/visibility/creator，后端用 description/is_public/creator_phone
   const body = {
-    id:             project.id,
-    name:           project.name,
-    description:    project.desc || project.description || '',
-    is_public:      (project.visibility === 'public' || project.is_public === 1) ? 1 : 0,
-    creator_phone:  project.creator_phone || project.creator || '',
+    id:              project.id,
+    name:            project.name,
+    description:     project.desc || project.description || '',
+    is_public:       (project.visibility === 'public' || project.is_public === 1) ? 1 : 0,
+    creator_phone:   project.creator_phone || project.creator || '',
+    left_alliances:  project.left_alliances  || [],
+    right_alliances: project.right_alliances || [],
   };
   const data = await cloudRequest('/projects', { method: 'POST', body });
   return data.success ? data.data : null;
@@ -369,12 +373,12 @@ async function cloudGetRecords(projectId) {
       rightGeneral1: r.right_general_1 || r.rightGeneral1 || '',
       rightGeneral2: r.right_general_2 || r.rightGeneral2 || '',
       rightGeneral3: r.right_general_3 || r.rightGeneral3 || '',
-      leftTactic1_2: r.left_tactic_1_2 || r.leftTactic1_2 || '', leftTactic1_3: r.left_tactic_1_3 || r.leftTactic1_3 || '',
-      leftTactic2_2: r.left_tactic_2_2 || r.leftTactic2_2 || '', leftTactic2_3: r.left_tactic_2_3 || r.leftTactic2_3 || '',
-      leftTactic3_2: r.left_tactic_3_2 || r.leftTactic3_2 || '', leftTactic3_3: r.left_tactic_3_3 || r.leftTactic3_3 || '',
-      rightTactic1_2: r.right_tactic_1_2 || r.rightTactic1_2 || '', rightTactic1_3: r.right_tactic_1_3 || r.rightTactic1_3 || '',
-      rightTactic2_2: r.right_tactic_2_2 || r.rightTactic2_2 || '', rightTactic2_3: r.right_tactic_2_3 || r.rightTactic2_3 || '',
-      rightTactic3_2: r.right_tactic_3_2 || r.rightTactic3_2 || '', rightTactic3_3: r.right_tactic_3_3 || r.rightTactic3_3 || '',
+      leftTactic1_1: r.left_tactic_1_1 || r.leftTactic1_1 || '', leftTactic1_2: r.left_tactic_1_2 || r.leftTactic1_2 || '', leftTactic1_3: r.left_tactic_1_3 || r.leftTactic1_3 || '',
+      leftTactic2_1: r.left_tactic_2_1 || r.leftTactic2_1 || '', leftTactic2_2: r.left_tactic_2_2 || r.leftTactic2_2 || '', leftTactic2_3: r.left_tactic_2_3 || r.leftTactic2_3 || '',
+      leftTactic3_1: r.left_tactic_3_1 || r.leftTactic3_1 || '', leftTactic3_2: r.left_tactic_3_2 || r.leftTactic3_2 || '', leftTactic3_3: r.left_tactic_3_3 || r.leftTactic3_3 || '',
+      rightTactic1_1: r.right_tactic_1_1 || r.rightTactic1_1 || '', rightTactic1_2: r.right_tactic_1_2 || r.rightTactic1_2 || '', rightTactic1_3: r.right_tactic_1_3 || r.rightTactic1_3 || '',
+      rightTactic2_1: r.right_tactic_2_1 || r.rightTactic2_1 || '', rightTactic2_2: r.right_tactic_2_2 || r.rightTactic2_2 || '', rightTactic2_3: r.right_tactic_2_3 || r.rightTactic2_3 || '',
+      rightTactic3_1: r.right_tactic_3_1 || r.rightTactic3_1 || '', rightTactic3_2: r.right_tactic_3_2 || r.rightTactic3_2 || '', rightTactic3_3: r.right_tactic_3_3 || r.rightTactic3_3 || '',
       leftFormation: r.leftFormation || r.left_formation || '',
       rightFormation: r.rightFormation || r.right_formation || '',
       leftLoss: (r.leftLoss !== undefined) ? r.leftLoss : ((r.left_loss !== undefined) ? r.left_loss : null),
@@ -383,6 +387,12 @@ async function cloudGetRecords(projectId) {
       rightTotal: (r.rightTotal !== undefined) ? r.rightTotal : ((r.right_total !== undefined) ? r.right_total : null),
       leftLossRate: (r.leftLossRate !== undefined) ? r.leftLossRate : ((r.left_loss_rate !== undefined) ? r.left_loss_rate : null),
       rightLossRate: (r.rightLossRate !== undefined) ? r.rightLossRate : ((r.right_loss_rate !== undefined) ? r.right_loss_rate : null),
+      leftGeneral1Stars:  r.left_general_1_stars  ?? r.leftGeneral1Stars  ?? 0,
+      leftGeneral2Stars:  r.left_general_2_stars  ?? r.leftGeneral2Stars  ?? 0,
+      leftGeneral3Stars:  r.left_general_3_stars  ?? r.leftGeneral3Stars  ?? 0,
+      rightGeneral1Stars: r.right_general_1_stars ?? r.rightGeneral1Stars ?? 0,
+      rightGeneral2Stars: r.right_general_2_stars ?? r.rightGeneral2Stars ?? 0,
+      rightGeneral3Stars: r.right_general_3_stars ?? r.rightGeneral3Stars ?? 0,
       description: r.description || '',
       imageBase64: r.imageBase64 || r.image_base64 || '',
       createdBy: (r.createdBy !== undefined) ? r.createdBy : ((r.created_by !== undefined) ? r.created_by : null),
@@ -457,12 +467,12 @@ async function cloudUpdateRecord(recordId, recordData) {
     right_formation:recordData.rightFormation|| recordData.right_formation|| '',
     left_general_1: recordData.leftGeneral1 || '', left_general_2: recordData.leftGeneral2 || '', left_general_3: recordData.leftGeneral3 || '',
     right_general_1: recordData.rightGeneral1 || '', right_general_2: recordData.rightGeneral2 || '', right_general_3: recordData.rightGeneral3 || '',
-    left_tactic_1_2: recordData.leftTactic1_2 || '', left_tactic_1_3: recordData.leftTactic1_3 || '',
-    left_tactic_2_2: recordData.leftTactic2_2 || '', left_tactic_2_3: recordData.leftTactic2_3 || '',
-    left_tactic_3_2: recordData.leftTactic3_2 || '', left_tactic_3_3: recordData.leftTactic3_3 || '',
-    right_tactic_1_2: recordData.rightTactic1_2 || '', right_tactic_1_3: recordData.rightTactic1_3 || '',
-    right_tactic_2_2: recordData.rightTactic2_2 || '', right_tactic_2_3: recordData.rightTactic2_3 || '',
-    right_tactic_3_2: recordData.rightTactic3_2 || '', right_tactic_3_3: recordData.rightTactic3_3 || '',
+    left_tactic_1_1: recordData.leftTactic1_1 || '', left_tactic_1_2: recordData.leftTactic1_2 || '', left_tactic_1_3: recordData.leftTactic1_3 || '',
+    left_tactic_2_1: recordData.leftTactic2_1 || '', left_tactic_2_2: recordData.leftTactic2_2 || '', left_tactic_2_3: recordData.leftTactic2_3 || '',
+    left_tactic_3_1: recordData.leftTactic3_1 || '', left_tactic_3_2: recordData.leftTactic3_2 || '', left_tactic_3_3: recordData.leftTactic3_3 || '',
+    right_tactic_1_1: recordData.rightTactic1_1 || '', right_tactic_1_2: recordData.rightTactic1_2 || '', right_tactic_1_3: recordData.rightTactic1_3 || '',
+    right_tactic_2_1: recordData.rightTactic2_1 || '', right_tactic_2_2: recordData.rightTactic2_2 || '', right_tactic_2_3: recordData.rightTactic2_3 || '',
+    right_tactic_3_1: recordData.rightTactic3_1 || '', right_tactic_3_2: recordData.rightTactic3_2 || '', right_tactic_3_3: recordData.rightTactic3_3 || '',
     left_loss:      recordData.leftLoss      ?? recordData.left_loss      ?? recordData.leftDamage  ?? null,
     right_loss:     recordData.rightLoss     ?? recordData.right_loss     ?? recordData.rightDamage ?? null,
     left_total:     recordData.leftTotal     ?? recordData.left_total     ?? recordData.leftTroops  ?? null,
@@ -528,12 +538,12 @@ const MERGE_MAP = {
   description: ['description'],
   leftGeneral1: ['leftGeneral1'], leftGeneral2: ['leftGeneral2'], leftGeneral3: ['leftGeneral3'],
   rightGeneral1: ['rightGeneral1'], rightGeneral2: ['rightGeneral2'], rightGeneral3: ['rightGeneral3'],
-  leftTactic1_2: ['leftTactic1_2'], leftTactic1_3: ['leftTactic1_3'],
-  leftTactic2_2: ['leftTactic2_2'], leftTactic2_3: ['leftTactic2_3'],
-  leftTactic3_2: ['leftTactic3_2'], leftTactic3_3: ['leftTactic3_3'],
-  rightTactic1_2: ['rightTactic1_2'], rightTactic1_3: ['rightTactic1_3'],
-  rightTactic2_2: ['rightTactic2_2'], rightTactic2_3: ['rightTactic2_3'],
-  rightTactic3_2: ['rightTactic3_2'], rightTactic3_3: ['rightTactic3_3'],
+  leftTactic1_1: ['leftTactic1_1'], leftTactic1_2: ['leftTactic1_2'], leftTactic1_3: ['leftTactic1_3'],
+  leftTactic2_1: ['leftTactic2_1'], leftTactic2_2: ['leftTactic2_2'], leftTactic2_3: ['leftTactic2_3'],
+  leftTactic3_1: ['leftTactic3_1'], leftTactic3_2: ['leftTactic3_2'], leftTactic3_3: ['leftTactic3_3'],
+  rightTactic1_1: ['rightTactic1_1'], rightTactic1_2: ['rightTactic1_2'], rightTactic1_3: ['rightTactic1_3'],
+  rightTactic2_1: ['rightTactic2_1'], rightTactic2_2: ['rightTactic2_2'], rightTactic2_3: ['rightTactic2_3'],
+  rightTactic3_1: ['rightTactic3_1'], rightTactic3_2: ['rightTactic3_2'], rightTactic3_3: ['rightTactic3_3'],
   leftLoss: ['leftLoss'], rightLoss: ['rightLoss'], leftTotal: ['leftTotal'], rightTotal: ['rightTotal'],
   leftLossRate: ['leftLossRate'], rightLossRate: ['rightLossRate'], imageBase64: ['imageBase64'],
 };
@@ -632,17 +642,21 @@ async function syncProjectRecords(projectId) {
       try { await dbDeleteLocal(r.id); } catch(e) {}
     }
 
-    // 从 MySQL 完整写入（图片不缓存，按需从 gallery 拉取）
+    // 从 MySQL 批量写入（单个 IndexedDB 事务，大幅提速）
+    const prepared = cloudRecords.map(rec => {
+      rec.cloudId = rec.id;
+      rec._synced = true;
+      rec._syncTime = Date.now();
+      delete rec.imageBase64;
+      return rec;
+    });
     let saved = 0;
-    for (const rec of cloudRecords) {
-      try {
-        rec.cloudId = rec.id;
-        rec._synced = true;
-        rec._syncTime = Date.now();
-        delete rec.imageBase64;
-        await dbPutLocal(rec);
-        saved++;
-      } catch(e) { console.warn('[syncProjectRecords] 单条失败:', rec.id, e); }
+    try {
+      saved = await dbPutAllLocal(prepared);
+    } catch(e) { console.warn('[syncProjectRecords] 批量写入失败，回退逐条:', e.message);
+      for (const rec of prepared) {
+        try { await dbPutLocal(rec); saved++; } catch(e2) {}
+      }
     }
     console.log(`[syncProjectRecords] 完成：写入 ${saved}/${cloudRecords.length} 条`);
     return { saved, total: cloudRecords.length };
@@ -710,6 +724,7 @@ window.cloudSync = {
   getDBTables: cloudGetDBTables,
   queryTable: cloudQueryTable,
   describeTable: cloudDescribeTable,
+  BASE_URL: CLOUD_API_BASE.replace(/\/api$/, ''),
 };
 
 // ========== 存储统计 API ==========

@@ -1,7 +1,8 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-const { parseOCRResponse, mapPaddleResult, setFlat, OCR_PROMPT } = require('./ocr-parser');
+const XLSX = require('xlsx');
+const { mapPaddleResult } = require('./ocr-parser');
 
 const app = express();
 const PORT = 3000;
@@ -9,12 +10,9 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// 静态文件服务（前端页面），Express 多线程比 python http.server 快得多
 app.use(express.static(__dirname, { maxAge: 0 }));
 
-// ========== Token 工具函数 ==========
-// token 格式：mock-token-{phone}-{timestamp}
+// ========== Token ==========
 function extractPhoneFromToken(token) {
   if (!token) return null;
   const t = token.replace(/^Bearer\s+/i, '').trim();
@@ -22,62 +20,35 @@ function extractPhoneFromToken(token) {
   return m ? m[1] : null;
 }
 
-// 敏感操作中间件：验证 token 对应用户仍存在且未被禁用
-// 注意：必须返回 HTTP 401 状态码，前端 cloudRequest 才能正确捕获并触发强制退出
 async function requireActiveUser(req, res, next) {
   const rawToken = req.headers['authorization'] || '';
-  // 没有携带任何 token，直接拒绝（敏感接口必须登录）
-  if (!rawToken) {
-    return res.status(401).json({ code: 401, message: '未登录，请先登录' });
-  }
+  if (!rawToken) return res.status(401).json({ code: 401, message: '未登录，请先登录' });
   const phone = extractPhoneFromToken(rawToken);
-  if (!phone) {
-    // token 存在但格式无法解析（旧格式 token），要求重新登录
-    return res.status(401).json({ code: 401, message: '登录状态已过期，请重新登录' });
-  }
+  if (!phone) return res.status(401).json({ code: 401, message: '登录状态已过期，请重新登录' });
   try {
     const [rows] = await pool.query('SELECT id, status FROM users WHERE phone = ? LIMIT 1', [phone]);
-    if (rows.length === 0) {
-      return res.status(401).json({ code: 401, message: '账号不存在，请重新登录' });
-    }
-    if (rows[0].status === 0) {
-      return res.status(401).json({ code: 401, message: '账号已被禁用，请联系管理员' });
-    }
+    if (rows.length === 0) return res.status(401).json({ code: 401, message: '账号不存在，请重新登录' });
+    if (rows[0].status === 0) return res.status(401).json({ code: 401, message: '账号已被禁用，请联系管理员' });
     req.authPhone = phone;
     req.authUserId = rows[0].id;
     next();
-  } catch (err) {
-    next(); // 数据库异常不阻断请求
-  }
+  } catch (err) { next(); }
 }
 
-// ========== 全局用户存活中间件 ==========
-// 对所有 /api/* 请求：携带新格式 token 时验证用户仍存在且未被禁用
-// 不影响无 token 的公开请求；POST 敏感接口仍保留 requireActiveUser 做"无 token 拒绝"兜底
 async function globalUserCheck(req, res, next) {
-  // 跳过登录/注册接口本身，避免循环
   if (req.path === '/auth/login' || req.path === '/auth/register') return next();
-
   const rawToken = req.headers['authorization'] || '';
-  if (!rawToken) return next(); // 无 token → 公开请求，由各接口自行处理
-
+  if (!rawToken) return next();
   const phone = extractPhoneFromToken(rawToken);
-  if (!phone) return next(); // 旧格式 token → 由 requireActiveUser 各自处理
-
+  if (!phone) return next();
   try {
     const [rows] = await pool.query('SELECT id, status FROM users WHERE phone = ? LIMIT 1', [phone]);
-    if (rows.length === 0) {
-      return res.status(401).json({ code: 401, message: '账号不存在，请重新登录' });
-    }
-    if (rows[0].status === 0) {
-      return res.status(401).json({ code: 401, message: '账号已被禁用，请联系管理员' });
-    }
+    if (rows.length === 0) return res.status(401).json({ code: 401, message: '账号不存在，请重新登录' });
+    if (rows[0].status === 0) return res.status(401).json({ code: 401, message: '账号已被禁用，请联系管理员' });
     req.authPhone = phone;
     req.authUserId = rows[0].id;
     next();
-  } catch (err) {
-    next(); // DB 异常不阻断请求
-  }
+  } catch (err) { next(); }
 }
 
 const dbConfig = {
@@ -95,430 +66,216 @@ let pool;
 async function initDB() {
   try {
     pool = mysql.createPool(dbConfig);
-    const [rows] = await pool.query('SELECT 1');
+    await pool.query('SELECT 1');
     console.log('✅ MySQL 连接成功');
-    // 确保星标配置表存在
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS star_box_configs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        project_id INT NOT NULL,
-        image_width INT NOT NULL DEFAULT 0,
-        image_height INT NOT NULL DEFAULT 0,
-        boxes_json LONGTEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uk_project (project_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    `);
-    // 确保通用标注配置表存在
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS label_configs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        project_id BIGINT NOT NULL,
-        image_width INT NOT NULL DEFAULT 0,
-        image_height INT NOT NULL DEFAULT 0,
-        categories_json LONGTEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uk_project (project_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    `);
-    // 兼容旧 INT 列
+    await pool.query(`CREATE TABLE IF NOT EXISTS star_box_configs (
+      id INT AUTO_INCREMENT PRIMARY KEY, project_id INT NOT NULL,
+      image_width INT NOT NULL DEFAULT 0, image_height INT NOT NULL DEFAULT 0,
+      boxes_json LONGTEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_project (project_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS label_configs (
+      id INT AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
+      image_width INT NOT NULL DEFAULT 0, image_height INT NOT NULL DEFAULT 0,
+      categories_json LONGTEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_project (project_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     await pool.query(`ALTER TABLE label_configs MODIFY COLUMN project_id BIGINT NOT NULL`).catch(()=>{});
-    // 清理历史 OCR 噪音数据
-    const [r1] = await pool.query(
-      `UPDATE battle_records SET left_alliance = '' WHERE left_alliance = '...' OR CHAR_LENGTH(left_alliance) <= 1`
-    );
-    const [r2] = await pool.query(
-      `UPDATE battle_records SET right_alliance = '' WHERE right_alliance = '...' OR CHAR_LENGTH(right_alliance) <= 1`
-    );
-    if (r1.affectedRows > 0 || r2.affectedRows > 0) {
-      console.log(`🧹 清理噪音: left ${r1.affectedRows}, right ${r2.affectedRows}`);
-    }
-    // 确保全局标注配置存在（project_id=0，所有项目自动回退使用）
+    await pool.query(`ALTER TABLE project_player_dict ADD UNIQUE KEY uk_proj_player (project_id, player_name)`).catch(()=>{});
+    // 常用查询索引
+    try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_project (project_id)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_project:', e.message); }
+    try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_project_date (project_id, battle_date)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_project_date:', e.message); }
+    try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_created (created_at)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_created:', e.message); }
+    // 清理 OCR 噪音
+    const [r1] = await pool.query(`UPDATE battle_records SET left_alliance = '' WHERE left_alliance = '...' OR CHAR_LENGTH(left_alliance) <= 1`);
+    const [r2] = await pool.query(`UPDATE battle_records SET right_alliance = '' WHERE right_alliance = '...' OR CHAR_LENGTH(right_alliance) <= 1`);
+    if (r1.affectedRows > 0 || r2.affectedRows > 0) console.log(`🧹 清理噪音: left ${r1.affectedRows}, right ${r2.affectedRows}`);
     const [globalCfg] = await pool.query('SELECT id FROM label_configs WHERE project_id = 0');
     if (globalCfg.length === 0) {
-      // 从已有配置中任选一份复制到全局
-      await pool.query(`
-        INSERT IGNORE INTO label_configs (project_id, image_width, image_height, categories_json)
-        SELECT 0, image_width, image_height, categories_json
-        FROM label_configs WHERE project_id IN (1, 2) LIMIT 1
-      `);
+      await pool.query(`INSERT IGNORE INTO label_configs (project_id, image_width, image_height, categories_json)
+        SELECT 0, image_width, image_height, categories_json FROM label_configs WHERE project_id IN (1, 2) LIMIT 1`);
       console.log('📐 全局标注配置已创建 (project_id=0)');
     }
-  } catch (err) {
-    console.error('❌ MySQL 连接失败:', err.message);
-    process.exit(1);
-  }
+  } catch (err) { console.error('❌ MySQL 连接失败:', err.message); process.exit(1); }
 }
 
-// 全局用户存活检查：对所有 /api 路由生效
 app.use('/api', globalUserCheck);
 
+// ========== 认证 ==========
 app.post('/api/auth/login', async (req, res) => {
   const { phone, password } = req.body;
-  if (!phone || !password) {
-    return res.json({ code: 400, message: '缺少参数' });
-  }
-  
+  if (!phone || !password) return res.json({ code: 400, message: '缺少参数' });
   try {
     const [rows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
-    if (rows.length === 0) {
-      return res.json({ code: 401, message: '账号或密码错误' });
-    }
-    
+    if (rows.length === 0) return res.json({ code: 401, message: '账号或密码错误' });
     const user = rows[0];
     if (user.password === password) {
       const points = user.credit_balance != null ? user.credit_balance : 18;
-
       const loginIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.connection?.remoteAddress || '';
       await pool.query('UPDATE users SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?', [loginIp, user.id]);
-      
-      res.json({
-        code: 200,
-        data: {
-          token: 'mock-token-' + user.phone + '-' + Date.now(),
-          user: { nickname: user.nickname, phone: user.phone, role: user.role_id, points: points }
-        }
-      });
-    } else {
-      res.json({ code: 401, message: '账号或密码错误' });
-    }
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+      res.json({ code: 200, data: { token: 'mock-token-' + user.phone + '-' + Date.now(), user: { nickname: user.nickname, phone: user.phone, role: user.role_id, points: points } } });
+    } else { res.json({ code: 401, message: '账号或密码错误' }); }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.post('/api/auth/register', async (req, res) => {
   const { phone, password, name, role } = req.body;
-  if (!phone || !password) {
-    return res.json({ code: 400, message: '缺少参数' });
-  }
-  
+  if (!phone || !password) return res.json({ code: 400, message: '缺少参数' });
   try {
     const [existRows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
-    if (existRows.length > 0) {
-      return res.json({ code: 400, message: '该手机号已注册' });
-    }
-    
+    if (existRows.length > 0) return res.json({ code: 400, message: '该手机号已注册' });
     const now = new Date();
     const [userResult] = await pool.query(
-      'INSERT INTO users (phone, password, nickname, role_id, status, credit_balance, credit_total_earned, credit_total_consumed, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [phone, password, name || `用户${phone.slice(-4)}`, role || 'member', 1, 18, 0, 0, now, now]
-    );
+      'INSERT INTO users (phone, password, nickname, role_id, status, credit_balance, credit_total_earned, credit_total_consumed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [phone, password, name || `用户${phone.slice(-4)}`, role || 'member', 1, 18, 0, 0, now, now]);
     const newUserId = userResult.insertId;
-    try {
-      await pool.query(
-        'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [newUserId, 18, 18, 'register', '新用户注册免费赠送', newUserId, now]
-      );
-    } catch (logErr) {
-      console.error('[register] credit_log INSERT 失败:', logErr.message);
-    }
-
-    res.json({
-      code: 200,
-      message: '注册成功',
-      data: { phone, nickname: name || `用户${phone.slice(-4)}`, role: role || 'member' }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    try { await pool.query('INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [newUserId, 18, 18, 'register', '新用户注册免费赠送', newUserId, now]); } catch (e) {}
+    res.json({ code: 200, message: '注册成功', data: { phone, nickname: name || `用户${phone.slice(-4)}`, role: role || 'member' } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.get('/api/auth/profile', async (req, res) => {
   try {
     const token = req.headers['authorization'] || req.query.token;
-    if (!token) {
-      return res.json({ code: 401, message: '未登录' });
-    }
-
+    if (!token) return res.json({ code: 401, message: '未登录' });
     const phone = extractPhoneFromToken(token);
-    if (!phone) {
-      return res.json({ code: 401, message: '无效的登录凭证，请重新登录' });
-    }
+    if (!phone) return res.json({ code: 401, message: '无效的登录凭证' });
     const [userRows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
-
-    if (userRows.length === 0) {
-      return res.json({ code: 401, message: '账号不存在，请重新登录' });
-    }
-
+    if (userRows.length === 0) return res.json({ code: 401, message: '账号不存在' });
     const user = userRows[0];
-    if (user.status === 0) {
-      return res.json({ code: 401, message: '账号已被禁用' });
-    }
-    res.json({
-      code: 200,
-      data: {
-        phone: user.phone,
-        nickname: user.nickname,
-        role: user.role_id,
-        points: user.credit_balance != null ? user.credit_balance : 18,
-        avatar: user.avatar || '',
-        status: user.status
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    if (user.status === 0) return res.json({ code: 401, message: '账号已被禁用' });
+    res.json({ code: 200, data: { phone: user.phone, nickname: user.nickname, role: user.role_id, points: user.credit_balance ?? 18, avatar: user.avatar || '', status: user.status } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
+// ========== 用户管理 ==========
 app.get('/api/users', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM users ORDER BY id');
-    res.json({
-      code: 200,
-      data: rows.map(u => ({
-        id: u.id,
-        phone: u.phone,
-        nickname: u.nickname,
-        role_id: u.role_id,
-        status: u.status,
-        points: u.credit_balance || 0,
-        created_at: u.created_at
-      }))
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    res.json({ code: 200, data: rows.map(u => ({ id: u.id, phone: u.phone, nickname: u.nickname, role_id: u.role_id, status: u.status, points: u.credit_balance || 0, created_at: u.created_at })) });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
     const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
-    if (userRows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
-    
+    if (userRows.length === 0) return res.json({ code: 404, message: '用户不存在' });
     await pool.query('DELETE FROM project_members WHERE user_id = ?', [id]);
     await pool.query('DELETE FROM users WHERE id = ?', [id]);
-    
     res.json({ code: 200, message: '删除成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.put('/api/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { nickname, role_id, status, points } = req.body;
-
+    const { id } = req.params; const { nickname, role_id, status, points } = req.body;
     const [userRows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
-    if (userRows.length === 0) {
-      return res.status(404).json({ code: 404, message: '用户不存在' });
-    }
-    
-    const updates = [];
-    const params = [];
-    
-    if (nickname !== undefined) {
-      updates.push('nickname = ?');
-      params.push(nickname);
-    }
-    if (role_id !== undefined) {
-      updates.push('role_id = ?');
-      params.push(role_id);
-    }
-    if (status !== undefined) {
-      updates.push('status = ?');
-      params.push(status);
-    }
-    if (points !== undefined) {
-      updates.push('credit_balance = ?');
-      params.push(points);
-    }
-    
-    if (updates.length === 0) {
-      return res.json({ code: 400, message: '没有需要更新的字段' });
-    }
-    
+    if (userRows.length === 0) return res.status(404).json({ code: 404, message: '用户不存在' });
+    const updates = [], params = [];
+    if (nickname !== undefined) { updates.push('nickname = ?'); params.push(nickname); }
+    if (role_id !== undefined) { updates.push('role_id = ?'); params.push(role_id); }
+    if (status !== undefined) { updates.push('status = ?'); params.push(status); }
+    if (points !== undefined) { updates.push('credit_balance = ?'); params.push(points); }
+    if (updates.length === 0) return res.json({ code: 400, message: '没有需要更新的字段' });
     params.push(id);
-    
     await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE phone = ?`, params);
-    
     res.json({ code: 200, message: '更新成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.post('/api/users/:id/reset-password', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { newPassword } = req.body;
-    if (!newPassword || newPassword.length < 6) {
-      return res.json({ code: 400, message: '密码至少6位' });
-    }
+    const { id } = req.params; const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) return res.json({ code: 400, message: '密码至少6位' });
     const [userRows] = await pool.query('SELECT id FROM users WHERE id = ?', [id]);
-    if (userRows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
+    if (userRows.length === 0) return res.json({ code: 404, message: '用户不存在' });
     await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, id]);
     res.json({ code: 200, message: '密码重置成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
+// ========== 项目管理 ==========
 app.get('/api/projects', async (req, res) => {
   try {
     const { phone } = req.query;
-    if (!phone) {
-      return res.status(400).json({ code: 400, message: '缺少 phone 参数' });
-    }
-    
+    if (!phone) return res.status(400).json({ code: 400, message: '缺少 phone 参数' });
     const [userRows] = await pool.query('SELECT * FROM users WHERE phone = ?', [phone]);
-    if (userRows.length === 0) {
-      return res.status(400).json({ code: 400, message: '用户不存在' });
-    }
-    
+    if (userRows.length === 0) return res.status(400).json({ code: 400, message: '用户不存在' });
     const user = userRows[0];
-    
     const countSub = `(SELECT COUNT(*) FROM project_members pm2 WHERE pm2.project_id = p.id) + 1 AS member_count, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = p.id) AS battle_count`;
-    let query = `SELECT DISTINCT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.created_at, p.updated_at, u.phone as creator_phone, ${countSub} FROM projects p LEFT JOIN users u ON p.creator_id = u.id`;
+    let query = `SELECT DISTINCT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.left_alliances, p.right_alliances, p.created_at, p.updated_at, u.phone as creator_phone, ${countSub} FROM projects p LEFT JOIN users u ON p.creator_id = u.id`;
     let params = [];
-
     if (user.role_id !== 'super_admin') {
-      query = `SELECT DISTINCT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.created_at, p.updated_at, u.phone as creator_phone, ${countSub} FROM projects p LEFT JOIN users u ON p.creator_id = u.id LEFT JOIN project_members pm ON p.id = pm.project_id WHERE p.creator_id = ? OR pm.user_id = ? OR p.is_public = 1`;
+      query = `SELECT DISTINCT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.left_alliances, p.right_alliances, p.created_at, p.updated_at, u.phone as creator_phone, ${countSub} FROM projects p LEFT JOIN users u ON p.creator_id = u.id LEFT JOIN project_members pm ON p.id = pm.project_id WHERE p.creator_id = ? OR pm.user_id = ? OR p.is_public = 1`;
       params = [user.id, user.id];
     }
-
     const [rows] = await pool.query(query, params);
-    res.json({
-      code: 200,
-      data: rows.map(p => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        creator_id: p.creator_id,
-        creator_phone: p.creator_phone || '',
-        status: p.status,
-        is_public: p.is_public,
-        member_count: p.member_count,
-        battle_count: p.battle_count,
-        created_at: p.created_at,
-        updated_at: p.updated_at
-      }))
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    res.json({ code: 200, data: rows.map(p => ({
+      id: p.id, name: p.name, description: p.description, creator_id: p.creator_id, creator_phone: p.creator_phone || '',
+      status: p.status, is_public: p.is_public,
+      left_alliances: Array.isArray(p.left_alliances) ? p.left_alliances : (() => { try { return JSON.parse(p.left_alliances || '[]'); } catch { return []; } })(),
+      right_alliances: Array.isArray(p.right_alliances) ? p.right_alliances : (() => { try { return JSON.parse(p.right_alliances || '[]'); } catch { return []; } })(),
+      member_count: p.member_count, battle_count: p.battle_count, created_at: p.created_at, updated_at: p.updated_at
+    })) });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.get('/api/projects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query(
-      `SELECT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.created_at, p.updated_at,
-        u.phone as creator_phone,
-        (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) + 1 AS member_count,
-        (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = p.id) AS battle_count
-       FROM projects p LEFT JOIN users u ON p.creator_id = u.id WHERE p.id = ?`,
-      [id]
-    );
-
-    if (rows.length === 0) {
-      return res.json({ code: 404, message: '项目不存在' });
-    }
-
+    const [rows] = await pool.query(`SELECT p.id, p.name, p.description, p.creator_id, p.status, p.is_public, p.left_alliances, p.right_alliances, p.created_at, p.updated_at,
+      u.phone as creator_phone, (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) + 1 AS member_count,
+      (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = p.id) AS battle_count
+      FROM projects p LEFT JOIN users u ON p.creator_id = u.id WHERE p.id = ?`, [id]);
+    if (rows.length === 0) return res.json({ code: 404, message: '项目不存在' });
     const p = rows[0];
-    res.json({
-      code: 200,
-      data: {
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        creator_id: p.creator_id,
-        creator_phone: p.creator_phone || '',
-        status: p.status,
-        is_public: p.is_public,
-        member_count: p.member_count,
-        battle_count: p.battle_count,
-        created_at: p.created_at,
-        updated_at: p.updated_at
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    res.json({ code: 200, data: {
+      id: p.id, name: p.name, description: p.description, creator_id: p.creator_id, creator_phone: p.creator_phone || '',
+      status: p.status, is_public: p.is_public,
+      left_alliances: Array.isArray(p.left_alliances) ? p.left_alliances : (() => { try { return JSON.parse(p.left_alliances || '[]'); } catch { return []; } })(),
+      right_alliances: Array.isArray(p.right_alliances) ? p.right_alliances : (() => { try { return JSON.parse(p.right_alliances || '[]'); } catch { return []; } })(),
+      member_count: p.member_count, battle_count: p.battle_count, created_at: p.created_at, updated_at: p.updated_at
+    }});
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.post('/api/projects', requireActiveUser, async (req, res) => {
   try {
-    const { id, name, description, desc, creator_id, creator_phone, is_public, visibility } = req.body;
-
-    // 字段兼容：前端可能用 desc/visibility/creator_phone
+    const { id, name, description, desc, creator_id, creator_phone, is_public, visibility, left_alliances, right_alliances } = req.body;
     const finalDesc = description || desc || '';
     const finalPublic = (is_public || visibility === 'public') ? 1 : 0;
-
-    // creator_id：优先直接传入，否则通过 creator_phone 查询
+    const leftAl = JSON.stringify(Array.isArray(left_alliances) ? left_alliances.slice(0,3) : []);
+    const rightAl = JSON.stringify(Array.isArray(right_alliances) ? right_alliances.slice(0,3) : []);
     let finalCreatorId = creator_id || null;
-    if (!finalCreatorId && creator_phone) {
-      const [urows] = await pool.query('SELECT id FROM users WHERE phone = ?', [creator_phone]);
-      if (urows.length) finalCreatorId = urows[0].id;
-    }
-
-    // 前端传来的 id 可能是 'proj_xxx_xxx' 字符串（BIGINT 列不接受），
-    // 只有纯整数才直接使用，否则设为 null 让 MySQL AUTO_INCREMENT 分配
+    if (!finalCreatorId && creator_phone) { const [urows] = await pool.query('SELECT id FROM users WHERE phone = ?', [creator_phone]); if (urows.length) finalCreatorId = urows[0].id; }
     const parsedId = id ? Number(id) : NaN;
     const projectId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
     const now = new Date();
-
     const [insertResult] = await pool.query(
-      'INSERT INTO projects (id, name, description, creator_id, is_public, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
-      [projectId, name, finalDesc, finalCreatorId, finalPublic, now, now]
-    );
-
-    // AUTO_INCREMENT 分配的 id 在 insertResult.insertId 里
-    const actualId = insertResult.insertId || projectId;
-    res.json({ code: 200, data: { id: actualId } });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+      'INSERT INTO projects (id, name, description, creator_id, is_public, status, left_alliances, right_alliances, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)',
+      [projectId, name, finalDesc, finalCreatorId, finalPublic, leftAl, rightAl, now, now]);
+    res.json({ code: 200, data: { id: insertResult.insertId || projectId } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.put('/api/projects/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, description, desc, is_public, visibility, status } = req.body;
-
-    const updates = [];
-    const params = [];
-
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-    if (description !== undefined || desc !== undefined) {
-      updates.push('description = ?');
-      params.push(description !== undefined ? description : desc);
-    }
-    // is_public 支持直接传 is_public 或 visibility 字符串
-    if (is_public !== undefined) {
-      updates.push('is_public = ?');
-      params.push(is_public ? 1 : 0);
-    } else if (visibility !== undefined) {
-      updates.push('is_public = ?');
-      params.push(visibility === 'public' ? 1 : 0);
-    }
-    if (status !== undefined) {
-      updates.push('status = ?');
-      params.push(status);
-    }
-    
-    updates.push('updated_at = NOW()');
-    params.push(id);
-    
+    const { id } = req.params; const { name, description, desc, is_public, visibility, status, left_alliances, right_alliances } = req.body;
+    const updates = [], params = [];
+    if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+    if (description !== undefined || desc !== undefined) { updates.push('description = ?'); params.push(description !== undefined ? description : desc); }
+    if (is_public !== undefined) { updates.push('is_public = ?'); params.push(is_public ? 1 : 0); }
+    else if (visibility !== undefined) { updates.push('is_public = ?'); params.push(visibility === 'public' ? 1 : 0); }
+    if (status !== undefined) { updates.push('status = ?'); params.push(status); }
+    if (left_alliances !== undefined) { updates.push('left_alliances = ?'); params.push(JSON.stringify(Array.isArray(left_alliances) ? left_alliances.slice(0,3) : [])); }
+    if (right_alliances !== undefined) { updates.push('right_alliances = ?'); params.push(JSON.stringify(Array.isArray(right_alliances) ? right_alliances.slice(0,3) : [])); }
+    updates.push('updated_at = NOW()'); params.push(id);
     await pool.query(`UPDATE projects SET ${updates.join(', ')} WHERE id = ?`, params);
-    
     res.json({ code: 200, message: '更新成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.delete('/api/projects/:id', async (req, res) => {
@@ -529,990 +286,594 @@ app.delete('/api/projects/:id', async (req, res) => {
     await pool.query('DELETE FROM battle_records WHERE project_id = ?', [id]);
     await pool.query('DELETE FROM projects WHERE id = ?', [id]);
     res.json({ code: 200, message: '删除成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 项目成员管理 API ==========
+// ========== 项目成员 ==========
 app.get('/api/projects/:id/members', async (req, res) => {
   try {
-    const { id } = req.params;
-    const [rows] = await pool.query(
-      'SELECT pm.*, u.phone, u.nickname, u.role_id as user_role FROM project_members pm LEFT JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ?',
-      [id]
-    );
-    res.json({
-      code: 200,
-      data: rows.map(r => ({
-        id: r.id,
-        project_id: r.project_id,
-        user_id: r.user_id,
-        phone: r.phone || '',
-        role: r.role || 'viewer',
-        nickname: r.nickname || '',
-        joined_at: r.joined_at
-      }))
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    const [rows] = await pool.query('SELECT pm.*, u.phone, u.nickname, u.role_id as user_role FROM project_members pm LEFT JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ?', [req.params.id]);
+    res.json({ code: 200, data: rows.map(r => ({ id: r.id, project_id: r.project_id, user_id: r.user_id, phone: r.phone || '', role: r.role || 'viewer', nickname: r.nickname || '', joined_at: r.joined_at })) });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.post('/api/projects/:id/members', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { phone, role } = req.body;
-    
-    if (!phone) {
-      return res.json({ code: 400, message: '缺少 phone 参数' });
-    }
-    
+    const { id } = req.params; const { phone, role } = req.body;
+    if (!phone) return res.json({ code: 400, message: '缺少 phone 参数' });
     const [userRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
-    if (userRows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
-    
-    const userId = userRows[0].id;
-    const now = new Date();
-    await pool.query(
-      'INSERT INTO project_members (project_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)',
-      [id, userId, role || 'viewer', now]
-    );
-    // 同步更新项目的 member_count 和 updated_at
-    await pool.query(
-      'UPDATE projects SET member_count = (SELECT COUNT(*)+1 FROM project_members WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
-      [id, id]
-    );
-
+    if (userRows.length === 0) return res.json({ code: 404, message: '用户不存在' });
+    await pool.query('INSERT INTO project_members (project_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)', [id, userRows[0].id, role || 'viewer', new Date()]);
     res.json({ code: 200, message: '添加成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.delete('/api/projects/:id/members/:phone', async (req, res) => {
   try {
     const { id, phone } = req.params;
-    
     const [userRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phone]);
-    if (userRows.length === 0) {
-      return res.json({ code: 404, message: '用户不存在' });
-    }
-    const userId = userRows[0].id;
-    
-    await pool.query('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [id, userId]);
-    // 同步更新项目的 member_count 和 updated_at
-    await pool.query(
-      'UPDATE projects SET member_count = (SELECT COUNT(*)+1 FROM project_members WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
-      [id, id]
-    );
-
+    if (userRows.length === 0) return res.json({ code: 404, message: '用户不存在' });
+    await pool.query('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [id, userRows[0].id]);
     res.json({ code: 200, message: '删除成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-app.get('/api/roles', async (req, res) => {
+// ========== 玩家字典 ==========
+app.get('/api/projects/:id/player-dict', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM roles');
+    const [rows] = await pool.query('SELECT id, player_name, alliance_name, side, created_at FROM project_player_dict WHERE project_id = ? ORDER BY side, player_name', [req.params.id]);
     res.json({ code: 200, data: rows });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.post('/api/projects/:id/player-dict/import', requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params; const { fileBase64, side: defaultSide = 'unknown' } = req.body;
+    if (!fileBase64) return res.json({ code: 400, message: '缺少 fileBase64' });
+    const buf = Buffer.from(fileBase64, 'base64'); const wb = XLSX.read(buf, { type: 'buffer' }); const ws = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
+    const KNOWN_HEADERS = ['player_name','玩家名','玩家','alliance_name','联盟','联盟名','side','阵营'];
+    const hasHeader = (rawRows[0] || []).some(c => KNOWN_HEADERS.includes(String(c).trim()));
+    const rows = hasHeader ? XLSX.utils.sheet_to_json(ws, { defval: '' }) : rawRows.map(r => ({ player_name: String(r[0] || '').trim() }));
+    let added = 0, skipped = 0;
+    for (const row of rows) {
+      const playerName = (row['player_name'] || row['玩家名'] || row['玩家'] || '').toString().trim();
+      if (!playerName) { skipped++; continue; }
+      const allianceName = (row['alliance_name'] || row['联盟'] || row['联盟名'] || '').toString().trim();
+      const side = (['left','right','unknown'].includes(row['side']) ? row['side'] : row['阵营'] === '左' ? 'left' : row['阵营'] === '右' ? 'right' : defaultSide);
+      await pool.query(`INSERT INTO project_player_dict (project_id, player_name, alliance_name, side) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE alliance_name = VALUES(alliance_name), side = VALUES(side)`, [id, playerName, allianceName || null, side]);
+      added++;
+    }
+    res.json({ code: 200, data: { added, skipped } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.delete('/api/projects/:id/player-dict/:playerId', requireSuperAdmin, async (req, res) => {
+  try { await pool.query('DELETE FROM project_player_dict WHERE id = ? AND project_id = ?', [req.params.playerId, req.params.id]); res.json({ code: 200, message: '删除成功' }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+// ========== 角色 ==========
+app.get('/api/roles', async (req, res) => {
+  try { const [rows] = await pool.query('SELECT * FROM roles'); res.json({ code: 200, data: rows }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.post('/api/roles', async (req, res) => {
   try {
     const { id, name, permissions, isBuiltIn } = req.body;
-
-    const roleId = id || 'role_' + Date.now();
-
-    await pool.query(
-      `INSERT INTO roles (id, name, permissions, is_built_in) VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE name=VALUES(name), permissions=VALUES(permissions), is_built_in=VALUES(is_built_in)`,
-      [roleId, name, JSON.stringify(permissions || []), isBuiltIn ? 1 : 0]
-    );
-
-    res.json({ code: 200, data: { id: roleId } });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    await pool.query(`INSERT INTO roles (id, name, permissions, is_built_in) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), permissions=VALUES(permissions), is_built_in=VALUES(is_built_in)`, [id || 'role_' + Date.now(), name, JSON.stringify(permissions || []), isBuiltIn ? 1 : 0]);
+    res.json({ code: 200, data: { id: id || 'role_' + Date.now() } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.delete('/api/roles/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    await pool.query('DELETE FROM roles WHERE id = ?', [id]);
-    
-    res.json({ code: 200, message: '删除成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  try { await pool.query('DELETE FROM roles WHERE id = ?', [req.params.id]); res.json({ code: 200, message: '删除成功' }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 战报管理 API ==========
+// ========== 战报 ==========
+// 规范化请求体: 兼容 camelCase/snake_case/数组/扁平字段
+function normalizeBattleBody(body) {
+  const fv = v => (v && v !== '') ? v : null;
+  const out = {
+    projectId:         body.projectId,
+    attacker_name:     body.attacker_name || body.attackerName || '',
+    enemy_name:        body.enemy_name  || body.enemyName  || '',
+    result:            body.result      || '',
+    battle_date:       body.battle_date || body.battleDate || '',
+    description:       body.description || '',
+    left_loss:         body.left_loss  ?? body.leftLoss  ?? body.leftDamage  ?? null,
+    right_loss:        body.right_loss ?? body.rightLoss ?? body.rightDamage ?? null,
+    left_total:        body.left_total  ?? body.leftTotal  ?? body.leftTroops  ?? null,
+    right_total:       body.right_total ?? body.rightTotal ?? body.rightTroops ?? null,
+    left_loss_rate:    body.left_loss_rate  ?? body.leftLossRate  ?? null,
+    right_loss_rate:   body.right_loss_rate ?? body.rightLossRate ?? null,
+    left_formation:    (body.left_formation  ?? body.leftFormation)  || '',
+    right_formation:   (body.right_formation ?? body.rightFormation) || '',
+    left_alliance:     (body.left_alliance   ?? body.leftAlliance)   || '',
+    right_alliance:    (body.right_alliance  ?? body.rightAlliance)  || '',
+    left_general_1_stars:  body.left_general_1_stars  ?? body.leftGeneral1Stars  ?? 0,
+    left_general_2_stars:  body.left_general_2_stars  ?? body.leftGeneral2Stars  ?? 0,
+    left_general_3_stars:  body.left_general_3_stars  ?? body.leftGeneral3Stars  ?? 0,
+    right_general_1_stars: body.right_general_1_stars ?? body.rightGeneral1Stars ?? 0,
+    right_general_2_stars: body.right_general_2_stars ?? body.rightGeneral2Stars ?? 0,
+    right_general_3_stars: body.right_general_3_stars ?? body.rightGeneral3Stars ?? 0,
+  };
+  const left_generals  = body.left_generals  ?? body.leftGenerals;
+  const right_generals = body.right_generals ?? body.rightGenerals;
+  const left_tactics   = body.left_tactics   ?? body.leftTactics;
+  const right_tactics  = body.right_tactics  ?? body.rightTactics;
+  out.lg = Array.isArray(left_generals)  ? left_generals  : [fv(body.leftGeneral1 || body.left_general_1), fv(body.leftGeneral2 || body.left_general_2), fv(body.leftGeneral3 || body.left_general_3)];
+  out.rg = Array.isArray(right_generals) ? right_generals : [fv(body.rightGeneral1 || body.right_general_1), fv(body.rightGeneral2 || body.right_general_2), fv(body.rightGeneral3 || body.right_general_3)];
+  out.lt = Array.isArray(left_tactics)   ? left_tactics   : [fv(body.leftTactic1_1 || body.left_tactic_1_1), fv(body.leftTactic1_2 || body.left_tactic_1_2), fv(body.leftTactic1_3 || body.left_tactic_1_3), fv(body.leftTactic2_1 || body.left_tactic_2_1), fv(body.leftTactic2_2 || body.left_tactic_2_2), fv(body.leftTactic2_3 || body.left_tactic_2_3), fv(body.leftTactic3_1 || body.left_tactic_3_1), fv(body.leftTactic3_2 || body.left_tactic_3_2), fv(body.leftTactic3_3 || body.left_tactic_3_3)];
+  out.rt = Array.isArray(right_tactics)  ? right_tactics  : [fv(body.rightTactic1_1 || body.right_tactic_1_1), fv(body.rightTactic1_2 || body.right_tactic_1_2), fv(body.rightTactic1_3 || body.right_tactic_1_3), fv(body.rightTactic2_1 || body.right_tactic_2_1), fv(body.rightTactic2_2 || body.right_tactic_2_2), fv(body.rightTactic2_3 || body.right_tactic_2_3), fv(body.rightTactic3_1 || body.right_tactic_3_1), fv(body.rightTactic3_2 || body.right_tactic_3_2), fv(body.rightTactic3_3 || body.right_tactic_3_3)];
+  return out;
+}
+
 app.get('/api/battles', async (req, res) => {
   try {
     const { projectId } = req.query;
-    
-    let query = 'SELECT * FROM battle_records';
-    let params = [];
-    
-    if (projectId) {
-      query += ' WHERE project_id = ?';
-      params = [projectId];
-    }
-    
+    let query = 'SELECT * FROM battle_records', params = [];
+    if (projectId) { query += ' WHERE project_id = ?'; params = [projectId]; }
     query += ' ORDER BY created_at DESC';
-    
     const [rows] = await pool.query(query, params);
-    res.json({
-      code: 200,
-      data: rows.map(r => ({
-        id: r.id,
-        project_id: r.project_id,
-        attacker_name: r.attacker_name,
-        enemy_name: r.enemy_name,
-        result: r.result,
-        battle_date: r.battle_date,
-        description: r.description,
-        left_loss: r.left_loss,
-        right_loss: r.right_loss,
-        left_total: r.left_total,
-        right_total: r.right_total,
-        left_loss_rate: r.left_loss_rate,
-        right_loss_rate: r.right_loss_rate,
-        left_generals: r.left_generals,
-        right_generals: r.right_generals,
-        left_tactics: r.left_tactics,
-        right_tactics: r.right_tactics,
-        left_general_1: r.left_general_1, left_general_2: r.left_general_2, left_general_3: r.left_general_3,
-        right_general_1: r.right_general_1, right_general_2: r.right_general_2, right_general_3: r.right_general_3,
-        left_tactic_1_1: r.left_tactic_1_1, left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
-        left_tactic_2_1: r.left_tactic_2_1, left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
-        left_tactic_3_1: r.left_tactic_3_1, left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
-        right_tactic_1_1: r.right_tactic_1_1, right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
-        right_tactic_2_1: r.right_tactic_2_1, right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
-        right_tactic_3_1: r.right_tactic_3_1, right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
-        left_formation: r.left_formation,
-        right_formation: r.right_formation,
-        left_alliance: r.left_alliance,
-        right_alliance: r.right_alliance,
-        left_general_1_stars: r.left_general_1_stars,
-        left_general_2_stars: r.left_general_2_stars,
-        left_general_3_stars: r.left_general_3_stars,
-        right_general_1_stars: r.right_general_1_stars,
-        right_general_2_stars: r.right_general_2_stars,
-        right_general_3_stars: r.right_general_3_stars,
-        created_at: r.created_at,
-        updated_at: r.updated_at
-      }))
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    res.json({ code: 200, data: rows.map(r => ({
+      id: r.id, project_id: r.project_id,
+      leftPlayer: r.attacker_name, rightPlayer: r.enemy_name,
+      attacker_name: r.attacker_name, enemy_name: r.enemy_name,
+      result: r.result, battle_date: r.battle_date, description: r.description,
+      left_loss: r.left_loss, right_loss: r.right_loss, left_total: r.left_total, right_total: r.right_total,
+      left_loss_rate: r.left_loss_rate, right_loss_rate: r.right_loss_rate,
+      left_general_1: r.left_general_1, left_general_2: r.left_general_2, left_general_3: r.left_general_3,
+      right_general_1: r.right_general_1, right_general_2: r.right_general_2, right_general_3: r.right_general_3,
+      left_tactic_1_1: r.left_tactic_1_1, left_tactic_1_2: r.left_tactic_1_2, left_tactic_1_3: r.left_tactic_1_3,
+      left_tactic_2_1: r.left_tactic_2_1, left_tactic_2_2: r.left_tactic_2_2, left_tactic_2_3: r.left_tactic_2_3,
+      left_tactic_3_1: r.left_tactic_3_1, left_tactic_3_2: r.left_tactic_3_2, left_tactic_3_3: r.left_tactic_3_3,
+      right_tactic_1_1: r.right_tactic_1_1, right_tactic_1_2: r.right_tactic_1_2, right_tactic_1_3: r.right_tactic_1_3,
+      right_tactic_2_1: r.right_tactic_2_1, right_tactic_2_2: r.right_tactic_2_2, right_tactic_2_3: r.right_tactic_2_3,
+      right_tactic_3_1: r.right_tactic_3_1, right_tactic_3_2: r.right_tactic_3_2, right_tactic_3_3: r.right_tactic_3_3,
+      left_formation: r.left_formation, right_formation: r.right_formation,
+      left_alliance: r.left_alliance, right_alliance: r.right_alliance,
+      left_general_1_stars: r.left_general_1_stars, left_general_2_stars: r.left_general_2_stars, left_general_3_stars: r.left_general_3_stars,
+      right_general_1_stars: r.right_general_1_stars, right_general_2_stars: r.right_general_2_stars, right_general_3_stars: r.right_general_3_stars,
+      created_at: r.created_at, updated_at: r.updated_at
+    })) });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.post('/api/battles', globalUserCheck, async (req, res) => {
   try {
-    const body = req.body;
-    const projectId = body.projectId;
-    const attacker_name = body.attacker_name || body.attackerName;
-    const enemy_name = body.enemy_name || body.enemyName;
-    const result = body.result;
-    const battle_date = body.battle_date || body.battleDate;
-    const description = body.description;
-    const left_loss  = body.left_loss  ?? body.leftLoss  ?? body.leftDamage  ?? null;
-    const right_loss = body.right_loss ?? body.rightLoss ?? body.rightDamage ?? null;
-    const left_total  = body.left_total  ?? body.leftTotal  ?? body.leftTroops  ?? null;
-    const right_total = body.right_total ?? body.rightTotal ?? body.rightTroops ?? null;
-    const left_generals = body.left_generals ?? body.leftGenerals;
-    const right_generals = body.right_generals ?? body.rightGenerals;
-    const left_tactics = body.left_tactics ?? body.leftTactics;
-    const right_tactics = body.right_tactics ?? body.rightTactics;
-    const left_formation  = body.left_formation  ?? body.leftFormation;
-    const right_formation = body.right_formation ?? body.rightFormation;
-    const left_alliance   = body.left_alliance   ?? body.leftAlliance;
-    const right_alliance  = body.right_alliance  ?? body.rightAlliance;
-    const left_loss_rate  = body.left_loss_rate  ?? body.leftLossRate  ?? null;
-    const right_loss_rate = body.right_loss_rate ?? body.rightLossRate ?? null;
-    const left_general_1_stars  = body.left_general_1_stars  ?? body.leftGeneral1Stars  ?? 0;
-    const left_general_2_stars  = body.left_general_2_stars  ?? body.leftGeneral2Stars  ?? 0;
-    const left_general_3_stars  = body.left_general_3_stars  ?? body.leftGeneral3Stars  ?? 0;
-    const right_general_1_stars = body.right_general_1_stars ?? body.rightGeneral1Stars ?? 0;
-    const right_general_2_stars = body.right_general_2_stars ?? body.rightGeneral2Stars ?? 0;
-    const right_general_3_stars = body.right_general_3_stars ?? body.rightGeneral3Stars ?? 0;
-
+    const b = normalizeBattleBody(req.body);
     const now = new Date();
 
-    // 幂等检查：同一项目下 日期+攻方+守方+结果 完全相同视为重复提交，直接返回已有记录
-    if (projectId && battle_date && attacker_name && enemy_name) {
-      const [dup] = await pool.query(
-        'SELECT id FROM battle_records WHERE project_id=? AND battle_date=? AND attacker_name=? AND enemy_name=? AND result=? LIMIT 1',
-        [projectId, battle_date, attacker_name, enemy_name, result || '']
-      );
-      if (dup.length > 0) {
-        console.log('[battles] 重复提交，返回已有记录 id:', dup[0].id);
-        return res.json({ code: 200, data: { id: dup[0].id } });
-      }
+    if (b.projectId && b.battle_date && b.attacker_name && b.enemy_name) {
+      const [dup] = await pool.query('SELECT id FROM battle_records WHERE project_id=? AND battle_date=? AND attacker_name=? AND enemy_name=? AND result=? LIMIT 1', [b.projectId, b.battle_date, b.attacker_name, b.enemy_name, b.result || '']);
+      if (dup.length > 0) return res.json({ code: 200, data: { id: dup[0].id } });
     }
 
-    const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
-    const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
-    const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
-    const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
-
-    // 从 body 或从数组中提取 24 个独立字段
-    // 兼容前端发送的个别字段（leftGeneral1 / left_general_1）和旧数组格式（leftGenerals）
-    const f = (arr, i) => (arr[i] && arr[i] !== '') ? arr[i] : null;
     const fv = v => (v && v !== '') ? v : null;
-    const lg = Array.isArray(left_generals) ? left_generals : [
-      fv(body.leftGeneral1 || body.left_general_1),
-      fv(body.leftGeneral2 || body.left_general_2),
-      fv(body.leftGeneral3 || body.left_general_3),
-    ];
-    const rg = Array.isArray(right_generals) ? right_generals : [
-      fv(body.rightGeneral1 || body.right_general_1),
-      fv(body.rightGeneral2 || body.right_general_2),
-      fv(body.rightGeneral3 || body.right_general_3),
-    ];
-    const lt = Array.isArray(left_tactics) ? left_tactics : [
-      fv(body.leftTactic1_1 || body.left_tactic_1_1),
-      fv(body.leftTactic1_2 || body.left_tactic_1_2),
-      fv(body.leftTactic1_3 || body.left_tactic_1_3),
-      fv(body.leftTactic2_1 || body.left_tactic_2_1),
-      fv(body.leftTactic2_2 || body.left_tactic_2_2),
-      fv(body.leftTactic2_3 || body.left_tactic_2_3),
-      fv(body.leftTactic3_1 || body.left_tactic_3_1),
-      fv(body.leftTactic3_2 || body.left_tactic_3_2),
-      fv(body.leftTactic3_3 || body.left_tactic_3_3),
-    ];
-    const rt = Array.isArray(right_tactics) ? right_tactics : [
-      fv(body.rightTactic1_1 || body.right_tactic_1_1),
-      fv(body.rightTactic1_2 || body.right_tactic_1_2),
-      fv(body.rightTactic1_3 || body.right_tactic_1_3),
-      fv(body.rightTactic2_1 || body.right_tactic_2_1),
-      fv(body.rightTactic2_2 || body.right_tactic_2_2),
-      fv(body.rightTactic2_3 || body.right_tactic_2_3),
-      fv(body.rightTactic3_1 || body.right_tactic_3_1),
-      fv(body.rightTactic3_2 || body.right_tactic_3_2),
-      fv(body.rightTactic3_3 || body.right_tactic_3_3),
-    ];
+    const f = (arr, i) => (arr[i] && arr[i] !== '') ? arr[i] : null;
 
     const [resultRow] = await pool.query(
-      'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, ' +
-      'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_generals, right_generals, ' +
-      'left_tactics, right_tactics, left_formation, right_formation, left_alliance, right_alliance, ' +
-      'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
-      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
-      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
-      'left_general_1_stars, left_general_2_stars, left_general_3_stars, ' +
-      'right_general_1_stars, right_general_2_stars, right_general_3_stars, ' +
-      'created_by, status, created_at, updated_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [projectId, attacker_name, enemy_name, result, battle_date, description,
-       left_loss, right_loss, left_total, right_total, left_loss_rate ?? null, right_loss_rate ?? null,
-       left_generals_str, right_generals_str,
-       left_tactics_str, right_tactics_str, left_formation, right_formation, left_alliance, right_alliance,
-       f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
-       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
-       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
-       left_general_1_stars, left_general_2_stars, left_general_3_stars,
-       right_general_1_stars, right_general_2_stars, right_general_3_stars,
-       1, 1, now, now]
+      'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_formation, right_formation, left_alliance, right_alliance, left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, left_general_1_stars, left_general_2_stars, left_general_3_stars, right_general_1_stars, right_general_2_stars, right_general_3_stars, created_by, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [b.projectId, b.attacker_name, b.enemy_name, b.result, b.battle_date, b.description, b.left_loss, b.right_loss, b.left_total, b.right_total, b.left_loss_rate ?? null, b.right_loss_rate ?? null, b.left_formation, b.right_formation, b.left_alliance, b.right_alliance, f(b.lg,0), f(b.lg,1), f(b.lg,2), f(b.rg,0), f(b.rg,1), f(b.rg,2), f(b.lt,0), f(b.lt,1), f(b.lt,2), f(b.lt,3), f(b.lt,4), f(b.lt,5), f(b.lt,6), f(b.lt,7), f(b.lt,8), f(b.rt,0), f(b.rt,1), f(b.rt,2), f(b.rt,3), f(b.rt,4), f(b.rt,5), f(b.rt,6), f(b.rt,7), f(b.rt,8), b.left_general_1_stars, b.left_general_2_stars, b.left_general_3_stars, b.right_general_1_stars, b.right_general_2_stars, b.right_general_3_stars, 1, 1, now, now]
     );
-    
-    // 同步更新所属项目的 battle_count 和 updated_at
-    if (projectId) {
-      await pool.query(
-        'UPDATE projects SET battle_count = (SELECT COUNT(*) FROM battle_records WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
-        [projectId, projectId]
-      );
-    }
     res.json({ code: 200, data: { id: resultRow.insertId } });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.put('/api/battles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    // 兼容 camelCase 和 snake_case
-    const attacker_name = req.body.attacker_name || req.body.attackerName;
-    const enemy_name = req.body.enemy_name || req.body.enemyName;
-    const result = req.body.result;
-    const battle_date = req.body.battle_date || req.body.battleDate;
-    const description = req.body.description;
-    const left_alliance = req.body.left_alliance || req.body.leftAlliance;
-    const right_alliance = req.body.right_alliance || req.body.rightAlliance;
-    const left_loss  = req.body.left_loss  ?? req.body.leftLoss  ?? req.body.leftDamage  ?? null;
-    const right_loss = req.body.right_loss ?? req.body.rightLoss ?? req.body.rightDamage ?? null;
-    const left_total  = req.body.left_total  ?? req.body.leftTotal  ?? req.body.leftTroops  ?? null;
-    const right_total = req.body.right_total ?? req.body.rightTotal ?? req.body.rightTroops ?? null;
-    const left_loss_rate = req.body.left_loss_rate || req.body.leftLossRate;
-    const right_loss_rate = req.body.right_loss_rate || req.body.rightLossRate;
-    let left_generals = req.body.left_generals || req.body.leftGenerals;
-    let right_generals = req.body.right_generals || req.body.rightGenerals;
-    let left_tactics = req.body.left_tactics || req.body.leftTactics;
-    let right_tactics = req.body.right_tactics || req.body.rightTactics;
-    const left_formation = req.body.left_formation || req.body.leftFormation;
-    const right_formation = req.body.right_formation || req.body.rightFormation;
-
-    // JSON 序列化数组字段（兼容旧格式）
-    const left_generals_str = Array.isArray(left_generals) ? JSON.stringify(left_generals) : left_generals;
-    const right_generals_str = Array.isArray(right_generals) ? JSON.stringify(right_generals) : right_generals;
-    const left_tactics_str = Array.isArray(left_tactics) ? JSON.stringify(left_tactics) : left_tactics;
-    const right_tactics_str = Array.isArray(right_tactics) ? JSON.stringify(right_tactics) : right_tactics;
-
-    // 24 个独立字段（兼容个别字段 leftGeneral1/left_general_1 和旧数组格式）
+    const b = normalizeBattleBody(req.body);
     const f = (arr, i) => (arr[i] && arr[i] !== '') ? arr[i] : null;
-    const fv = v => (v && v !== '') ? v : null;
-    const lg = Array.isArray(left_generals) ? left_generals : [
-      fv(req.body.leftGeneral1 || req.body.left_general_1),
-      fv(req.body.leftGeneral2 || req.body.left_general_2),
-      fv(req.body.leftGeneral3 || req.body.left_general_3),
-    ];
-    const rg = Array.isArray(right_generals) ? right_generals : [
-      fv(req.body.rightGeneral1 || req.body.right_general_1),
-      fv(req.body.rightGeneral2 || req.body.right_general_2),
-      fv(req.body.rightGeneral3 || req.body.right_general_3),
-    ];
-    const lt = Array.isArray(left_tactics) ? left_tactics : [
-      fv(req.body.leftTactic1_1 || req.body.left_tactic_1_1),
-      fv(req.body.leftTactic1_2 || req.body.left_tactic_1_2),
-      fv(req.body.leftTactic1_3 || req.body.left_tactic_1_3),
-      fv(req.body.leftTactic2_1 || req.body.left_tactic_2_1),
-      fv(req.body.leftTactic2_2 || req.body.left_tactic_2_2),
-      fv(req.body.leftTactic2_3 || req.body.left_tactic_2_3),
-      fv(req.body.leftTactic3_1 || req.body.left_tactic_3_1),
-      fv(req.body.leftTactic3_2 || req.body.left_tactic_3_2),
-      fv(req.body.leftTactic3_3 || req.body.left_tactic_3_3),
-    ];
-    const rt = Array.isArray(right_tactics) ? right_tactics : [
-      fv(req.body.rightTactic1_1 || req.body.right_tactic_1_1),
-      fv(req.body.rightTactic1_2 || req.body.right_tactic_1_2),
-      fv(req.body.rightTactic1_3 || req.body.right_tactic_1_3),
-      fv(req.body.rightTactic2_1 || req.body.right_tactic_2_1),
-      fv(req.body.rightTactic2_2 || req.body.right_tactic_2_2),
-      fv(req.body.rightTactic2_3 || req.body.right_tactic_2_3),
-      fv(req.body.rightTactic3_1 || req.body.right_tactic_3_1),
-      fv(req.body.rightTactic3_2 || req.body.right_tactic_3_2),
-      fv(req.body.rightTactic3_3 || req.body.right_tactic_3_3),
-    ];
-
     const now = new Date();
-
     await pool.query(
-      'UPDATE battle_records SET attacker_name = ?, enemy_name = ?, result = ?, battle_date = ?, description = ?, ' +
-      'left_alliance = ?, right_alliance = ?, ' +
-      'left_loss = ?, right_loss = ?, left_total = ?, right_total = ?, ' +
-      'left_loss_rate = ?, right_loss_rate = ?, ' +
-      'left_generals = ?, right_generals = ?, left_tactics = ?, right_tactics = ?, ' +
-      'left_formation = ?, right_formation = ?, ' +
-      'left_general_1 = ?, left_general_2 = ?, left_general_3 = ?, ' +
-      'right_general_1 = ?, right_general_2 = ?, right_general_3 = ?, ' +
-      'left_tactic_1_1 = ?, left_tactic_1_2 = ?, left_tactic_1_3 = ?, ' +
-      'left_tactic_2_1 = ?, left_tactic_2_2 = ?, left_tactic_2_3 = ?, ' +
-      'left_tactic_3_1 = ?, left_tactic_3_2 = ?, left_tactic_3_3 = ?, ' +
-      'right_tactic_1_1 = ?, right_tactic_1_2 = ?, right_tactic_1_3 = ?, ' +
-      'right_tactic_2_1 = ?, right_tactic_2_2 = ?, right_tactic_2_3 = ?, ' +
-      'right_tactic_3_1 = ?, right_tactic_3_2 = ?, right_tactic_3_3 = ?, ' +
-      'updated_at = ? WHERE id = ?',
-      [attacker_name, enemy_name, result, battle_date, description,
-       left_alliance || '', right_alliance || '',
-       left_loss, right_loss, left_total, right_total,
-       left_loss_rate ?? null, right_loss_rate ?? null,
-       left_generals_str, right_generals_str, left_tactics_str, right_tactics_str,
-       left_formation, right_formation,
-       f(lg,0), f(lg,1), f(lg,2), f(rg,0), f(rg,1), f(rg,2),
-       f(lt,0), f(lt,1), f(lt,2), f(lt,3), f(lt,4), f(lt,5), f(lt,6), f(lt,7), f(lt,8),
-       f(rt,0), f(rt,1), f(rt,2), f(rt,3), f(rt,4), f(rt,5), f(rt,6), f(rt,7), f(rt,8),
-       now, id]
+      'UPDATE battle_records SET attacker_name=?, enemy_name=?, result=?, battle_date=?, description=?, left_alliance=?, right_alliance=?, left_loss=?, right_loss=?, left_total=?, right_total=?, left_loss_rate=?, right_loss_rate=?, left_formation=?, right_formation=?, left_general_1=?, left_general_2=?, left_general_3=?, right_general_1=?, right_general_2=?, right_general_3=?, left_tactic_1_1=?, left_tactic_1_2=?, left_tactic_1_3=?, left_tactic_2_1=?, left_tactic_2_2=?, left_tactic_2_3=?, left_tactic_3_1=?, left_tactic_3_2=?, left_tactic_3_3=?, right_tactic_1_1=?, right_tactic_1_2=?, right_tactic_1_3=?, right_tactic_2_1=?, right_tactic_2_2=?, right_tactic_2_3=?, right_tactic_3_1=?, right_tactic_3_2=?, right_tactic_3_3=?, updated_at=? WHERE id=?',
+      [b.attacker_name, b.enemy_name, b.result, b.battle_date, b.description, b.left_alliance||'', b.right_alliance||'', b.left_loss, b.right_loss, b.left_total, b.right_total, b.left_loss_rate??null, b.right_loss_rate??null, b.left_formation, b.right_formation, f(b.lg,0), f(b.lg,1), f(b.lg,2), f(b.rg,0), f(b.rg,1), f(b.rg,2), f(b.lt,0), f(b.lt,1), f(b.lt,2), f(b.lt,3), f(b.lt,4), f(b.lt,5), f(b.lt,6), f(b.lt,7), f(b.lt,8), f(b.rt,0), f(b.rt,1), f(b.rt,2), f(b.rt,3), f(b.rt,4), f(b.rt,5), f(b.rt,6), f(b.rt,7), f(b.rt,8), now, id]
     );
-
     res.json({ code: 200, message: '更新成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.delete('/api/battles/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    // 先查出所属项目，删除后同步更新 updated_at
-    const [bRows] = await pool.query('SELECT project_id FROM battle_records WHERE id = ?', [id]);
-    const bProjectId = bRows.length ? bRows[0].project_id : null;
-
-    await pool.query('DELETE FROM battle_gallery WHERE battle_id = ?', [id]);
-    await pool.query('DELETE FROM battle_records WHERE id = ?', [id]);
-
-    if (bProjectId) {
-      await pool.query(
-        'UPDATE projects SET battle_count = (SELECT COUNT(*) FROM battle_records WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
-        [bProjectId, bProjectId]
-      );
-    }
+    await pool.query('DELETE FROM battle_gallery WHERE battle_id = ?', [req.params.id]);
+    await pool.query('DELETE FROM battle_records WHERE id = ?', [req.params.id]);
     res.json({ code: 200, message: '删除成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 积分管理 API ==========
-// 按手机号更新积分（前端调用）
+// ========== 积分 ==========
 app.put('/api/user_credits', async (req, res) => {
   try {
     const { phone, balance, type, description, operator_id, operator_phone } = req.body;
     if (!phone || balance === undefined) return res.json({ code: 400, message: '缺少参数' });
     const [rows] = await pool.query('SELECT id, credit_balance FROM users WHERE phone = ?', [phone]);
     if (rows.length === 0) return res.json({ code: 404, message: '用户不存在' });
-    const userId = rows[0].id;
-    const oldBalance = rows[0].credit_balance || 0;
-    const changeAmount = balance - oldBalance;
+    const userId = rows[0].id, oldBalance = rows[0].credit_balance || 0, changeAmount = balance - oldBalance;
     await pool.query('UPDATE users SET credit_balance = ? WHERE id = ?', [balance, userId]);
     let finalOperatorId = operator_id || null;
-    if (!finalOperatorId && operator_phone) {
-      const [opRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [operator_phone]);
-      if (opRows.length) finalOperatorId = opRows[0].id;
-    }
-    const logType = type || 'adjust';
-    const logDesc = description || '超管调整积分';
-    // 消费/无操作者时，操作者即用户本身
+    if (!finalOperatorId && operator_phone) { const [opRows] = await pool.query('SELECT id FROM users WHERE phone = ?', [operator_phone]); if (opRows.length) finalOperatorId = opRows[0].id; }
+    const logType = type || 'adjust', logDesc = description || '超管调整积分';
     if (!finalOperatorId && logType === 'consume') finalOperatorId = userId;
-    await pool.query(
-      'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-      [userId, changeAmount, balance, logType, logDesc, finalOperatorId]
-    );
+    await pool.query('INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())', [userId, changeAmount, balance, logType, logDesc, finalOperatorId]);
     res.json({ code: 200, message: '更新成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-
+// ========== 数据库管理 ==========
 app.get('/api/db/tables', async (req, res) => {
   try {
-    const [tableList] = await pool.query(
-      "SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'nslg_battle'"
-    );
-    
+    const [tableList] = await pool.query("SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'nslg_battle'");
     const tables = [];
-    for (const tbl of tableList) {
-      const [countResult] = await pool.query(`SELECT COUNT(*) as cnt FROM \`${tbl.name}\``);
-      tables.push({
-        name: tbl.name,
-        count: countResult[0].cnt
-      });
-    }
-    
+    for (const tbl of tableList) { const [countResult] = await pool.query(`SELECT COUNT(*) as cnt FROM \`${tbl.name}\``); tables.push({ name: tbl.name, count: countResult[0].cnt }); }
     res.json({ code: 200, data: tables });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.get('/api/db/table/:tableName', async (req, res) => {
   try {
-    const { tableName } = req.params;
-    const { page = 1, pageSize = 20, search } = req.query;
-    const offset = (page - 1) * pageSize;
-    
-    let query = `SELECT * FROM \`${tableName}\``;
-    let countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``;
-    let params = [];
-    
-    if (search) {
-      query += ` WHERE CONCAT_WS(' ', id, name, description, phone) LIKE ?`;
-      countQuery += ` WHERE CONCAT_WS(' ', id, name, description, phone) LIKE ?`;
-      params.push(`%${search}%`);
-    }
-    
+    const { tableName } = req.params; const { page = 1, pageSize = 20, search } = req.query; const offset = (page - 1) * pageSize;
+    let query = `SELECT * FROM \`${tableName}\``, countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``, params = [];
+    if (search) { query += ` WHERE CONCAT_WS(' ', id, name, description, phone) LIKE ?`; countQuery += ` WHERE CONCAT_WS(' ', id, name, description, phone) LIKE ?`; params.push(`%${search}%`); }
     query += ` LIMIT ?, ?`;
-    const queryParams = [...params, offset, parseInt(pageSize)];
-    const countParams = [...params];
-    
-    const [rows] = await pool.query(query, queryParams);
-    const [countResult] = await pool.query(countQuery, countParams);
-    const total = countResult[0].total;
-    
+    const [rows] = await pool.query(query, [...params, offset, parseInt(pageSize)]);
+    const [countResult] = await pool.query(countQuery, [...params]);
     const [columns] = await pool.query(`DESCRIBE \`${tableName}\``);
-    
-    res.json({
-      code: 200,
-      data: {
-        rows,
-        columns: columns.map(col => ({ field: col.Field, type: col.Type })),
-        pagination: {
-          page: parseInt(page),
-          pageSize: parseInt(pageSize),
-          total,
-          totalPages: Math.ceil(total / pageSize)
-        }
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    res.json({ code: 200, data: { rows, columns: columns.map(col => ({ field: col.Field, type: col.Type })), pagination: { page: parseInt(page), pageSize: parseInt(pageSize), total: countResult[0].total, totalPages: Math.ceil(countResult[0].total / pageSize) } } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 app.get('/api/db/table/:tableName/desc', async (req, res) => {
-  try {
-    const { tableName } = req.params;
-    const [columns] = await pool.query(`DESCRIBE \`${tableName}\``);
-    res.json({
-      code: 200,
-      data: {
-        table: tableName,
-        columns: columns.map(col => ({
-          field: col.Field,
-          type: col.Type,
-          nullable: col.Null === 'YES',
-          key: col.Key,
-          default: col.Default,
-          extra: col.Extra
-        }))
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  try { const [columns] = await pool.query(`DESCRIBE \`${req.params.tableName}\``); res.json({ code: 200, data: { table: req.params.tableName, columns: columns.map(col => ({ field: col.Field, type: col.Type, nullable: col.Null === 'YES', key: col.Key, default: col.Default, extra: col.Extra })) } }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
 // ========== OCR 代理 ==========
 const DOUBAO_API_KEY = process.env.DOUBAO_API_KEY || 'ark-74b37e3f-3407-4070-b918-71d6a455bc5a-19ae6';
 const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
-const PADDLE_URL  = 'http://127.0.0.1:8003/ocr';
+const PADDLE_URL = 'http://127.0.0.1:8003/ocr';
+const PADDLE_TEST_URL = 'http://127.0.0.1:8003/test';
+const PADDLE_STARS_URL = 'http://127.0.0.1:8003/test-stars';
+const PADDLE_CACHE_IMG_URL = 'http://127.0.0.1:8003/cache-image';
 
-// PaddleOCR / RapidOCR 本地服务路由
 app.post('/api/ocr-paddle', requireActiveUser, async (req, res) => {
   try {
     const { image, labelConfig } = req.body;
     if (!image) return res.status(400).json({ ok: false, error: '缺少 image 参数' });
-    const body = { image };
-    if (labelConfig) body.labelConfig = labelConfig;
-    const resp = await fetch(PADDLE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
-    });
+    const body = { image }; if (labelConfig) body.labelConfig = labelConfig;
+    const resp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60000) });
     if (!resp.ok) return res.status(502).json({ ok: false, error: `OCR服务异常: ${resp.status}` });
-    const data = await resp.json();
-    res.json(data);
-  } catch (err) {
-    // 503 → 前端自动回退豆包
-    res.status(503).json({ ok: false, error: `OCR服务不可用: ${err.message}` });
-  }
+    res.json(await resp.json());
+  } catch (err) { res.status(503).json({ ok: false, error: `OCR服务不可用: ${err.message}` }); }
 });
 
-// 豆包视觉模型代理（备用）
 app.post('/api/ocr', requireActiveUser, async (req, res) => {
   try {
-    const response = await fetch(DOUBAO_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DOUBAO_API_KEY}`
-      },
-      body: JSON.stringify(req.body)
-    });
+    const response = await fetch(DOUBAO_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DOUBAO_API_KEY}` }, body: JSON.stringify(req.body) });
     const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error || data, code: response.status });
-    }
+    if (!response.ok) return res.status(response.status).json({ error: data.error || data, code: response.status });
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ========== OCR 一站式上传（图片→识别→解析→存库）==========
-const OCR_MODEL = process.env.DOUBAO_MODEL || 'ep-m-20260426183050-krmx7';
-
+// ========== OCR 一站式上传 ==========
 app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
   try {
     const { image, projectId, imageName, battleDate: clientDate, labelConfig } = req.body;
     if (!image) return res.json({ code: 400, message: '缺少图片数据' });
-
-    // 1. 积分检查
     const phone = req.authPhone;
     const [uRows] = await pool.query('SELECT id, credit_balance FROM users WHERE phone = ? LIMIT 1', [phone]);
     if (!uRows.length) return res.json({ code: 401, message: '用户不存在' });
     const userId = uRows[0].id;
     if ((uRows[0].credit_balance || 0) <= 0) return res.json({ code: 402, message: '积分不足' });
-
     const cleanImage = image.replace(/^data:[^;]+;base64,/, '');
 
-    // 2. 优先 PaddleOCR
-    let record = null;
+    const [[heroRows], [tacticRows], [playerRows]] = await Promise.all([
+      pool.query('SELECT name FROM ocr_hero_dict ORDER BY id'),
+      pool.query('SELECT name FROM ocr_tactic_dict ORDER BY id'),
+      projectId ? pool.query('SELECT DISTINCT player_name, alliance_name FROM project_player_dict WHERE project_id = ? AND (player_name != \'\' OR alliance_name != \'\')', [projectId]) : Promise.resolve([[]])
+    ]);
+    const heroNames = heroRows.map(r => r.name);
+    const tacticNames = tacticRows.map(r => r.name);
+    const playerNames = !Array.isArray(playerRows) ? [] : [...new Set(playerRows.map(r => r.player_name).filter(Boolean))];
+    const allianceNames = !Array.isArray(playerRows) ? [] : [...new Set(playerRows.map(r => r.alliance_name).filter(Boolean))];
+
+    let record = null, paddleRaw = null;
     try {
-      const body = { image: cleanImage };
+      const body = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
       if (labelConfig) body.labelConfig = labelConfig;
-      const paddleResp = await fetch(PADDLE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(120000),
-      });
-      if (paddleResp.ok) {
-        const paddleData = await paddleResp.json();
-        console.log('[DEBUG] PaddleOCR raw stars:', JSON.stringify({ls: paddleData.leftStars, rs: paddleData.rightStars}));
-        if (paddleData.ok) {
-          record = mapPaddleResult(paddleData);
-          console.log('[DEBUG] mapPaddleResult stars:', JSON.stringify({
-            l1s: record.leftGeneral1Stars, l2s: record.leftGeneral2Stars, l3s: record.leftGeneral3Stars,
-            r1s: record.rightGeneral1Stars, r2s: record.rightGeneral2Stars, r3s: record.rightGeneral3Stars,
-          }));
-        }
+      const paddleResp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
+      if (paddleResp.ok) { paddleRaw = await paddleResp.json(); if (paddleRaw.ok) record = mapPaddleResult(paddleRaw); }
+    } catch (e) { console.error('[OCR] 请求异常:', e.message); }
+
+    const pendingTactics = [];
+    if (paddleRaw && paddleRaw.ok) {
+      for (const t of [...(paddleRaw.leftTactics || []), ...(paddleRaw.rightTactics || [])]) {
+        if (typeof t === 'string' && t.startsWith('待确认:')) { const raw = t.slice(4).trim(); if (raw) pendingTactics.push(raw); }
       }
-    } catch (_) { /* PaddleOCR 不可用 */ }
-
-    // 3. 豆包回退已关闭，PaddleOCR 失败直接报错
-    if (!record) {
-      return res.json({ code: 503, message: 'OCR 服务不可用，请检查本地 PaddleOCR 是否正在运行' });
     }
+    if (!record) return res.json({ code: 503, message: 'OCR 服务不可用，请检查本地 PaddleOCR 是否正在运行' });
 
-    // 4. 补充元数据
     const now = new Date();
-    record.battleDate = record.battleDate || clientDate || now.toISOString().split('T')[0];
+    record.battleDate = clientDate || now.toISOString().split('T')[0];
     record.time = now.toLocaleString('zh-CN');
 
-    // 5. 平铺字段提取（已由 setFlat 填入 record）
     const fv = v => (v && v !== '') ? v : null;
     const insertParams = [
-      projectId || null,
-      record.leftPlayer || record.attackerName || '',
-      record.rightPlayer || record.enemyName || '',
-      record.result || '',
-      record.battleDate,
-      '',   // description
-      fv(record.leftLoss), fv(record.rightLoss),
-      fv(record.leftTotal), fv(record.rightTotal),
-      record.leftLossRate != null ? record.leftLossRate : null,
-      record.rightLossRate != null ? record.rightLossRate : null,
-      null, null, null, null,  // left/right generals/tactics JSON (废弃，留 null)
-      fv(record.leftFormation),  fv(record.rightFormation),
-      fv(record.leftAlliance),   fv(record.rightAlliance),
-      fv(record.leftGeneral1),   fv(record.leftGeneral2),   fv(record.leftGeneral3),
-      fv(record.rightGeneral1),  fv(record.rightGeneral2),  fv(record.rightGeneral3),
-      fv(record.leftTactic1_1),  fv(record.leftTactic1_2),  fv(record.leftTactic1_3),
-      fv(record.leftTactic2_1),  fv(record.leftTactic2_2),  fv(record.leftTactic2_3),
-      fv(record.leftTactic3_1),  fv(record.leftTactic3_2),  fv(record.leftTactic3_3),
+      projectId || null, record.leftPlayer || record.attackerName || '', record.rightPlayer || record.enemyName || '',
+      record.result || '', record.battleDate, '',
+      fv(record.leftLoss), fv(record.rightLoss), fv(record.leftTotal), fv(record.rightTotal),
+      record.leftLossRate != null ? record.leftLossRate : null, record.rightLossRate != null ? record.rightLossRate : null,
+      fv(record.leftFormation), fv(record.rightFormation), fv(record.leftAlliance), fv(record.rightAlliance),
+      fv(record.leftGeneral1), fv(record.leftGeneral2), fv(record.leftGeneral3),
+      fv(record.rightGeneral1), fv(record.rightGeneral2), fv(record.rightGeneral3),
+      fv(record.leftTactic1_1), fv(record.leftTactic1_2), fv(record.leftTactic1_3),
+      fv(record.leftTactic2_1), fv(record.leftTactic2_2), fv(record.leftTactic2_3),
+      fv(record.leftTactic3_1), fv(record.leftTactic3_2), fv(record.leftTactic3_3),
       fv(record.rightTactic1_1), fv(record.rightTactic1_2), fv(record.rightTactic1_3),
       fv(record.rightTactic2_1), fv(record.rightTactic2_2), fv(record.rightTactic2_3),
       fv(record.rightTactic3_1), fv(record.rightTactic3_2), fv(record.rightTactic3_3),
-      record.leftGeneral1Stars  ?? 0, record.leftGeneral2Stars  ?? 0, record.leftGeneral3Stars  ?? 0,
+      record.leftGeneral1Stars ?? 0, record.leftGeneral2Stars ?? 0, record.leftGeneral3Stars ?? 0,
       record.rightGeneral1Stars ?? 0, record.rightGeneral2Stars ?? 0, record.rightGeneral3Stars ?? 0,
-      userId, 1, now, now,
+      userId, 1, now, now
     ];
 
     const [insertResult] = await pool.query(
-      'INSERT INTO battle_records ' +
-      '(project_id, attacker_name, enemy_name, result, battle_date, description, ' +
-      'left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, ' +
-      'left_generals, right_generals, left_tactics, right_tactics, ' +
-      'left_formation, right_formation, left_alliance, right_alliance, ' +
-      'left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, ' +
-      'left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, ' +
-      'left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, ' +
-      'left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, ' +
-      'right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, ' +
-      'right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, ' +
-      'right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, ' +
-      'left_general_1_stars, left_general_2_stars, left_general_3_stars, ' +
-      'right_general_1_stars, right_general_2_stars, right_general_3_stars, ' +
-      'created_by, status, created_at, updated_at) ' +
-      'VALUES (' + insertParams.map(() => '?').join(',') + ')',
+      'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_formation, right_formation, left_alliance, right_alliance, left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, left_general_1_stars, left_general_2_stars, left_general_3_stars, right_general_1_stars, right_general_2_stars, right_general_3_stars, created_by, status, created_at, updated_at) VALUES (' + insertParams.map(() => '?').join(',') + ')',
       insertParams
     );
     const newId = insertResult.insertId;
 
-    // 6. 存图片
+    for (const raw of [...new Set(pendingTactics)]) {
+      await pool.query(`INSERT INTO ocr_tactic_pending (raw_text, detect_count, source_battle_id, status, created_at) VALUES (?, 1, ?, 'pending', NOW()) ON DUPLICATE KEY UPDATE detect_count = detect_count + 1`, [raw, newId]);
+    }
+
     if (image) {
-      const imgSize = Math.round(image.length * 0.75);
-      await pool.query(
-        'INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())',
-        [projectId || null, newId, image, imageName || '', imgSize, userId]
-      );
+      const imageBuf = Buffer.from(cleanImage, 'base64');
+      await pool.query('INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())', [projectId || null, newId, imageBuf, imageName || '', imageBuf.length, userId]);
     }
 
-    // 7. 更新项目 battle_count
-    if (projectId) {
-      await pool.query(
-        'UPDATE projects SET battle_count = (SELECT COUNT(*) FROM battle_records WHERE project_id = ?), updated_at = NOW() WHERE id = ?',
-        [projectId, projectId]
-      );
-    }
-
-    // 8. 扣积分（成功才扣）
     await pool.query('UPDATE users SET credit_balance = credit_balance - 1 WHERE id = ?', [userId]);
-    await pool.query(
-      'INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) ' +
-      'SELECT ?, -1, credit_balance, ?, ?, ?, NOW() FROM users WHERE id = ?',
-      [userId, 'consume', `OCR识别: ${imageName || '战报'}`, userId, userId]
-    );
+    await pool.query('INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) SELECT ?, -1, credit_balance, ?, ?, ?, NOW() FROM users WHERE id = ?', [userId, 'consume', `OCR识别: ${imageName || '战报'}`, userId, userId]);
 
-    // 9. 返回完整记录（含 id，前端用于本地缓存）
-    record.id = newId;
-    record.cloudId = newId;
-    record.projectId = projectId;
-    record.attackerName = record.leftPlayer || '';
-    record.enemyName    = record.rightPlayer || '';
-
+    record.id = newId; record.cloudId = newId; record.projectId = projectId;
+    record.attackerName = record.leftPlayer || ''; record.enemyName = record.rightPlayer || '';
     res.json({ code: 200, data: record });
-  } catch (err) {
-    console.error('[OCR-Upload]', err);
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { console.error('[OCR-Upload]', err); res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 战报图片（battle_gallery）==========
-// 上传图片（与战报绑定）
+// ========== 战报图片 ==========
 app.post('/api/gallery', requireActiveUser, async (req, res) => {
   try {
-    const { battle_id, project_id, image_data, original_name, file_size, uploader_phone } = req.body;
+    const { battle_id, project_id, image_data, original_name, uploader_phone } = req.body;
     if (!image_data || !project_id) return res.json({ code: 400, message: '缺少参数' });
-
-    // 通过 phone 查 user_id
     let uploaded_by = null;
-    if (uploader_phone) {
-      const [uRows] = await pool.query('SELECT id FROM users WHERE phone = ? LIMIT 1', [uploader_phone]);
-      if (uRows.length > 0) uploaded_by = uRows[0].id;
-    }
-
-    // 如果 battle_id 已有图片则更新，否则插入
+    if (uploader_phone) { const [uRows] = await pool.query('SELECT id FROM users WHERE phone = ? LIMIT 1', [uploader_phone]); if (uRows.length > 0) uploaded_by = uRows[0].id; }
+    const raw = typeof image_data === 'string' ? image_data.replace(/^data:[^;]+;base64,/, '') : image_data;
+    const imageBuf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw, 'base64');
     if (battle_id) {
       const [exist] = await pool.query('SELECT id FROM battle_gallery WHERE battle_id = ?', [battle_id]);
-      if (exist.length > 0) {
-        await pool.query(
-          'UPDATE battle_gallery SET image_data=?, original_name=?, file_size=?, uploaded_by=?, updated_at=NOW() WHERE battle_id=?',
-          [image_data, original_name || '', file_size || 0, uploaded_by, battle_id]
-        );
-        return res.json({ code: 200, data: { id: exist[0].id } });
-      }
+      if (exist.length > 0) { await pool.query('UPDATE battle_gallery SET image_data=?, original_name=?, file_size=?, uploaded_by=?, updated_at=NOW() WHERE battle_id=?', [imageBuf, original_name || '', imageBuf.length, uploaded_by, battle_id]); return res.json({ code: 200, data: { id: exist[0].id } }); }
     }
-    const [result] = await pool.query(
-      'INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())',
-      [project_id, battle_id || null, image_data, original_name || '', file_size || 0, uploaded_by]
-    );
+    const [result] = await pool.query('INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())', [project_id, battle_id || null, imageBuf, original_name || '', imageBuf.length, uploaded_by]);
     res.json({ code: 200, data: { id: result.insertId } });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
-// 获取单张图片数据
-// 通过 battle_id 获取图片数据
+
 app.get('/api/gallery/by-battle/:battleId', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, battle_id, image_data FROM battle_gallery WHERE battle_id=? AND status=1 LIMIT 1', [req.params.battleId]);
-    if (rows.length === 0) return res.json({ code: 404, message: '无图片' });
-    res.json({ code: 200, data: rows[0] });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
+    if (!rows.length) return res.json({ code: 404, message: '无图片' });
+    const row = rows[0];
+    // 将 Buffer 转为 base64，前端可直用
+    if (Buffer.isBuffer(row.image_data)) {
+      row.image_data = 'data:image/png;base64,' + row.image_data.toString('base64');
+    }
+    res.json({ code: 200, data: row });
   }
+  catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// 获取当前用户已上传图片的文件名列表（供文件夹监听去重 / 批量上传跳重使用）
-// ?successOnly=true：只返回OCR成功的文件名（battle_records.left_generals非空）
-// 不传或false：返回所有已上传文件名（成功+失败）
 app.get('/api/gallery/imagenames', requireActiveUser, async (req, res) => {
   try {
     let query, params = [req.authUserId];
-    if (req.query.successOnly === 'true') {
-      query = `SELECT DISTINCT bg.original_name
-               FROM battle_gallery bg
-               INNER JOIN battle_records br ON bg.battle_id = br.id
-               WHERE bg.uploaded_by = ? AND bg.original_name != '' AND bg.status = 1
-                 AND br.left_general_1 IS NOT NULL AND br.left_general_1 != ''`;
-    } else {
-      query = `SELECT DISTINCT original_name FROM battle_gallery
-               WHERE uploaded_by = ? AND original_name != '' AND status = 1`;
-    }
+    if (req.query.successOnly === 'true') query = `SELECT DISTINCT bg.original_name FROM battle_gallery bg INNER JOIN battle_records br ON bg.battle_id = br.id WHERE bg.uploaded_by = ? AND bg.original_name != '' AND bg.status = 1 AND br.left_general_1 IS NOT NULL AND br.left_general_1 != ''`;
+    else query = `SELECT DISTINCT original_name FROM battle_gallery WHERE uploaded_by = ? AND original_name != '' AND status = 1`;
     const [rows] = await pool.query(query, params);
     res.json({ code: 200, data: rows.map(r => r.original_name) });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 战报原图直出（二进制，支持 <img> 懒加载） ==========
 app.get('/api/gallery/image/:battleId', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT image_data FROM battle_gallery WHERE battle_id = ? AND status = 1 LIMIT 1',
-      [req.params.battleId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ code: 404, message: '无图片' });
-    }
+    const [rows] = await pool.query('SELECT image_data FROM battle_gallery WHERE battle_id = ? AND status = 1 LIMIT 1', [req.params.battleId]);
+    if (!rows.length) return res.status(404).json({ code: 404, message: '无图片' });
     let raw = rows[0].image_data;
     if (!raw) return res.status(404).json({ code: 404, message: '图片数据为空' });
-
-    // image_data 存储的是 base64 字符串（可能带 data:image/...;base64, 前缀）
     let mime = 'image/png';
     if (typeof raw === 'string') {
-      const prefixMatch = raw.match(/^data:(image\/[\w+-]+);base64,/);
-      if (prefixMatch) {
-        mime = prefixMatch[1];
-        raw = raw.slice(prefixMatch[0].length);
-      }
-    } else {
-      // 已经是二进制（Buffer）
-      res.setHeader('Content-Type', mime);
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      return res.send(raw);
+      // legacy: 旧 base64 文本数据
+      const m = raw.match(/^data:(image\/[\w+-]+);base64,/);
+      if (m) { mime = m[1]; raw = raw.slice(m[0].length); }
+      raw = Buffer.from(raw, 'base64');
     }
-
-    const buf = Buffer.from(raw, 'base64');
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(buf);
-  } catch (err) {
-    res.status(500).json({ code: 500, message: err.message });
-  }
+    res.send(raw);
+  } catch (err) { res.status(500).json({ code: 500, message: err.message }); }
 });
 
-// 检查战报是否有原图（供前端表格批量判断，避免每行单独查询）
 app.get('/api/gallery/has-image/:battleId', async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      'SELECT 1 FROM battle_gallery WHERE battle_id = ? AND status = 1 LIMIT 1',
-      [req.params.battleId]
-    );
-    res.json({ code: 200, data: { hasImage: rows.length > 0 } });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  try { const [rows] = await pool.query('SELECT 1 FROM battle_gallery WHERE battle_id = ? AND status = 1 LIMIT 1', [req.params.battleId]); res.json({ code: 200, data: { hasImage: rows.length > 0 } }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 截图工具安装包下载 ==========
-const path = require('path');
-const fs   = require('fs');
-
+// ========== 下载 ==========
+const path = require('path'); const fs = require('fs');
 app.get('/api/download/screenshot-tool', (req, res) => {
-  const filePath = path.resolve(__dirname, 'release', '三谋战报截图工具.exe');
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ code: 404, message: '文件不存在，请联系管理员' });
-  }
-  res.download(filePath, '三谋战报截图工具.exe', (err) => {
-    if (err && !res.headersSent) {
-      res.status(500).json({ code: 500, message: '下载失败：' + err.message });
-    }
-  });
+  const fp = path.resolve(__dirname, 'release', '三谋战报截图工具.exe');
+  if (!fs.existsSync(fp)) return res.status(404).json({ code: 404, message: '文件不存在' });
+  res.download(fp, '三谋战报截图工具.exe', (err) => { if (err && !res.headersSent) res.status(500).json({ code: 500, message: '下载失败：' + err.message }); });
 });
 
-// ========== 星标框选配置 API ==========
-// 保存星标框选配置（按项目）
+// ========== 星标框选 ==========
 app.post('/api/star-boxes', requireActiveUser, async (req, res) => {
   try {
     const { projectId, imageWidth, imageHeight, boxes } = req.body;
-    if (!projectId || !boxes || !Array.isArray(boxes) || boxes.length !== 6) {
-      return res.json({ code: 400, message: '参数错误：需要 projectId 和 6 个框选区域' });
-    }
-    const boxesJson = JSON.stringify(boxes);
-    await pool.query(
-      `INSERT INTO star_box_configs (project_id, image_width, image_height, boxes_json)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE image_width=VALUES(image_width), image_height=VALUES(image_height), boxes_json=VALUES(boxes_json), updated_at=NOW()`,
-      [projectId, imageWidth || 0, imageHeight || 0, boxesJson]
-    );
+    if (!projectId || !boxes || !Array.isArray(boxes) || boxes.length !== 6) return res.json({ code: 400, message: '参数错误：需要 projectId 和 6 个框选区域' });
+    await pool.query(`INSERT INTO star_box_configs (project_id, image_width, image_height, boxes_json) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE image_width=VALUES(image_width), image_height=VALUES(image_height), boxes_json=VALUES(boxes_json), updated_at=NOW()`, [projectId, imageWidth || 0, imageHeight || 0, JSON.stringify(boxes)]);
     res.json({ code: 200, message: '保存成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// 获取星标框选配置（按项目）
 app.get('/api/star-boxes/:projectId', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT * FROM star_box_configs WHERE project_id = ? LIMIT 1',
-      [req.params.projectId]
-    );
-    if (rows.length === 0) {
-      return res.json({ code: 200, data: null });
-    }
-    const row = rows[0];
-    res.json({
-      code: 200,
-      data: {
-        id: row.id,
-        projectId: row.project_id,
-        imageWidth: row.image_width,
-        imageHeight: row.image_height,
-        boxes: JSON.parse(row.boxes_json || '[]'),
-        updatedAt: row.updated_at
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    const [rows] = await pool.query('SELECT * FROM star_box_configs WHERE project_id = ? LIMIT 1', [req.params.projectId]);
+    if (!rows.length) return res.json({ code: 200, data: null });
+    const r = rows[0];
+    res.json({ code: 200, data: { id: r.id, projectId: r.project_id, imageWidth: r.image_width, imageHeight: r.image_height, boxes: JSON.parse(r.boxes_json || '[]'), updatedAt: r.updated_at } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// ========== 通用标注配置 API（扩展版，覆盖所有字段类型）==========
-// 保存标注配置（按项目，global=true 时存为全局配置 project_id=0）
+// ========== 标注配置 ==========
 app.post('/api/label-config', requireActiveUser, async (req, res) => {
   try {
     const { projectId, imageWidth, imageHeight, categories, global } = req.body;
-    if (!categories || typeof categories !== 'object') {
-      return res.json({ code: 400, message: '参数错误：需要 categories 对象' });
-    }
-    const pid = global ? 0 : (projectId || 0);
-    if (!pid && !global) {
-      return res.json({ code: 400, message: '参数错误：需要 projectId 或 global=true' });
-    }
-    const categoriesJson = JSON.stringify(categories);
-    await pool.query(
-      `INSERT INTO label_configs (project_id, image_width, image_height, categories_json)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE image_width=VALUES(image_width), image_height=VALUES(image_height), categories_json=VALUES(categories_json), updated_at=NOW()`,
-      [pid, imageWidth || 0, imageHeight || 0, categoriesJson]
-    );
+    if (!categories || typeof categories !== 'object') return res.json({ code: 400, message: '参数错误：需要 categories 对象' });
+    const pid = global ? 0 : (projectId || 0); if (!pid && !global) return res.json({ code: 400, message: '需要 projectId 或 global=true' });
+    await pool.query(`INSERT INTO label_configs (project_id, image_width, image_height, categories_json) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE image_width=VALUES(image_width), image_height=VALUES(image_height), categories_json=VALUES(categories_json), updated_at=NOW()`, [pid, imageWidth || 0, imageHeight || 0, JSON.stringify(categories)]);
     res.json({ code: 200, message: '保存成功' });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-// 获取标注配置（按项目，无则自动回退全局配置）
 app.get('/api/label-config/:projectId', async (req, res) => {
   try {
-    let [rows] = await pool.query(
-      'SELECT * FROM label_configs WHERE project_id = ? LIMIT 1',
-      [req.params.projectId]
-    );
-    // 没有项目专属配置 → 回退全局配置 (project_id=0)
-    if (rows.length === 0) {
-      [rows] = await pool.query(
-        'SELECT * FROM label_configs WHERE project_id = 0 LIMIT 1'
-      );
-    }
-    if (rows.length === 0) {
-      return res.json({ code: 200, data: null });
-    }
-    const row = rows[0];
-    res.json({
-      code: 200,
-      data: {
-        id: row.id,
-        projectId: row.project_id,
-        imageWidth: row.image_width,
-        imageHeight: row.image_height,
-        categories: JSON.parse(row.categories_json || '{}'),
-        updatedAt: row.updated_at,
-        isGlobal: row.project_id === 0
-      }
-    });
-  } catch (err) {
-    res.json({ code: 500, message: err.message });
-  }
+    let [rows] = await pool.query('SELECT * FROM label_configs WHERE project_id = ? LIMIT 1', [req.params.projectId]);
+    if (!rows.length) [rows] = await pool.query('SELECT * FROM label_configs WHERE project_id = 0 LIMIT 1');
+    if (!rows.length) return res.json({ code: 200, data: null });
+    const r = rows[0];
+    res.json({ code: 200, data: { id: r.id, projectId: r.project_id, imageWidth: r.image_width, imageHeight: r.image_height, categories: JSON.parse(r.categories_json || '{}'), updatedAt: r.updated_at, isGlobal: r.project_id === 0 } });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-app.listen(PORT, async () => {
-  await initDB();
-  console.log(`🚀 服务运行在 http://localhost:${PORT}`);
+// ========== OCR 字段库 ==========
+async function requireSuperAdmin(req, res, next) {
+  const phone = extractPhoneFromToken(req.headers['authorization'] || '');
+  if (!phone) return res.status(401).json({ code: 401, message: '未登录' });
+  const [rows] = await pool.query('SELECT role_id FROM users WHERE phone = ? LIMIT 1', [phone]);
+  if (!rows.length || rows[0].role_id !== 'super_admin') return res.status(403).json({ code: 403, message: '无权限，仅超管可操作' });
+  req.authPhone = phone; next();
+}
+
+app.get('/api/ocr-dict/heroes', requireSuperAdmin, async (req, res) => {
+  try { const { q } = req.query; let sql = 'SELECT id, name, created_at FROM ocr_hero_dict', params = []; if (q) { sql += ' WHERE name LIKE ?'; params.push('%' + q + '%'); } sql += ' ORDER BY id ASC'; res.json({ code: 200, data: await pool.query(sql, params).then(([r]) => r) }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
 });
+app.post('/api/ocr-dict/heroes', requireSuperAdmin, async (req, res) => {
+  try { const { name } = req.body; if (!name || !name.trim()) return res.json({ code: 400, message: '名称不能为空' }); await pool.query('INSERT INTO ocr_hero_dict (name) VALUES (?)', [name.trim()]); res.json({ code: 200, message: '添加成功' }); }
+  catch (err) { if (err.code === 'ER_DUP_ENTRY') return res.json({ code: 409, message: '已存在' }); res.json({ code: 500, message: err.message }); }
+});
+app.put('/api/ocr-dict/heroes/:id', requireSuperAdmin, async (req, res) => {
+  try { const { name } = req.body; if (!name || !name.trim()) return res.json({ code: 400, message: '名称不能为空' }); const [r] = await pool.query('UPDATE ocr_hero_dict SET name = ? WHERE id = ?', [name.trim(), req.params.id]); if (!r.affectedRows) return res.json({ code: 404, message: '不存在' }); res.json({ code: 200, message: '更新成功' }); }
+  catch (err) { if (err.code === 'ER_DUP_ENTRY') return res.json({ code: 409, message: '名称已存在' }); res.json({ code: 500, message: err.message }); }
+});
+app.delete('/api/ocr-dict/heroes/:id', requireSuperAdmin, async (req, res) => {
+  try { await pool.query('DELETE FROM ocr_hero_dict WHERE id = ?', [req.params.id]); res.json({ code: 200, message: '删除成功' }); } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+app.post('/api/ocr-dict/heroes/batch', requireSuperAdmin, async (req, res) => {
+  try { const { names } = req.body; if (!Array.isArray(names) || !names.length) return res.json({ code: 400, message: '参数错误' }); let added = 0, skipped = 0; for (const n of names) { const name = (n || '').trim(); if (!name) continue; const [r] = await pool.query('INSERT IGNORE INTO ocr_hero_dict (name) VALUES (?)', [name]); r.affectedRows ? added++ : skipped++; } res.json({ code: 200, message: `导入完成：新增 ${added} 条，跳过重复 ${skipped} 条` }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.get('/api/ocr-dict/tactics', requireSuperAdmin, async (req, res) => {
+  try { const { q } = req.query; let sql = 'SELECT id, name, created_at FROM ocr_tactic_dict', params = []; if (q) { sql += ' WHERE name LIKE ?'; params.push('%' + q + '%'); } sql += ' ORDER BY id ASC'; res.json({ code: 200, data: await pool.query(sql, params).then(([r]) => r) }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+app.post('/api/ocr-dict/tactics', requireSuperAdmin, async (req, res) => {
+  try { const { name } = req.body; if (!name || !name.trim()) return res.json({ code: 400, message: '名称不能为空' }); await pool.query('INSERT INTO ocr_tactic_dict (name) VALUES (?)', [name.trim()]); res.json({ code: 200, message: '添加成功' }); }
+  catch (err) { if (err.code === 'ER_DUP_ENTRY') return res.json({ code: 409, message: '已存在' }); res.json({ code: 500, message: err.message }); }
+});
+app.put('/api/ocr-dict/tactics/:id', requireSuperAdmin, async (req, res) => {
+  try { const { name } = req.body; if (!name || !name.trim()) return res.json({ code: 400, message: '名称不能为空' }); const [r] = await pool.query('UPDATE ocr_tactic_dict SET name = ? WHERE id = ?', [name.trim(), req.params.id]); if (!r.affectedRows) return res.json({ code: 404, message: '不存在' }); res.json({ code: 200, message: '更新成功' }); }
+  catch (err) { if (err.code === 'ER_DUP_ENTRY') return res.json({ code: 409, message: '名称已存在' }); res.json({ code: 500, message: err.message }); }
+});
+app.delete('/api/ocr-dict/tactics/:id', requireSuperAdmin, async (req, res) => {
+  try { await pool.query('DELETE FROM ocr_tactic_dict WHERE id = ?', [req.params.id]); res.json({ code: 200, message: '删除成功' }); } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+app.post('/api/ocr-dict/tactics/batch', requireSuperAdmin, async (req, res) => {
+  try { const { names } = req.body; if (!Array.isArray(names) || !names.length) return res.json({ code: 400, message: '参数错误' }); let added = 0, skipped = 0; for (const n of names) { const name = (n || '').trim(); if (!name) continue; const [r] = await pool.query('INSERT IGNORE INTO ocr_tactic_dict (name) VALUES (?)', [name]); r.affectedRows ? added++ : skipped++; } res.json({ code: 200, message: `导入完成：新增 ${added} 条，跳过重复 ${skipped} 条` }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.get('/api/ocr-dict/tactics/pending', requireSuperAdmin, async (req, res) => {
+  try { const { status = 'pending' } = req.query; const [rows] = await pool.query(`SELECT p.*, br.id as battle_id, br.attacker_name, br.enemy_name FROM ocr_tactic_pending p LEFT JOIN battle_records br ON br.id = p.source_battle_id WHERE p.status = ? ORDER BY p.detect_count DESC, p.created_at DESC`, [status]); res.json({ code: 200, data: rows }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+app.post('/api/ocr-dict/tactics/pending/:id/approve', requireSuperAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM ocr_tactic_pending WHERE id = ?', [req.params.id]);
+    if (!rows.length) return res.json({ code: 404, message: '不存在' });
+    const { raw_text, source_battle_id } = rows[0];
+    await pool.query('INSERT IGNORE INTO ocr_tactic_dict (name) VALUES (?)', [raw_text]);
+    const [uRow] = await pool.query('SELECT id FROM users WHERE phone = ? LIMIT 1', [req.authPhone]);
+    await pool.query('UPDATE ocr_tactic_pending SET status = "approved", reviewed_by = ?, reviewed_at = NOW() WHERE id = ?', [uRow[0]?.id, req.params.id]);
+    if (source_battle_id) {
+      const tacFields = ['left_tactic_1_1','left_tactic_1_2','left_tactic_1_3','left_tactic_2_1','left_tactic_2_2','left_tactic_2_3','left_tactic_3_1','left_tactic_3_2','left_tactic_3_3','right_tactic_1_1','right_tactic_1_2','right_tactic_1_3','right_tactic_2_1','right_tactic_2_2','right_tactic_2_3','right_tactic_3_1','right_tactic_3_2','right_tactic_3_3'];
+      const updates = tacFields.map(f => `${f} = IF(${f} = ?, ?, ${f})`).join(', ');
+      const params = []; tacFields.forEach(() => { params.push('待确认:' + raw_text, raw_text); }); params.push(source_battle_id);
+      await pool.query(`UPDATE battle_records SET ${updates} WHERE id = ?`, params);
+    }
+    res.json({ code: 200, message: `"${raw_text}" 已确认入库` });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+app.post('/api/ocr-dict/tactics/pending/:id/reject', requireSuperAdmin, async (req, res) => {
+  try { const [uRow] = await pool.query('SELECT id FROM users WHERE phone = ? LIMIT 1', [req.authPhone]); await pool.query('UPDATE ocr_tactic_pending SET status = "rejected", reviewed_by = ?, reviewed_at = NOW() WHERE id = ?', [uRow[0]?.id, req.params.id]); res.json({ code: 200, message: '已驳回' }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+app.get('/api/ocr-dict/all', requireActiveUser, async (req, res) => {
+  try { const [[heroes], [tactics]] = await Promise.all([pool.query('SELECT name FROM ocr_hero_dict ORDER BY id'), pool.query('SELECT name FROM ocr_tactic_dict ORDER BY id')]); res.json({ code: 200, data: { heroNames: heroes.map(r => r.name), tacticNames: tactics.map(r => r.name) } }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+// ========== OCR 测试 ==========
+async function _getCategories(projectId, provided) {
+  if (provided && typeof provided === 'object' && Object.keys(provided).length > 0) return provided;
+  let [rows] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = ? LIMIT 1', [projectId || 0]);
+  if (!rows.length) [rows] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = 0 LIMIT 1');
+  return rows.length ? JSON.parse(rows[0].categories_json || '{}') : {};
+}
+
+app.post('/api/ocr-preview/cache-image', requireSuperAdmin, async (req, res) => {
+  try { const { imageBase64, token } = req.body; if (!imageBase64) return res.json({ code: 400, message: '缺少 imageBase64' }); const pyResp = await fetch(PADDLE_CACHE_IMG_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imageBase64, token: token || '' }) }); res.json({ code: 200, token: (await pyResp.json()).token }); }
+  catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.post('/api/ocr-preview/test', requireSuperAdmin, async (req, res) => {
+  try {
+    const { projectId, imageBase64, imageToken, categories, playerNames, allianceNames } = req.body;
+    if (!imageBase64 && !imageToken) return res.json({ code: 400, message: '缺少 imageBase64 或 imageToken' });
+    const cats = await _getCategories(projectId, categories);
+    const catKeys = Object.keys(cats);
+    const [heroRows, tacticRows] = await Promise.all([
+      catKeys.includes('heroNames') ? pool.query('SELECT name FROM ocr_hero_dict ORDER BY id').then(([r]) => r) : Promise.resolve([]),
+      catKeys.includes('tactics') ? pool.query('SELECT name FROM ocr_tactic_dict ORDER BY id').then(([r]) => r) : Promise.resolve([])
+    ]);
+    const pyResp = await fetch(PADDLE_TEST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imageToken ? '' : imageBase64, imageToken: imageToken || '', categories: cats, heroNames: heroRows.map(r => r.name), tacticNames: tacticRows.map(r => r.name), playerNames: Array.isArray(playerNames) ? playerNames : [], allianceNames: Array.isArray(allianceNames) ? allianceNames : [] }), signal: AbortSignal.timeout(180000) });
+    res.json({ code: 200, data: await pyResp.json() });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.post('/api/ocr-preview/test-stars', requireSuperAdmin, async (req, res) => {
+  try {
+    const { projectId, imageBase64, imageToken, categories, mode = 'both' } = req.body;
+    if (!imageBase64 && !imageToken) return res.json({ code: 400, message: '缺少 imageBase64 或 imageToken' });
+    const cats = await _getCategories(projectId, categories);
+    const pyResp = await fetch(PADDLE_STARS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imageToken ? '' : imageBase64, imageToken: imageToken || '', categories: cats, mode }), signal: AbortSignal.timeout(180000) });
+    res.json({ code: 200, data: await pyResp.json() });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+app.listen(PORT, async () => { await initDB(); console.log(`🚀 服务运行在 http://localhost:${PORT}`); });

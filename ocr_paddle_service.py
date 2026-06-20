@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-战报 OCR 服务 v2（RapidOCR + 分区域增强识别 + 红度统计）
+战报 OCR 服务 v2（PaddleOCR PP-OCRv5 + 分区域增强识别 + 红度统计）
 端口: 8003
 启动: python ocr_paddle_service.py
 """
@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
-from rapidocr_onnxruntime import RapidOCR
+from paddleocr import PaddleOCR
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
 
@@ -36,20 +36,37 @@ with open(os.path.join(_here, 'game-data.json'), encoding='utf-8') as f:
 
 HERO_NAMES  = _gd['heroNames']
 ALL_TACTICS = _gd['allTactics']
-FORMATIONS  = ['一字阵', '箕形阵', '雁形阵', '方圆阵', '锥形阵', '鱼鳞阵', '钩行阵', '偃月阵']
+FORMATIONS  = _gd.get('formations', ['一字阵', '箕形阵', '雁形阵', '方圆阵', '锥形阵', '鱼鳞阵', '钩行阵', '偃月阵'])
 WINNERS     = {'胜', '败', '平'}
 WINNER_MAP  = {'胜': 'left', '败': 'right', '平': 'draw'}
 
 SCALE = 2  # 预处理放大倍数
 
-# ── RapidOCR 初始化 ───────────────────────────────────────────────────
-print('初始化 RapidOCR ...')
-_ocr = RapidOCR()
-print('RapidOCR ready')
+# ── PaddleOCR 初始化 ──────────────────────────────────────────────────
+print('初始化 PaddleOCR (PP-OCRv5) ...')
+_ocr = PaddleOCR(lang='ch', use_angle_cls=True, use_gpu=False, show_log=False)
+print('PaddleOCR ready')
+
+# ── 图片缓存（避免重复传输大图）────────────────────────────────────────
+_img_cache: dict = {}  # token -> (img_arr, img_w, img_h)
+_IMG_CACHE_MAX = 5     # 最多缓存5张图
 
 app = FastAPI(title='战报 OCR 服务 v2')
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
 
+
+# ── 武将名形近字 OCR 纠正表（在距离匹配前预处理，避免因形近字导致误读）──
+# 只纠正在武将名中不会出现的字形（右侧为正确字，左侧为 OCR 常见误读）
+_HERO_CHAR_FIX = {
+    '不': '丕',   # 曹丕（丕下方多一横，OCR 易丢）
+    '叺': '丕',
+    '巳': '己',   # 己/巳 常混
+    '己': '已',
+}
+
+def _fix_hero_chars(text: str) -> str:
+    """对武将名应用形近字纠正；仅当纠正后与原文不同时使用。"""
+    return ''.join(_HERO_CHAR_FIX.get(c, c) for c in text)
 
 # ── 字符串工具 ────────────────────────────────────────────────────────
 def levenshtein(a: str, b: str) -> int:
@@ -75,10 +92,14 @@ def best_match(text: str, candidates: list):
 
 def match_hero(text: str):
     text = re.sub(r'^\d+', '', text).strip()
+    # 含数字的文本作为噪音去除（与战法噪音处理思路一致）
+    if re.search(r'\d', text):
+        return None
     if len(text) < 2 or len(text) > 5:
         return None
-    name, dist = best_match(text, HERO_NAMES)
-    threshold = 0 if len(text) == 2 else 1
+    fixed = _fix_hero_chars(text)
+    name, dist = best_match(fixed, HERO_NAMES)
+    threshold = 1  # PaddleOCR 更准确，允许 1 字差兜底（截断/形近字）
     return name if dist <= threshold else None
 
 # ── 战法识别噪音词（这些词在战法区域出现但无意义，直接忽略）──
@@ -94,7 +115,7 @@ def match_tactic(text: str):
     if text in _TACTIC_NOISE or len(text) < 2 or len(text) > 6:
         return None
     name, dist = best_match(text, ALL_TACTICS)
-    threshold = 1 if len(name) <= 4 else 2
+    threshold = 2  # 统一阈值，兼容 OCR 形近字双错误
     return name if dist <= threshold else None
 
 def match_formation(text: str):
@@ -114,13 +135,15 @@ def preprocess_image(img_array: np.ndarray) -> np.ndarray:
 
 # ── OCR 核心 ──────────────────────────────────────────────────────────
 def _raw_ocr(img_array: np.ndarray) -> list:
-    """在给定图像上运行 RapidOCR，返回原始块列表（坐标为该图像空间）"""
-    result, _ = _ocr(img_array)
+    """在给定图像上运行 PaddleOCR，返回原始块列表（坐标为该图像空间）"""
+    result = _ocr.ocr(img_array)
     blocks = []
-    if not result:
+    if not result or not result[0]:
         return blocks
-    for line in result:
-        bbox, text, conf = line
+    for line in result[0]:
+        if line is None:
+            continue
+        bbox, (text, conf) = line
         xs = [p[0] for p in bbox]
         ys = [p[1] for p in bbox]
         blocks.append({
@@ -143,12 +166,18 @@ def run_ocr_full(img_array: np.ndarray) -> list:
 
 def ocr_region(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> list:
     """裁剪区域 + 预处理 + OCR，坐标转回原始图像空间"""
+    import time as _t
     h, w = img_array.shape[:2]
     x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
     if x2 <= x1 or y2 <= y1:
         return []
     crop = img_array[y1:y2, x1:x2]
-    raw = _raw_ocr(preprocess_image(crop))
+    _ta = _t.time()
+    processed = preprocess_image(crop)
+    _tb = _t.time()
+    raw = _raw_ocr(processed)
+    _tc = _t.time()
+    print(f'  [ocr_region] 区域{crop.shape[:2]} 预处理{(_tb-_ta)*1000:.0f}ms OCR推理{(_tc-_tb)*1000:.0f}ms')
     return [{**b,
              'x': b['x'] // SCALE + x1, 'y': b['y'] // SCALE + y1,
              'w': max(1, b['w'] // SCALE), 'h': max(1, b['h'] // SCALE)}
@@ -213,6 +242,79 @@ def _load_dot_template():
 
 _load_dot_template()
 
+# ── 整体豆豆模板（亮/暗 × 1-5颗）──────────────────────────────────────
+_COUNT_TPLS: list = []  # [(count, label, gray, mask_uint8), ...]
+
+def _load_count_templates():
+    global _COUNT_TPLS
+    tpl_dir = os.path.join(_here, '字典库', '02-豆豆')
+    if not os.path.isdir(tpl_dir):
+        _debug_msg('整体豆豆模板目录不存在: ' + tpl_dir)
+        return
+    from PIL import Image as _PILImage
+    for variant in ['亮', '暗']:
+        for n in range(1, 6):
+            path = os.path.join(tpl_dir, f'{variant}{n}.png')
+            if not os.path.isfile(path):
+                continue
+            pil_img = _PILImage.open(path).convert('RGBA')
+            img = np.array(pil_img)          # shape: (H, W, 4) RGBA uint8
+            alpha = img[:, :, 3]
+            rgb   = img[:, :, :3].astype(np.float32)
+            a_f   = alpha.astype(np.float32) / 255.0
+            blended = rgb * a_f[:, :, np.newaxis] + 128.0 * (1 - a_f[:, :, np.newaxis])
+            gray  = cv2.cvtColor(blended.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+            _COUNT_TPLS.append((n, f'{variant}{n}', gray, alpha))
+    _debug_msg(f'整体豆豆模板: {len(_COUNT_TPLS)} 个')
+
+_load_count_templates()
+
+def _count_stars_holistic(crop_gray: np.ndarray) -> tuple:
+    """整体匹配：把裁剪区域缩放到与每张模板相同尺寸做一对一比较，返回 (count, score, label, all_scores)"""
+    if not _COUNT_TPLS:
+        return 0, -1.0, 'no_tpl', {}
+    ch, cw = crop_gray.shape[:2]
+    best_count, best_score, best_label = 0, -1.0, 'no_match'
+    all_scores: dict = {}
+    for count, label, tpl, mask in _COUNT_TPLS:
+        th, tw = tpl.shape[:2]
+        # 把裁剪拉伸到模板尺寸，做一对一整体比较
+        crop_s = cv2.resize(crop_gray, (tw, th))
+        try:
+            if mask is not None:
+                res = cv2.matchTemplate(crop_s, tpl, cv2.TM_CCOEFF_NORMED, mask=mask)
+            else:
+                res = cv2.matchTemplate(crop_s, tpl, cv2.TM_CCOEFF_NORMED)
+            score = float(res.max())
+        except Exception:
+            score = -1.0
+        all_scores[label] = round(score, 3)
+        if score > best_score:
+            best_score, best_count, best_label = score, count, label
+    return best_count, best_score, best_label, all_scores
+
+
+def _count_stars_projection(crop_gray: np.ndarray, cw: int, ch: int) -> int:
+    """投影峰值法：统计水平亮度曲线的峰值数量（与颜色无关）"""
+    try:
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+        enhanced = clahe.apply(crop_gray)
+        # 列方向取最大值，形成水平投影曲线
+        proj = enhanced.max(axis=0).astype(float)
+        # 归一化
+        pmin, pmax = proj.min(), proj.max()
+        if pmax - pmin < 10:
+            return 0
+        proj_n = (proj - pmin) / (pmax - pmin)
+        # 平滑
+        proj_s = gaussian_filter1d(proj_n, sigma=max(1.5, cw / 80))
+        # 峰值检测：高于 0.5 的局部极大值，间距至少 cw//8
+        min_dist_px = max(6, cw // 8)
+        peaks, _ = find_peaks(proj_s, height=0.5, distance=min_dist_px)
+        return min(5, len(peaks))
+    except Exception:
+        return 0
+
 
 def _dot_nms(pts_scores: list, min_dist: int) -> list:
     """按置信度从高到低 NMS，水平距离 < min_dist 视为同一豆豆"""
@@ -244,7 +346,7 @@ def _match_one(crop_feat: np.ndarray, tpl: np.ndarray,
         scores = res[ys, xs]
         pts = sorted(zip(xs.tolist(), ys.tolist(), scores.tolist()),
                      key=lambda p: p[2], reverse=True)
-        nms_dist = max(14, int(sw * 0.40))
+        nms_dist = max(20, int(sw * 0.65))
         kept = _dot_nms(pts, min_dist=nms_dist)
         count = min(5, len(kept))
         if count > best_count:
@@ -311,7 +413,7 @@ def _count_stars_by_color(crop_rgb: np.ndarray) -> int:
 
 
 def count_stars(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int, debug_label: str = '') -> int:
-    """统计豆豆数量（0-5）。主方法：橙红色像素水平投影计峰值。"""
+    """统计豆豆数量（0-5）。优先整体模板匹配，回退到单豆滑窗法。"""
     h, w = img_array.shape[:2]
     x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
     if x2 <= x1 or y2 <= y1:
@@ -320,34 +422,32 @@ def count_stars(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int, debug
     crop_rgb = img_array[y1:y2, x1:x2]
     ch, cw = crop_rgb.shape[:2]
 
-    # 主方法：橙红色像素水平投影（由 doudou/ 样本校准）
-    color_count = _count_stars_by_color(crop_rgb)
-    if color_count > 0:
-        _debug_msg('count_stars %s -> %d | color' % (debug_label, color_count))
-        return color_count
-
-    # 兜底：模板匹配（图像颜色偏差时备用）
-    crop_bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    crop_bgr  = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
     crop_gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    crop_clahe = clahe.apply(crop_gray)
+
+    # ── 单豆滑窗法（主）──────────────────────────────────────────────────
+    clahe_fn = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    crop_clahe = clahe_fn.apply(crop_gray)
     ref_h, ref_w = _DOT_TPL_GRAY.shape[:2]
     scales = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20] if w <= 2000 else \
              [0.12, 0.14, 0.16, 0.18, 0.20, 0.22, 0.25, 0.28]
-    best_count, best_info = 0, 'no_match'
+    tpl_count, tpl_info = 0, 'no_match'
     for feat, feat_name, th in [
         (crop_clahe, 'clahe', 0.70),
         (crop_gray,  'raw',   0.70),
-        (crop_clahe, 'lo',    0.55),
     ]:
         count, info = _match_all_templates(feat, _DOT_TPL_LIST, scales, ref_h, ref_w, th, cw, ch, feat_name)
-        if count > best_count:
-            best_count, best_info = count, info
-        if best_count >= 5:
+        if count > tpl_count:
+            tpl_count, tpl_info = count, info
+        if tpl_count >= 5:
             break
+    if tpl_count == 0:
+        count, info = _match_all_templates(crop_clahe, _DOT_TPL_LIST, scales, ref_h, ref_w, 0.55, cw, ch, 'lo')
+        if count > 0:
+            tpl_count, tpl_info = count, info
 
-    _debug_msg('count_stars %s -> %d | tpl:%s' % (debug_label, best_count, best_info))
-    return best_count
+    _debug_msg('count_stars %s -> %d | %s' % (debug_label, tpl_count, tpl_info))
+    return tpl_count
 
 
 # ── 坐标辅助 ──────────────────────────────────────────────────────────
@@ -599,18 +699,44 @@ def analyze_battle(img_array: np.ndarray, img_w: int, img_h: int) -> dict:
 
 # ── 标注配置驱动提取 ─────────────────────────────────────────────────
 def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
-                        label_config: dict) -> dict:
+                        label_config: dict,
+                        hero_names: list = None,
+                        tactic_names: list = None,
+                        player_names: list = None,
+                        alliance_names: list = None) -> dict:
     """
     使用手动标注的区域配置提取所有字段。
-    label_config 格式（来自 /api/label-config）:
-    {
-      "stars": {"boxes": [{key, rx1, ry1, rx2, ry2, value}, ...]},
-      "heroNames": {"boxes": [...]},
-      "playerNames": {"boxes": [...]},
-      ...
-    }
+    hero_names / tactic_names：来自 ocr_hero_dict / ocr_tactic_dict，
+    player_names / alliance_names：来自 project_player_dict，
+    传入则优先使用，不传则回退全局列表或纯启发式匹配。
     返回与 process_side 兼容的结构。
     """
+    _hero_names     = hero_names     if hero_names     else HERO_NAMES
+    _tactic_names   = tactic_names   if tactic_names   else ALL_TACTICS
+    _player_names   = player_names   if player_names   else []
+    _alliance_names = alliance_names if alliance_names else []
+
+    def _match_hero_local(text: str):
+        # 与 match_hero() 完全一致的逻辑：先 strip leading digits，再检查残留数字
+        cleaned = re.sub(r'^\d+', '', text).strip()
+        if re.search(r'\d', cleaned):
+            return None
+        if len(cleaned) < 2 or len(cleaned) > 5:
+            return None
+        fixed = _fix_hero_chars(cleaned)
+        name, dist = best_match(fixed, _hero_names)
+        # 允许 dist=1：截断/形近字（如"葛亮"→"诸葛亮"、"甘夫"→"甘夫人"）
+        threshold = 1
+        return name if dist <= threshold else None
+
+    def _match_tactic_local(text: str):
+        cleaned = re.sub(r'^影本[·.•]', '', text).strip()
+        cleaned = re.sub(r'[×xX※]\d+.*$', '', cleaned).strip()
+        if cleaned in _TACTIC_NOISE or len(cleaned) < 2 or len(cleaned) > 6:
+            return None
+        name, dist = best_match(cleaned, _tactic_names)
+        threshold = 2  # 统一阈值，兼容 OCR 形近字双错误
+        return name if dist <= threshold else None
     result = {
         'leftGenerals': ['', '', ''], 'rightGenerals': ['', '', ''],
         'leftTactics': ['']*9, 'rightTactics': ['']*9,
@@ -620,6 +746,7 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
         'leftFormation': '', 'rightFormation': '',
         'leftPlayer': '', 'rightPlayer': '',
         'leftAlliance': '', 'rightAlliance': '',
+        'winner': 'unknown',
     }
 
     def to_abs(rx, ry):
@@ -635,6 +762,15 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
             return []
         blocks = ocr_region(img_array, x1, y1, x2, y2)
         return [b['text'] for b in blocks]
+
+    # ── 胜负 ──
+    if 'winner' in label_config:
+        for box in label_config['winner'].get('boxes', []):
+            texts = ocr_box(box)
+            for t in texts:
+                if t in WINNERS:
+                    result['winner'] = WINNER_MAP.get(t, 'unknown')
+                    break
 
     # ── 豆豆（红度）─ 模板匹配 ──
     if 'stars' in label_config:
@@ -659,24 +795,56 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
         for box in label_config['heroNames'].get('boxes', []):
             key = box.get('key', '')
             texts = ocr_box(box)
-            hero = None
+            hero = ''
             for t in texts:
-                h = match_hero(t)
+                h = _match_hero_local(t)
                 if h: hero = h; break
-            if not hero:
-                hero = '未知'  # 识别失败统一返回未知，避免单字母残缺值污染合并结果
-            side, idx = key[0], int(key[1]) - 1  # e.g. 'L1' -> side='L', idx=0
+            # 单字被切开时尝试拼接重试
+            if not hero and len(texts) > 1:
+                parts = [re.sub(r'^\d+', '', t).strip() for t in texts]
+                for i in range(len(parts) - 1):
+                    h = _match_hero_local(parts[i] + parts[i + 1])
+                    if h: hero = h; break
+                if not hero:
+                    h = _match_hero_local(''.join(parts))
+                    if h: hero = h
+            side, idx = key[0], int(key[1]) - 1
             if side == 'L':
                 result['leftGenerals'][idx] = hero
             else:
                 result['rightGenerals'][idx] = hero
 
     # ── 角色名称（玩家名）──
+    def _best_name_local(texts, candidates, label_hint=''):
+        """与 /test 路径 _best_name_from_dict 逻辑一致：模糊匹配字典或取最长有效文本"""
+        def _is_hero_name_local(t):
+            if not _hero_names: return False
+            c = re.sub(r'^\d+', '', t).strip()
+            if len(c) < 2 or len(c) > 5: return False
+            _, d = best_match(c, _hero_names)
+            return d <= (0 if len(c) == 2 else 1)
+        def _is_tactic_name_local(t):
+            if not _tactic_names: return False
+            c = re.sub(r'^影本[·.•]', '', t).strip()
+            if c in _TACTIC_NOISE or len(c) < 2 or len(c) > 6: return False
+            nm, d = best_match(c, _tactic_names)
+            return d <= (1 if len(nm) <= 4 else 2)
+        valid = [t for t in texts if t and 2 <= len(t) <= 15
+                 and not re.match(r'^[\d\s,./\\:：·•…×xX※\-_=+]+$', t)
+                 and t not in WINNERS and t not in _TACTIC_NOISE
+                 and not _is_hero_name_local(t) and not _is_tactic_name_local(t)]
+        raw = max(valid, key=len) if valid else (texts[0] if texts else '')
+        if not candidates or not raw:
+            return raw
+        name, dist = best_match(raw, candidates)
+        threshold = 1 if len(raw) <= 4 else (2 if len(raw) <= 8 else 3)
+        return name if dist <= threshold else raw
+
     if 'playerNames' in label_config:
         for box in label_config['playerNames'].get('boxes', []):
             key = box.get('key', '')
             texts = ocr_box(box)
-            name = texts[0] if texts else ''
+            name = _best_name_local(texts, _player_names, f'玩家名-{key}')
             if key == 'left':
                 result['leftPlayer'] = name
             else:
@@ -687,23 +855,55 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
         for box in label_config['alliances'].get('boxes', []):
             key = box.get('key', '')
             texts = ocr_box(box)
-            name = texts[0] if texts else ''
+            name = _best_name_local(texts, _alliance_names, f'同盟名-{key}')
             if key == 'left':
                 result['leftAlliance'] = name
             else:
                 result['rightAlliance'] = name
 
     # ── 战损数值 ──
+    def _ocr_clean(t):
+        """清理常见 OCR 数字混淆"""
+        for old, new in [('O', '0'), ('o', '0'), ('l', '1'), ('I', '1'),
+                         ('S', '5'), ('B', '8'), ('Z', '2'), ('g', '9')]:
+            t = t.replace(old, new)
+        return t
+
+    def _extract_damage(texts):
+        """提取战损数值：取"战损："冒号后的数字"""
+        joined = ''.join(texts)
+        cleaned = _ocr_clean(joined)
+        # 优先：战损：<数字>
+        m = re.search(r'战损[：:]\s*(\d[\d,]*)', cleaned)
+        if m:
+            return int(m.group(1).replace(',', ''))
+        # 兜底：区域内第一个数字
+        m = re.search(r'(\d[\d,]*)', cleaned)
+        if m:
+            return int(m.group(1).replace(',', ''))
+        return 0
+
+    def _extract_troops(texts):
+        """提取兵力数值：取 XX/XX 斜杠右侧的数字（即最后一个数字）"""
+        joined = ''.join(texts)
+        cleaned = _ocr_clean(joined)
+        # 优先：斜杠右侧数字（兼容斜杠被 OCR 误读为 l/1/| 等）
+        m = re.search(r'\d[\d,]*\s*[/|\\l]\s*(\d[\d,]*)', cleaned)
+        if m:
+            return int(m.group(1).replace(',', ''))
+        # 次选：取最后一个数字（XX/XX 中右侧总在最后）
+        all_nums = re.findall(r'\d[\d,]*', cleaned)
+        if len(all_nums) >= 2:
+            return int(all_nums[-1].replace(',', ''))
+        if all_nums:
+            return int(all_nums[-1].replace(',', ''))
+        return 0
+
     if 'damages' in label_config:
         for box in label_config['damages'].get('boxes', []):
             key = box.get('key', '')
             texts = ocr_box(box)
-            num = 0
-            for t in texts:
-                m = re.search(r'(\d[\d,]*)', t)
-                if m:
-                    num = int(m.group(1).replace(',', ''))
-                    break
+            num = _extract_damage(texts)
             if key == 'left':
                 result['leftDamage'] = num
             else:
@@ -714,12 +914,7 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
         for box in label_config['troops'].get('boxes', []):
             key = box.get('key', '')
             texts = ocr_box(box)
-            num = 0
-            for t in texts:
-                m = re.search(r'(\d[\d,]*)', t)
-                if m:
-                    num = int(m.group(1).replace(',', ''))
-                    break
+            num = _extract_troops(texts)
             if key == 'left':
                 result['leftTroops'] = num
             else:
@@ -734,6 +929,17 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
             for t in texts:
                 mf = match_formation(t)
                 if mf: fm = mf; break
+            if fm == '未知' and len(texts) > 1:
+                mf = match_formation(''.join(texts))
+                if mf: fm = mf
+            # 兜底：宽松匹配（允许 2 字编辑距离）
+            if fm == '未知':
+                for t in texts:
+                    if len(t) >= 2:
+                        name, dist = best_match(t, FORMATIONS)
+                        if dist <= 2:
+                            fm = name
+                            break
             if key == 'left':
                 result['leftFormation'] = fm
             else:
@@ -744,24 +950,27 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
         for box in label_config['tactics'].get('boxes', []):
             key = box.get('key', '')  # e.g. 'L1_2' -> side L, hero 1, slot 2
             texts = ocr_box(box)
-            tac = '未知'
+            tac = ''
             for t in texts:
-                mt = match_tactic(t)
-                if mt: tac = mt; break
-            if not tac or tac == '未知':
-                # 兜底：取第一个非噪音文本，全是噪音则保持"未知"
-                for t in texts:
-                    if t and t not in _TACTIC_NOISE and len(t) >= 2:
-                        tac = t
-                        break
-                if not tac or tac in _TACTIC_NOISE:
-                    tac = '未知'
+                matched = _match_tactic_local(t)
+                if matched:
+                    tac = matched
+                    break
+                # 文本有效但字典未命中 → 标记待确认
+                cleaned = re.sub(r'^影本[·.•]', '', t).strip()
+                cleaned = re.sub(r'[×xX※]\d+.*$', '', cleaned).strip()
+                # 含数字的文本作为噪音跳过（与 match_hero / match_tactic 噪音处理一致）
+                if re.search(r'\d', cleaned):
+                    continue
+                if cleaned and cleaned not in _TACTIC_NOISE and 2 <= len(cleaned) <= 6:
+                    tac = '待确认:' + cleaned
+                    break
             # key 格式: 'L1_1' → heroKey='L1', slot='1'
             parts = key.split('_')
-            hero_key = parts[0]   # 'L1','L2','L3','R1','R2','R3'
-            side = hero_key[0]    # 'L' or 'R'
-            hero_idx = int(hero_key[1]) - 1  # 0,1,2
-            slot_idx = int(parts[1]) - 1     # 0,1,2
+            hero_key = parts[0]
+            side = hero_key[0]
+            hero_idx = int(hero_key[1]) - 1
+            slot_idx = int(parts[1]) - 1
             arr = result['leftTactics'] if side == 'L' else result['rightTactics']
             arr[hero_idx * 3 + slot_idx] = tac
 
@@ -770,12 +979,16 @@ def extract_with_config(img_array: np.ndarray, img_w: int, img_h: int,
 
 # ── API ──────────────────────────────────────────────────────────────
 class OcrRequest(BaseModel):
-    image: str = ''       # base64
-    labelConfig: dict = None  # 可选的标注区域配置
+    image: str = ''
+    labelConfig: dict = None  # 标注区域配置（必须提供才能精确识别）
+    heroNames: list = []      # 来自 ocr_hero_dict
+    tacticNames: list = []    # 来自 ocr_tactic_dict
+    playerNames: list = []    # 来自 project_player_dict.player_name
+    allianceNames: list = []  # 来自 project_player_dict.alliance_name（去重）
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'engine': 'rapidocr-onnxruntime-v2'}
+    return {'status': 'ok', 'engine': 'paddleocr-ppocrv5-v2'}
 
 @app.post('/ocr')
 def paddle_ocr(req: OcrRequest):
@@ -785,44 +998,24 @@ def paddle_ocr(req: OcrRequest):
         img      = Image.open(io.BytesIO(img_bytes)).convert('RGB')
         img_arr  = np.array(img)
 
-        # 如果有标注配置，使用区域提取 + 自动检测兜底
+        # 有标注配置：只用 extract_with_config，不再合并 analyze_battle
         if req.labelConfig and isinstance(req.labelConfig, dict) and len(req.labelConfig) > 0:
-            labeled = None
-            try:
-                labeled = extract_with_config(img_arr, img.width, img.height, req.labelConfig)
-            except Exception as e:
-                print(f'[label-config] 区域提取失败: {e}', file=sys.stderr, flush=True)
-            auto = analyze_battle(img_arr, img.width, img.height)
-            if labeled:
-                # 合并：标注结果优先，空位用自动检测补充
-                record = {}
-                for k in auto:
-                    lv = labeled.get(k)
-                    is_empty = (lv is None or lv == '' or lv == 0 or lv == [] or
-                               (isinstance(lv, list) and all(v == '' or v == 0 or v == '未知' for v in lv)))
-                    record[k] = lv if not is_empty else auto.get(k, lv)
-                # 武将名逐位验证：labeled 给出的名字必须是有效武将名，否则用 auto 补充
-                for side in ['left', 'right']:
-                    gk = f'{side}Generals'
-                    l_gens = labeled.get(gk, ['未知'] * 3)
-                    a_gens = auto.get(gk, ['未知'] * 3)
-                    merged = []
-                    for lg, ag in zip(l_gens, a_gens):
-                        if lg and lg != '未知' and match_hero(lg):
-                            merged.append(lg)   # labeled 识别出有效名字，采用
-                        elif ag and ag != '未知':
-                            merged.append(ag)   # labeled 无效，用 auto 补
-                        else:
-                            merged.append('未知')
-                    record[gk] = merged
-                for side in ['left', 'right']:
-                    tk = f'{side}Tactics'
-                    lt = labeled.get(tk, [])
-                    if all(t == '' or t == '未知' for t in lt):
-                        record[tk] = auto.get(tk, lt)
-            else:
-                record = auto
+            h_names = req.heroNames if req.heroNames else None
+            t_names = req.tacticNames if req.tacticNames else None
+            p_names = req.playerNames if req.playerNames else None
+            a_names = req.allianceNames if req.allianceNames else None
+            record = extract_with_config(
+                img_arr, img.width, img.height,
+                req.labelConfig,
+                hero_names=h_names,
+                tactic_names=t_names,
+                player_names=p_names,
+                alliance_names=a_names,
+            )
+            # 日期由服务器 Node.js 设置，这里不填
+            record['battleDate'] = ''
         else:
+            # 无配置：回退旧版自动检测（兼容旧流程）
             record = analyze_battle(img_arr, img.width, img.height)
 
         import time as _time
@@ -839,6 +1032,471 @@ def paddle_ocr(req: OcrRequest):
     except Exception as e:
         import traceback
         return {'ok': False, 'error': str(e), 'trace': traceback.format_exc()}
+
+
+# ── 图片预上传缓存接口 ─────────────────────────────────────────────
+class CacheImageRequest(BaseModel):
+    image: str
+    token: str = ''
+
+@app.post('/cache-image')
+def cache_image(req: CacheImageRequest):
+    import time as _time, hashlib
+    b64 = re.sub(r'^data:[^;]+;base64,', '', req.image)
+    img_bytes = base64.b64decode(b64)
+    token = req.token or hashlib.md5(img_bytes[:1024]).hexdigest()[:12]
+    if token not in _img_cache:
+        img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+        img_arr = np.array(img)
+        if len(_img_cache) >= _IMG_CACHE_MAX:
+            oldest = next(iter(_img_cache))
+            del _img_cache[oldest]
+        _img_cache[token] = (img_arr, img.width, img.height)
+        print(f'[缓存] 新增 token={token} {img.width}x{img.height}')
+    else:
+        print(f'[缓存] 命中 token={token}')
+    return {'ok': True, 'token': token}
+
+
+# ── 测试识别接口（不入库、不扣积分）─────────────────────────────────
+class TestOcrRequest(BaseModel):
+    image: str = ''
+    imageToken: str = ''   # 已缓存图片的 token，有则跳过图片传输
+    categories: dict = {}
+    heroNames: list = []
+    tacticNames: list = []
+    playerNames: list = []   # 来自 project_player_dict.player_name
+    allianceNames: list = [] # 来自 project_player_dict.alliance_name（去重）
+
+@app.post('/test')
+def test_ocr(req: TestOcrRequest):
+    """逐字段识别并返回详细日志，用于调试区域配置"""
+    logs = []
+
+    def log(msg: str):
+        logs.append(msg)
+
+    try:
+        import time as _time
+        _t0 = _time.time()
+        if req.imageToken and req.imageToken in _img_cache:
+            img_arr, img_w, img_h = _img_cache[req.imageToken]
+            log(f'[图像] {img_w}x{img_h} 像素  [缓存命中 token={req.imageToken}]')
+        else:
+            b64 = re.sub(r'^data:[^;]+;base64,', '', req.image)
+            img_bytes = base64.b64decode(b64)
+            _t_decode = _time.time()
+            img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+            img_arr = np.array(img)
+            img_w, img_h = img.width, img.height
+            _t_img = _time.time()
+            log(f'[图像] {img_w}x{img_h} 像素  [解码:{(_t_decode-_t0)*1000:.0f}ms 打开:{(_t_img-_t_decode)*1000:.0f}ms]')
+
+        cats = req.categories
+        if not cats:
+            log('[配置] ⚠️ 未传入 categories，无法识别')
+            return {'ok': False, 'logs': logs, 'result': {}}
+
+        needs_dict = 'heroNames' in cats or 'tactics' in cats
+        if needs_dict:
+            h_names = req.heroNames if req.heroNames else HERO_NAMES
+            t_names = req.tacticNames if req.tacticNames else ALL_TACTICS
+            log(f'[字典] 武将 {len(h_names)} 条 / 战法 {len(t_names)} 条')
+        else:
+            h_names = []
+            t_names = []
+
+        p_names = req.playerNames if req.playerNames else []
+        a_names = req.allianceNames if req.allianceNames else []
+        if p_names or a_names:
+            log(f'[名单] 玩家 {len(p_names)} 条 / 同盟 {len(a_names)} 条')
+
+        def _best_name_from_dict(texts, candidates, label):
+            """模糊匹配：有字典则查，无字典则取最长有效文本（排除武将名/战法名）"""
+            def _is_hero_name(t):
+                if not h_names: return False
+                c = re.sub(r'^\d+', '', t).strip()
+                if len(c) < 2 or len(c) > 5: return False
+                _, d = best_match(c, h_names)
+                return d <= (0 if len(c) == 2 else 1)
+            def _is_tactic_name(t):
+                if not t_names: return False
+                c = re.sub(r'^影本[·.•]', '', t).strip()
+                if c in _TACTIC_NOISE or len(c) < 2 or len(c) > 6: return False
+                nm, d = best_match(c, t_names)
+                return d <= (1 if len(nm) <= 4 else 2)
+            valid = [t for t in texts if t and 2 <= len(t) <= 15
+                     and not re.match(r'^[\d\s,./\\:：·•…×xX※\-_=+]+$', t)
+                     and t not in WINNERS and t not in _TACTIC_NOISE
+                     and not _is_hero_name(t) and not _is_tactic_name(t)]
+            raw = max(valid, key=len) if valid else (texts[0] if texts else '')
+            if not candidates or not raw:
+                return raw
+            name, dist = best_match(raw, candidates)
+            # 容错阈值随长度增大：≤4字→1，≤8字→2，更长→3
+            threshold = 1 if len(raw) <= 4 else (2 if len(raw) <= 8 else 3)
+            if dist <= threshold:
+                if dist > 0:
+                    log(f'[{label}] ✅ "{raw}" → 字典匹配 "{name}" (距离{dist})')
+                return name
+            else:
+                log(f'[{label}] ⚠️ "{raw}" 无字典匹配 (最近:"{name}" 距离{dist}) → 保留原文')
+                return raw
+
+        result = {}
+
+        def to_abs(rx, ry):
+            return int(rx * img_w), int(ry * img_h)
+
+        def ocr_box_v(box, label):
+            x1, y1 = to_abs(box['rx1'], box['ry1'])
+            x2, y2 = to_abs(box['rx2'], box['ry2'])
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(img_w, x2), min(img_h, y2)
+            if x2 <= x1 or y2 <= y1:
+                log(f'[{label}] ⚠️ 区域无效 ({x1},{y1})-({x2},{y2})')
+                return []
+            blocks = ocr_region(img_arr, x1, y1, x2, y2)
+            texts = [b['text'] for b in blocks]
+            log(f'[{label}] 区域 ({x1},{y1})-({x2},{y2}) → OCR: {texts}')
+            return texts
+
+        def _best_hero(texts, label):
+            # 生成候选：原始各文本 + 两两拼接 + 全部拼接（处理单字被切开的情况）
+            # 预处理：含数字的文本直接作为噪音去除
+            texts = [t for t in texts if not re.search(r'\d', t)]
+            texts = [t for t in texts if t]
+            candidates = list(texts)
+            cleaned_parts = [re.sub(r'^\d+', '', t).strip() for t in texts]
+            if len(cleaned_parts) > 1:
+                for i in range(len(cleaned_parts) - 1):
+                    pair = cleaned_parts[i] + cleaned_parts[i + 1]
+                    if pair not in candidates:
+                        candidates.append(pair)
+                full = ''.join(cleaned_parts)
+                if full not in candidates:
+                    candidates.append(full)
+            for t in candidates:
+                cleaned = re.sub(r'^\d+', '', t).strip()
+                if len(cleaned) < 2 or len(cleaned) > 5:
+                    continue
+                # 含数字的候选作为噪音跳过
+                if re.search(r'\d', cleaned):
+                    log(f'[{label}] ⏭️ 跳过噪音(含数字): "{cleaned}"')
+                    continue
+                fixed = _fix_hero_chars(cleaned)
+                name, dist = best_match(fixed, h_names)
+                threshold = 1  # 允许截断/形近字（如"葛亮"→"诸葛亮"）
+                if dist <= threshold:
+                    log(f'[{label}] ✅ "{cleaned}" → 字典匹配 "{name}" (距离{dist})')
+                    return name
+                else:
+                    log(f'[{label}] ❌ "{cleaned}" → 最近 "{name}" 距离{dist} (超阈值)')
+            return ''
+
+        def _best_tactic(texts, label):
+            for t in texts:
+                cleaned = re.sub(r'^影本[·.•]', '', t).strip()
+                cleaned = re.sub(r'[×xX※]\d+.*$', '', cleaned).strip()
+                if cleaned in _TACTIC_NOISE or len(cleaned) < 2 or len(cleaned) > 6:
+                    log(f'[{label}] ⏭️ 跳过噪音: "{t}"')
+                    continue
+                name, dist = best_match(cleaned, t_names)
+                threshold = 2  # 统一阈值，兼容 OCR 形近字双错误
+                if dist <= threshold:
+                    log(f'[{label}] ✅ "{cleaned}" → 字典匹配 "{name}" (距离{dist})')
+                    return name
+                else:
+                    log(f'[{label}] ❓ "{cleaned}" → 最近 "{name}" 距离{dist} (未命中字典，标记待确认)')
+                    return '待确认:' + cleaned
+            return ''
+
+        def _ocr_clean_v(t):
+            for old, new_c in [('O','0'),('o','0'),('l','1'),('I','1'),('S','5'),('B','8'),('Z','2'),('g','9')]:
+                t = t.replace(old, new_c)
+            return t
+
+        def _extract_damage_v(texts, label):
+            """提取战损数值：取"战损："冒号后的数字"""
+            joined = _ocr_clean_v(''.join(texts))
+            m = re.search(r'战损[：:]\s*(\d[\d,]*)', joined)
+            if m:
+                n = int(m.group(1).replace(',', ''))
+                log(f'[{label}] 战损冒号后: "{m.group(0)}" → {n} ✅')
+                return n
+            m = re.search(r'(\d[\d,]*)', joined)
+            if m:
+                n = int(m.group(1).replace(',', ''))
+                log(f'[{label}] 兜底数字: {n}')
+                return n
+            log(f'[{label}] ❌ 未找到数字: {texts}')
+            return 0
+
+        def _extract_troops_v(texts, label):
+            """提取兵力数值：取 XX/XX 斜杠右侧的数字（即最后一个数字）"""
+            joined = _ocr_clean_v(''.join(texts))
+            # 优先：斜杠右侧数字（兼容斜杠被 OCR 误读为 l/1/| 等）
+            m = re.search(r'\d[\d,]*\s*[/|\\l]\s*(\d[\d,]*)', joined)
+            if m:
+                n = int(m.group(1).replace(',', ''))
+                log(f'[{label}] 斜杠右侧: "{m.group(0)}" → {n} ✅')
+                return n
+            # 次选：取最后一个数字（XX/XX 中右侧总在最后）
+            all_nums = re.findall(r'\d[\d,]*', joined)
+            if len(all_nums) >= 2:
+                n = int(all_nums[-1].replace(',', ''))
+                log(f'[{label}] 最后数字(共{len(all_nums)}个): {n} ✅')
+                return n
+            if all_nums:
+                n = int(all_nums[-1].replace(',', ''))
+                log(f'[{label}] 兜底数字: {n}')
+                return n
+            log(f'[{label}] ❌ 未找到数字: {texts}')
+            return 0
+
+        # ── 胜负 ──
+        if 'winner' in cats:
+            for box in cats['winner'].get('boxes', []):
+                texts = ocr_box_v(box, '胜负')
+                for t in texts:
+                    if t in WINNERS:
+                        result['winner'] = WINNER_MAP.get(t, t)
+                        log(f'[胜负] ✅ 识别: "{t}" → {result["winner"]}')
+                        break
+                else:
+                    log(f'[胜负] ❌ 未匹配胜/败/平: {texts}')
+
+        # ── 玩家名 ──
+        if 'playerNames' in cats:
+            for box in cats['playerNames'].get('boxes', []):
+                key = box.get('key', '')
+                texts = ocr_box_v(box, f'玩家名-{key}')
+                name = _best_name_from_dict(texts, p_names, f'玩家名-{key}')
+                if key == 'left': result['leftPlayer'] = name
+                else: result['rightPlayer'] = name
+                log(f'[玩家名-{key}] → "{name}"')
+
+        # ── 同盟名 ──
+        if 'alliances' in cats:
+            for box in cats['alliances'].get('boxes', []):
+                key = box.get('key', '')
+                texts = ocr_box_v(box, f'同盟名-{key}')
+                name = _best_name_from_dict(texts, a_names, f'同盟名-{key}')
+                if key == 'left': result['leftAlliance'] = name
+                else: result['rightAlliance'] = name
+                log(f'[同盟名-{key}] → "{name}"')
+
+        # ── 阵型 ──
+        if 'formations' in cats:
+            for box in cats['formations'].get('boxes', []):
+                key = box.get('key', '')
+                texts = ocr_box_v(box, f'阵型-{key}')
+                fm = ''
+                for t in texts:
+                    mf = match_formation(t)
+                    if mf:
+                        fm = mf
+                        log(f'[阵型-{key}] ✅ "{t}" → "{fm}"')
+                        break
+                if not fm and len(texts) > 1:
+                    concat = ''.join(texts)
+                    mf = match_formation(concat)
+                    if mf:
+                        fm = mf
+                        log(f'[阵型-{key}] ✅ 拼接"{concat}" → "{fm}"')
+                if not fm:
+                    log(f'[阵型-{key}] ❌ 未匹配: {texts}')
+                if key == 'left': result['leftFormation'] = fm
+                else: result['rightFormation'] = fm
+
+        # ── 武将名 ──
+        left_generals = ['', '', '']
+        right_generals = ['', '', '']
+        if 'heroNames' in cats:
+            for box in cats['heroNames'].get('boxes', []):
+                key = box.get('key', '')
+                texts = ocr_box_v(box, f'武将-{key}')
+                hero = _best_hero(texts, f'武将-{key}')
+                side, idx = key[0], int(key[1]) - 1
+                if side == 'L': left_generals[idx] = hero
+                else: right_generals[idx] = hero
+        if 'heroNames' in cats:
+            result['leftGenerals'] = left_generals
+            result['rightGenerals'] = right_generals
+
+        # ── 豆豆（双校验）──
+        left_stars = [0, 0, 0]
+        right_stars = [0, 0, 0]
+        if 'stars' in cats:
+            for box in cats['stars'].get('boxes', []):
+                key = box.get('key', '')
+                x1, y1 = to_abs(box['rx1'], box['ry1'])
+                x2, y2 = to_abs(box['rx2'], box['ry2'])
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(img_w, x2), min(img_h, y2)
+                if x2 <= x1 or y2 <= y1:
+                    log(f'[豆豆-{key}] ⚠️ 区域无效')
+                    continue
+                crop = img_arr[y1:y2, x1:x2]
+                crop_bgr2 = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+                crop_gray2 = cv2.cvtColor(crop_bgr2, cv2.COLOR_BGR2GRAY)
+                ch2, cw2 = crop.shape[:2]
+                clahe2 = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                crop_clahe2 = clahe2.apply(crop_gray2)
+                ref_h2, ref_w2 = _DOT_TPL_GRAY.shape[:2]
+                scales2 = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20]
+                tpl_n, tpl_info2 = 0, 'no_match'
+                for feat2, feat_name2, th2 in [(crop_clahe2, 'clahe', 0.70), (crop_gray2, 'raw', 0.70)]:
+                    c2, info2 = _match_all_templates(feat2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, th2, cw2, ch2, feat_name2)
+                    if c2 > tpl_n: tpl_n, tpl_info2 = c2, info2
+                    if tpl_n >= 5: break
+                if tpl_n == 0:
+                    c2, info2 = _match_all_templates(crop_clahe2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, 0.55, cw2, ch2, 'lo')
+                    if c2 > 0: tpl_n, tpl_info2 = c2, info2
+                if tpl_n > 0:
+                    log(f'[豆豆-{key}] ✅ {tpl_n} 颗 ({tpl_info2})')
+                else:
+                    log(f'[豆豆-{key}] ❌ 未匹配 ({tpl_info2})')
+                n = tpl_n
+                side2, idx2 = key[0], int(key[1]) - 1
+                if side2 == 'L': left_stars[idx2] = n
+                else: right_stars[idx2] = n
+        if 'stars' in cats:
+            result['leftStars'] = left_stars
+            result['rightStars'] = right_stars
+
+        # ── 战损 ──
+        if 'damages' in cats:
+            for box in cats['damages'].get('boxes', []):
+                key = box.get('key', '')
+                texts = ocr_box_v(box, f'战损-{key}')
+                n = _extract_damage_v(texts, f'战损-{key}')
+                if key == 'left': result['leftDamage'] = n
+                else: result['rightDamage'] = n
+
+        # ── 兵力 ──
+        if 'troops' in cats:
+            for box in cats['troops'].get('boxes', []):
+                key = box.get('key', '')
+                texts = ocr_box_v(box, f'兵力-{key}')
+                n = _extract_troops_v(texts, f'兵力-{key}')
+                if key == 'left': result['leftTroops'] = n
+                else: result['rightTroops'] = n
+
+        # ── 战法 ──
+        left_tactics = [''] * 9
+        right_tactics = [''] * 9
+        if 'tactics' in cats:
+            for box in cats['tactics'].get('boxes', []):
+                key = box.get('key', '')  # e.g. 'L1_2'
+                texts = ocr_box_v(box, f'战法-{key}')
+                tac = _best_tactic(texts, f'战法-{key}')
+                parts = key.split('_')
+                hero_key = parts[0]  # 'L1'
+                slot = int(parts[1]) - 1 if len(parts) > 1 else 0
+                side3 = hero_key[0]
+                hidx = int(hero_key[1]) - 1
+                arr = left_tactics if side3 == 'L' else right_tactics
+                arr[hidx * 3 + slot] = tac
+        if 'tactics' in cats:
+            result['leftTactics'] = left_tactics
+            result['rightTactics'] = right_tactics
+
+        summary_parts = []
+        for k, v in result.items():
+            if v is None or v == '' or v == 0 or v == [] or v == ['', '', ''] or v == [''] * 9 or v == [0, 0, 0] or v == [0] * 9:
+                continue
+            summary_parts.append(f'{k}={v}')
+        if summary_parts:
+            log(f'[结果] ' + ' | '.join(summary_parts))
+        else:
+            log('[结果] ⚠️ 所有字段均为空，请检查区域坐标或图片')
+        _elapsed = _time.time() - _t0
+        log(f'[耗时] {_elapsed:.2f}s（共 {len(cats)} 个category）')
+        return {'ok': True, 'result': result, 'logs': logs}
+
+    except Exception as e:
+        import traceback
+        logs.append(f'[错误] {str(e)}')
+        return {'ok': False, 'error': str(e), 'logs': logs, 'trace': traceback.format_exc()}
+
+
+class TestStarsRequest(BaseModel):
+    image: str = ''
+    imageToken: str = ''
+    categories: dict = {}
+    mode: str = 'both'  # 'color' | 'template' | 'both'
+
+@app.post('/test-stars')
+def test_stars(req: TestStarsRequest):
+    """豆豆专项测试：支持颜色法单独 / 模板法单独 / 双校验整体"""
+    logs = []
+
+    def log(msg: str):
+        logs.append(msg)
+
+    try:
+        if req.imageToken and req.imageToken in _img_cache:
+            img_arr, img_w, img_h = _img_cache[req.imageToken]
+            log(f'[图像] {img_w}x{img_h} / 模式: {req.mode} [缓存命中 token={req.imageToken}]')
+        else:
+            b64 = re.sub(r'^data:[^;]+;base64,', '', req.image)
+            img_bytes = base64.b64decode(b64)
+            img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+            img_arr = np.array(img)
+            img_w, img_h = img.width, img.height
+            log(f'[图像] {img_w}x{img_h} / 模式: {req.mode}')
+
+        cats = req.categories
+        star_boxes = cats.get('stars', {}).get('boxes', [])
+        if not star_boxes:
+            log('[豆豆] ⚠️ categories 中无 stars 区域配置')
+            return {'ok': False, 'logs': logs, 'result': {}}
+
+        result = {}
+        for box in star_boxes:
+            key = box.get('key', '?')
+            x1 = max(0, int(box['rx1'] * img_w))
+            y1 = max(0, int(box['ry1'] * img_h))
+            x2 = min(img_w, int(box['rx2'] * img_w))
+            y2 = min(img_h, int(box['ry2'] * img_h))
+            if x2 <= x1 or y2 <= y1:
+                log(f'[豆豆-{key}] ⚠️ 区域无效 ({x1},{y1})-({x2},{y2})')
+                result[key] = {'color': -1, 'template': -1, 'final': -1}
+                continue
+            crop = img_arr[y1:y2, x1:x2]
+            log(f'[豆豆-{key}] 区域 ({x1},{y1})-({x2},{y2}) 尺寸 {crop.shape[1]}x{crop.shape[0]}')
+
+            # 滑窗法（唯一方法，mode 字段保留兼容但不再区分）
+            crop_gray3 = cv2.cvtColor(cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
+            ch3, cw3 = crop.shape[:2]
+            clahe3 = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            crop_clahe3 = clahe3.apply(crop_gray3)
+            ref_h3, ref_w3 = _DOT_TPL_GRAY.shape[:2]
+            scales3 = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20]
+            tpl_n = 0
+            tpl_info = 'no_match'
+            for feat3, feat_name3, th3 in [(crop_clahe3, 'clahe', 0.70), (crop_gray3, 'raw', 0.70)]:
+                c3, info3 = _match_all_templates(feat3, _DOT_TPL_LIST, scales3, ref_h3, ref_w3, th3, cw3, ch3, feat_name3)
+                if c3 > tpl_n: tpl_n, tpl_info = c3, info3
+                if tpl_n >= 5: break
+            if tpl_n == 0:
+                c3, info3 = _match_all_templates(crop_clahe3, _DOT_TPL_LIST, scales3, ref_h3, ref_w3, 0.55, cw3, ch3, 'lo')
+                if c3 > 0: tpl_n, tpl_info = c3, info3
+            final = tpl_n
+            if tpl_n > 0:
+                log(f'[豆豆-{key}] ✅ {tpl_n} 颗 ({tpl_info})')
+            else:
+                log(f'[豆豆-{key}] ❌ 未匹配 ({tpl_info})')
+
+            result[key] = {'template': tpl_n, 'final': final}
+
+        return {'ok': True, 'result': result, 'logs': logs}
+
+    except Exception as e:
+        import traceback
+        logs.append(f'[错误] {str(e)}')
+        return {'ok': False, 'error': str(e), 'logs': logs, 'trace': traceback.format_exc()}
 
 
 if __name__ == '__main__':

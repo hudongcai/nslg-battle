@@ -700,8 +700,33 @@ async function onLoginSuccess(){
     el.style.setProperty('display', 'none', 'important');
     el.classList.remove('active');
   });
-  var mainTab = document.getElementById('tab-project');
-  if(mainTab) mainTab.style.setProperty('display', 'block', 'important'); // 默认显示项目 tab
+  // 恢复上次停留的 tab，否则默认显示项目 tab
+  const _lastTab = (() => { try { return localStorage.getItem('lastTab'); } catch(e) { return null; } })();
+  const _SYS_TABS = ['user','syslog','datamgmt','rolemanage','dataperm','cloudservice','ocrdict','ocrpending','labeleditor'];
+  const _PROJ_TABS = ['data','winrate'];
+  if (_lastTab && _lastTab !== 'project') {
+    // 延迟到 updateNavByRole 执行完再恢复，避免权限未就绪
+    setTimeout(() => {
+      if (_SYS_TABS.includes(_lastTab)) {
+        if (typeof showSystemConfig === 'function') {
+          showSystemConfig().then(() => {
+            const btn = document.querySelector(`#systemSubNav button[onclick*="switchTab('${_lastTab}'"]`);
+            if (btn && typeof switchTab === 'function') switchTab(_lastTab, btn);
+          });
+        }
+      } else if (_PROJ_TABS.includes(_lastTab)) {
+        // 项目内 tab 需要项目已打开，不恢复（回到项目列表）
+        const mainTab = document.getElementById('tab-project');
+        if (mainTab) mainTab.style.setProperty('display', 'block', 'important');
+      } else {
+        const btn = document.querySelector(`#topNav button[onclick*="switchTab('${_lastTab}'"]`);
+        if (typeof switchTab === 'function') switchTab(_lastTab, btn || null);
+      }
+    }, 200);
+  } else {
+    var mainTab = document.getElementById('tab-project');
+    if(mainTab) mainTab.style.setProperty('display', 'block', 'important'); // 默认显示项目 tab
+  }
   // 设置用户角色样式
   if(currentUser.role==='super_admin'){
     document.body.classList.add('super-admin');

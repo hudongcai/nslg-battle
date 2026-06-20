@@ -32,19 +32,28 @@ let ocrPausedByUser = false;      // 标记是否为用户主动暂停导致的�
 let _labelConfigCache = null;      // 标注配置缓存（按 projectId）
 let _labelConfigProjectId = null;  // 缓存对应的 projectId
 
+// 保存模板后调用，使缓存失效（下次 OCR 会重新从 DB 拉取最新配置）
+function invalidateLabelConfigCache() {
+  _labelConfigCache = null;
+  _labelConfigProjectId = null;
+}
+
 // 获取标注配置（带缓存）
+// 优先取项目专属配置，无则后端自动回退全局配置（project_id=0）
+// projectId 为 null 时也拉全局配置，保证所有上传都走 extract_with_config
 async function getLabelConfig(projectId) {
-  if (!projectId) return null;
-  if (_labelConfigCache && _labelConfigProjectId === projectId) return _labelConfigCache;
+  const pid = projectId || 0;  // null → 0 → 拉全局配置
+  if (_labelConfigCache && _labelConfigProjectId === pid) return _labelConfigCache;
   try {
     const token = typeof getToken === 'function' ? getToken() : '';
-    const resp = await fetch('/api/label-config/' + projectId, {
+    const _base = (typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : (window.cloudSync?.BASE_URL ? window.cloudSync.BASE_URL + '/api' : '/api'));
+    const resp = await fetch(_base + '/label-config/' + pid, {
       headers: token ? { 'Authorization': 'Bearer ' + token } : {}
     });
     const data = await resp.json();
     if (data.code === 200 && data.data && data.data.categories) {
       _labelConfigCache = data.data.categories;
-      _labelConfigProjectId = projectId;
+      _labelConfigProjectId = pid;
       return _labelConfigCache;
     }
   } catch (e) { /* 无配置时使用自动检测 */ }
@@ -149,7 +158,7 @@ async function handleBatchUpload(files) {
   for (const file of filesToProcess) {
     if (existingNames.has(file.name)) continue;
     existingNames.add(file.name);
-    ocrQueue.push({ file, name: file.name, status: 'pending', error: null });
+    ocrQueue.push({ file, name: file.name, status: 'pending', error: null, projectId: window.currentProjectId || null });
     addedCount++;
   }
 
@@ -166,10 +175,17 @@ async function handleBatchUpload(files) {
 function renderOCRQueue() {
   const queueCount = document.getElementById('queueCount');
   const queueList = document.getElementById('queueList');
-  if (queueCount) queueCount.textContent = ocrQueue.length;
+  const queueArea = document.getElementById('queueArea');
+  const curPid = window.currentProjectId || null;
+  // 只统计、显示属于当前项目的队列项
+  const visibleItems = ocrQueue.map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => item.projectId === curPid);
+  if (queueCount) queueCount.textContent = visibleItems.length;
+  // 当前项目无任务时自动隐藏队列区域
+  if (queueArea) queueArea.style.display = visibleItems.length > 0 ? 'block' : 'none';
 
   if (queueList) {
-    queueList.innerHTML = ocrQueue.map((item, idx) => {
+    queueList.innerHTML = visibleItems.map(({ item, idx }) => {
       const statusClass = item.status === 'pending' ? 'qi-pending'
         : item.status === 'processing' ? 'qi-processing'
         : item.status === 'done' ? 'qi-done' : 'qi-error';
@@ -204,21 +220,14 @@ function removeQueueItem(idx) {
     return;
   }
   ocrQueue.splice(idx, 1);
-  renderOCRQueue();
-  const queueCount = document.getElementById('queueCount');
-  if (queueCount) queueCount.textContent = ocrQueue.length;
-  // 如果队列空了且没在跑，隐藏区域
-  if (ocrQueue.length === 0 && !ocrRunning) {
-    const queueArea = document.getElementById('queueArea');
-    if (queueArea) queueArea.style.display = 'none';
-  }
+  renderOCRQueue();  // 内部处理 count 和 queueArea 显隐
 }
 
 function clearQueue() {
-  ocrQueue = ocrQueue.filter(q => q.status === 'processing');
-  const queueArea = document.getElementById('queueArea');
-  if (!ocrRunning && queueArea) queueArea.style.display = 'none';
-  renderOCRQueue();
+  const curPid = window.currentProjectId || null;
+  // 只清除当前项目的非处理中任务，保留其他项目的和正在处理的
+  ocrQueue = ocrQueue.filter(q => q.status === 'processing' || q.projectId !== curPid);
+  renderOCRQueue();  // 内部处理 queueArea 显隐
 }
 
 // ========== 文件夹自动监听 ==========
@@ -323,7 +332,7 @@ async function scanWatchFolder() {
     if (newFiles.length === 0) return;
     for (const { name, file } of newFiles) {
       folderProcessedSet.add(name);
-      ocrQueue.push({ file, name, status: 'pending', error: null });
+      ocrQueue.push({ file, name, status: 'pending', error: null, projectId: window.currentProjectId || null });
       folderNewCount++;
     }
     saveFolderProcessed(folderWatchHandle.name, folderProcessedSet);
@@ -435,11 +444,12 @@ async function startBatchProcess() {
         const token = typeof getToken === 'function' ? getToken() : '';
 
         updateOCRStatus('work', 'OCR 识别中...');
-        // 获取标注配置（有缓存，首次加载后复用）
-        const labelCfg = await getLabelConfig(window.currentProjectId);
+        // 用队列项记录的 projectId，避免用户中途切换项目影响归属
+        const itemProjectId = item.projectId || null;
+        const labelCfg = await getLabelConfig(itemProjectId);
         const reqBody = {
           image: base64,
-          projectId: window.currentProjectId || null,
+          projectId: itemProjectId,
           imageName: item.name,
         };
         if (labelCfg) reqBody.labelConfig = labelCfg;
@@ -535,7 +545,7 @@ async function startBatchProcess() {
         }
         // OCR 服务不可达 → 立即停止
         const msg = e.message || '';
-        if (msg.includes('503') || msg.includes('服务不可用') || msg.includes('OCR') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        if (msg.includes('503') || msg.includes('服务不可用') || msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION')) {
           ocrRunning = false;
           if (btnStart) btnStart.disabled = false;
           if (btnPause) { btnPause.disabled = true; btnPause.textContent = '⏸ 暂停'; }
@@ -573,9 +583,9 @@ async function startBatchProcess() {
       renderOCRQueue();
       updateOCRProgress();
 
-      if (typeof loadAllRecords === 'function') await loadAllRecords();
-      if (typeof renderDataTable === 'function') renderDataTable();
-      if (typeof renderGallery === 'function') renderGallery();
+      try { if (typeof loadAllRecords === 'function') await loadAllRecords(); } catch(e) { console.error('loadAllRecords error:', e); }
+      try { if (typeof renderDataTable === 'function') renderDataTable(); } catch(e) { console.error('renderDataTable error:', e); }
+      try { if (typeof renderGallery === 'function') renderGallery(); } catch(e) { console.error('renderGallery error:', e); }
 
       if (idx < ocrQueue.length) await sleep(OCR_CONFIG.batchInterval);
     }
@@ -583,8 +593,8 @@ async function startBatchProcess() {
     ocrRunning = false;
     if (btnStart) btnStart.disabled = false;
     if (btnPause) btnPause.disabled = true;
-    if (typeof renderDataTable === 'function') renderDataTable();
-    if (typeof renderGallery === 'function') renderGallery();
+    try { if (typeof renderDataTable === 'function') renderDataTable(); } catch(e) { console.error('renderDataTable error:', e); }
+    try { if (typeof renderGallery === 'function') renderGallery(); } catch(e) { console.error('renderGallery error:', e); }
     updateOCRProgress();
     updateOCRStatus('ok', 'OCR 就绪');
   }

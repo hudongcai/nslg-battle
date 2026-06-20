@@ -83,6 +83,7 @@ let _leSelIdx = -1;         // 当前选中 box 下标
 let _leDrag = null;         // {mode:'move'|'nw'|'ne'|'sw'|'se', sx, sy, origBox}
 let _leCurrentImageB64 = ''; // 上传的图片 base64（供测试用）
 let _leImageToken = '';      // Python 侧缓存 token，避免重复传图
+let _leBoxesFromRealSource = false; // boxes 是否来自方案/DB（而非默认值）
 
 // ── 初始化 ───────────────────────────────────────────────────────────
 function onLabelEditorTabShow() {
@@ -90,6 +91,7 @@ function onLabelEditorTabShow() {
   _renderBoxList();
   _loadProjectList();
   _renderSchemeSelect();
+  leInitProjectRefSelect();
 }
 
 function _initBoxes() {
@@ -151,7 +153,25 @@ function leOnFileSelected(input) {
       _leImgW = img.naturalWidth;
       _leImgH = img.naturalHeight;
       _initBoxes();
-      await _loadConfig(_leProjectId);
+      if (!_leBoxesFromRealSource) {
+        // 优先加载当前选中方案的坐标，其次从 DB 加载
+        const schemeSel = document.getElementById('leSchemeSelect');
+        const selectedScheme = schemeSel?.value;
+        if (selectedScheme) {
+          const scheme = _getSchemeData(selectedScheme);
+          if (scheme?.boxes) {
+            _leBoxes = LE_BOX_DEFS.map((def, i) => {
+              const coords = scheme.boxes[i];
+              if (coords) return { def, rx1: coords.rx1, ry1: coords.ry1, rx2: coords.rx2, ry2: coords.ry2 };
+              const d = (LE_DEFAULTS[def.cat] || {})[def.key] || [0.1, 0.1, 0.3, 0.2];
+              return { def, rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
+            });
+            _leBoxesFromRealSource = true;
+          }
+        } else {
+          await _loadConfig(_leProjectId);
+        }
+      }
       _showEditorWrap();
       _resizeCanvas();
       _renderCanvas();
@@ -207,30 +227,124 @@ function _applyCategories(cats) {
       b.rx2 = found.rx2; b.ry2 = found.ry2;
     }
   });
+  _leBoxesFromRealSource = true;
 }
 
-// ── 保存配置 ──────────────────────────────────────────────────────────
-async function leSaveConfig() {
-  const token = typeof getToken === 'function' ? getToken() : '';
-  const categories = _buildCategories();
+// ── 保存配置（保存当前画布框坐标到方案 localStorage）────────────────
+function leSaveConfig() {
+  const sel = document.getElementById('leSchemeSelect');
+  let name = sel?.value;
+  if (!name) {
+    name = prompt('请输入方案名称（如：方案一）：', '方案一');
+    if (!name?.trim()) return;
+    name = name.trim();
+  }
+  const schemeData = {
+    imageB64: _leCurrentImageB64,
+    imageW: _leImgW,
+    imageH: _leImgH,
+    boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
+    testAllianceSlots: _getTestAllianceSlots(),
+    testPlayerNames: _leTestPlayerNames.slice(),
+  };
   try {
+    _saveSchemeData(name, schemeData);
+    const names = _getSchemeNames();
+    if (!names.includes(name)) { names.push(name); _saveSchemeNames(names); }
+    _renderSchemeSelect();
+    if (sel) sel.value = name;
+    _setStatus(`✅ 方案"${name}"已保存`);
+  } catch (e) {
+    _setStatus('❌ 保存失败（图片可能过大）: ' + e.message);
+  }
+}
+
+// ── 新建方案 ──────────────────────────────────────────────────────────
+function leNewScheme() {
+  const name = prompt('请输入新方案名称（如：方案一）：', '');
+  if (!name?.trim()) return;
+  const trimmedName = name.trim();
+  const names = _getSchemeNames();
+  if (names.includes(trimmedName)) {
+    _setStatus(`方案"${trimmedName}"已存在，请在下拉框中选择`);
+    const sel = document.getElementById('leSchemeSelect');
+    if (sel) sel.value = trimmedName;
+    return;
+  }
+  const schemeData = {
+    imageB64: _leCurrentImageB64,
+    imageW: _leImgW,
+    imageH: _leImgH,
+    boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
+    testAllianceSlots: _getTestAllianceSlots(),
+    testPlayerNames: _leTestPlayerNames.slice(),
+  };
+  _saveSchemeData(trimmedName, schemeData);
+  names.push(trimmedName);
+  _saveSchemeNames(names);
+  _renderSchemeSelect();
+  const sel = document.getElementById('leSchemeSelect');
+  if (sel) sel.value = trimmedName;
+  _setStatus(`✅ 已创建方案"${trimmedName}"`);
+}
+
+// ── 绑定生效（将选中方案的坐标写入指定项目/全局的 label_config DB）──
+async function leBindScheme() {
+  const projectSel = document.getElementById('leProjectSel');
+  const bindSchemeSel = document.getElementById('leBindSchemeSelect');
+  const schemeName = bindSchemeSel?.value;
+  const projectId = parseInt(projectSel?.value || '0');
+
+  if (!schemeName) { _setBindStatus('❌ 请先选择方案'); return; }
+
+  const scheme = _getSchemeData(schemeName);
+  if (!scheme?.boxes) { _setBindStatus(`❌ 方案"${schemeName}"数据不存在`); return; }
+
+  const categories = {};
+  LE_BOX_DEFS.forEach((def, i) => {
+    const coords = scheme.boxes[i];
+    if (!coords) return;
+    if (!categories[def.cat]) categories[def.cat] = { boxes: [] };
+    categories[def.cat].boxes.push({
+      key: def.key,
+      rx1: +coords.rx1.toFixed(4), ry1: +coords.ry1.toFixed(4),
+      rx2: +coords.rx2.toFixed(4), ry2: +coords.ry2.toFixed(4),
+    });
+  });
+
+  _setBindStatus('⏳ 绑定中...');
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
     const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
     const resp = await fetch(base + '/label-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
       body: JSON.stringify({
-        projectId: _leProjectId || undefined,
-        global: _leProjectId === 0,
-        imageWidth: _leImgW || 0,
-        imageHeight: _leImgH || 0,
+        projectId: projectId || undefined,
+        global: projectId === 0,
+        imageWidth: scheme.imageW || 0,
+        imageHeight: scheme.imageH || 0,
         categories,
       }),
     });
     const data = await resp.json();
-    _setStatus(data.code === 200 ? '✅ 保存成功' : `❌ ${data.message}`);
+    const scopeLabel = projectId === 0
+      ? '全局配置'
+      : (projectSel.options[projectSel.selectedIndex]?.text || `项目${projectId}`);
+    if (data.code === 200) {
+      _setBindStatus(`✅ 已将"${schemeName}"绑定到${scopeLabel}`);
+      if (typeof invalidateLabelConfigCache === 'function') invalidateLabelConfigCache();
+    } else {
+      _setBindStatus('❌ ' + (data.message || '绑定失败'));
+    }
   } catch (e) {
-    _setStatus('❌ 保存失败: ' + e.message);
+    _setBindStatus('❌ ' + e.message);
   }
+}
+
+function _setBindStatus(msg) {
+  const el = document.getElementById('leBindStatus');
+  if (el) el.textContent = msg;
 }
 
 function _buildCategories() {
@@ -263,7 +377,7 @@ function _renderCanvas() {
 
     ctx.save();
     ctx.strokeStyle = b.def.color;
-    ctx.lineWidth = isSel ? 2.5 : 1.5;
+    ctx.lineWidth = isSel ? 1.5 : 1;
     ctx.globalAlpha = isSel ? 1 : 0.75;
     ctx.strokeRect(cx1, cy1, w, h);
     ctx.fillStyle = b.def.color;
@@ -494,9 +608,103 @@ async function _leCacheImage() {
   }
 }
 
+const _LE_ALLIANCE_SLOTS = ['left1','left2','left3','right1','right2','right3'];
+let _leTestPlayerNames = [];
+
+function _updatePlayerCount() {
+  const el = document.getElementById('lePLPlayerCount');
+  if (el) el.textContent = `${_leTestPlayerNames.length} 个`;
+}
+
+function _getTestAllianceSlots() {
+  return _LE_ALLIANCE_SLOTS.map(k => ({
+    key: k,
+    allianceName: (document.getElementById(`lePL_${k}_alliance`)?.value || '').trim(),
+  }));
+}
+
+function _setTestAllianceSlots(list) {
+  (list || []).forEach(item => {
+    const aEl = document.getElementById(`lePL_${item.key}_alliance`);
+    if (aEl) aEl.value = item.allianceName || '';
+  });
+}
+
+function _clearTestAllianceSlots() {
+  _LE_ALLIANCE_SLOTS.forEach(k => {
+    const aEl = document.getElementById(`lePL_${k}_alliance`);
+    if (aEl) aEl.value = '';
+  });
+}
+
+function leImportPlayerNames() {
+  const current = _leTestPlayerNames.join('\n');
+  const text = prompt(
+    '批量导入玩家名单（每行一个玩家名，粘贴后确认）：',
+    current
+  );
+  if (text === null) return;
+  _leTestPlayerNames = text.split('\n').map(s => s.trim()).filter(Boolean);
+  _updatePlayerCount();
+}
+
+function leClearPlayerNames() {
+  _leTestPlayerNames = [];
+  _updatePlayerCount();
+}
+
+async function leInitProjectRefSelect() {
+  const sel = document.getElementById('lePLProjectRef');
+  if (!sel || !window.cloudSync) return;
+  try {
+    const projs = await window.cloudSync.getProjects();
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- 选择项目 --</option>' +
+      projs.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    if (cur) sel.value = cur;
+  } catch (e) { /* 无网络时忽略 */ }
+}
+
+async function leRefFromProject() {
+  const sel = document.getElementById('lePLProjectRef');
+  const msgEl = document.getElementById('lePLRefMsg');
+  const projectId = sel?.value;
+  if (!projectId) { if (msgEl) msgEl.textContent = '请先选择项目'; return; }
+  if (msgEl) msgEl.textContent = '加载中…';
+  try {
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const headers = { Authorization: 'Bearer ' + token };
+
+    // 取项目同盟名
+    const projData = await window.cloudSync.getProject(projectId);
+    const leftAl = Array.isArray(projData?.left_alliances) ? projData.left_alliances : [];
+    const rightAl = Array.isArray(projData?.right_alliances) ? projData.right_alliances : [];
+    ['left1','left2','left3'].forEach((k, i) => {
+      const el = document.getElementById(`lePL_${k}_alliance`);
+      if (el) el.value = leftAl[i] || '';
+    });
+    ['right1','right2','right3'].forEach((k, i) => {
+      const el = document.getElementById(`lePL_${k}_alliance`);
+      if (el) el.value = rightAl[i] || '';
+    });
+
+    // 取玩家字典
+    const dictRes = await fetch(`${base}/projects/${projectId}/player-dict`, { headers });
+    const dictJson = await dictRes.json();
+    const dictRows = Array.isArray(dictJson.data) ? dictJson.data : [];
+    _leTestPlayerNames = [...new Set(dictRows.map(r => r.player_name).filter(Boolean))];
+    _updatePlayerCount();
+
+    if (msgEl) msgEl.textContent = `✅ 同盟 ${leftAl.length + rightAl.length} 个，玩家 ${_leTestPlayerNames.length} 个`;
+  } catch (e) {
+    if (msgEl) msgEl.textContent = '❌ ' + e.message;
+  }
+}
+
 function _testBody(extra) {
-  // 有缓存 token 则只传 token，否则传完整 base64
-  const body = { projectId: _leProjectId, ...extra };
+  const allianceNames = [...new Set(_getTestAllianceSlots().map(x => x.allianceName).filter(Boolean))];
+  const body = { projectId: _leProjectId, playerNames: _leTestPlayerNames, allianceNames, ...extra };
   if (_leImageToken) body.imageToken = _leImageToken;
   else body.imageBase64 = _leCurrentImageB64;
   return JSON.stringify(body);
@@ -654,49 +862,22 @@ function _saveSchemeData(name, data) {
 }
 
 function _renderSchemeSelect() {
-  const sel = document.getElementById('leSchemeSelect');
-  if (!sel) return;
-  const cur = sel.value;
   const names = _getSchemeNames();
-  sel.innerHTML = '<option value="">— 选择方案 —</option>';
-  names.forEach(n => {
-    const opt = document.createElement('option');
-    opt.value = n;
-    opt.textContent = n;
-    sel.appendChild(opt);
+  ['leSchemeSelect', 'leBindSchemeSelect'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— 选择方案 —</option>';
+    names.forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n;
+      opt.textContent = n;
+      sel.appendChild(opt);
+    });
+    if (cur && names.includes(cur)) sel.value = cur;
   });
-  if (cur && names.includes(cur)) sel.value = cur;
 }
 
-function leSaveAsScheme() {
-  if (!_leCurrentImageB64) { _setStatus('❌ 请先上传参考图片'); return; }
-  const sel = document.getElementById('leSchemeSelect');
-  const defaultName = sel?.value || '';
-  const name = prompt('请输入方案名称（如：方案一）：', defaultName);
-  if (!name || !name.trim()) return;
-  const trimmedName = name.trim();
-
-  const schemeData = {
-    imageB64: _leCurrentImageB64,
-    imageW: _leImgW,
-    imageH: _leImgH,
-    boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
-  };
-
-  try {
-    _saveSchemeData(trimmedName, schemeData);
-    const names = _getSchemeNames();
-    if (!names.includes(trimmedName)) {
-      names.push(trimmedName);
-      _saveSchemeNames(names);
-    }
-    _renderSchemeSelect();
-    if (sel) sel.value = trimmedName;
-    _setStatus(`✅ 方案"${trimmedName}"已保存`);
-  } catch (e) {
-    _setStatus('❌ 保存方案失败（图片可能过大）: ' + e.message);
-  }
-}
 
 function leLoadScheme(name) {
   if (!name) return;
@@ -721,7 +902,13 @@ function leLoadScheme(name) {
       const d = (LE_DEFAULTS[def.cat] || {})[def.key] || [0.1, 0.1, 0.3, 0.2];
       return { def, rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
     });
+    _leBoxesFromRealSource = true;
     _leSelIdx = -1;
+
+    _clearTestAllianceSlots();
+    if (scheme.testAllianceSlots) _setTestAllianceSlots(scheme.testAllianceSlots);
+    _leTestPlayerNames = Array.isArray(scheme.testPlayerNames) ? scheme.testPlayerNames.slice() : [];
+    _updatePlayerCount();
 
     _showEditorWrap();
     _resizeCanvas();
