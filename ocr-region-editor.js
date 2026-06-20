@@ -989,19 +989,36 @@ function leCreateDefaultScheme() {
 }
 
 // ── 导出所有方案 ──────────────────────────────────────────────────────
-function leExportSchemes() {
+async function leExportSchemes() {
   const names = _getSchemeNames();
   if (names.length === 0) { _setStatus('❌ 当前没有任何方案可导出'); return; }
   const payload = { version: 1, exportedAt: new Date().toISOString(), schemes: {} };
   names.forEach(n => { payload.schemes[n] = _getSchemeData(n); });
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `ocr_schemes_${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
-  _setStatus(`✅ 已导出 ${names.length} 个方案`);
+  const json = JSON.stringify(payload, null, 2);
+  const defaultName = `ocr_schemes_${new Date().toISOString().slice(0,10)}.json`;
+
+  if (window.showSaveFilePicker) {
+    try {
+      const fh = await window.showSaveFilePicker({
+        suggestedName: defaultName,
+        types: [{ description: 'JSON 文件', accept: { 'application/json': ['.json'] } }]
+      });
+      const writable = await fh.createWritable();
+      await writable.write(json);
+      await writable.close();
+      _setStatus(`✅ 已导出 ${names.length} 个方案`);
+    } catch (e) {
+      if (e.name !== 'AbortError') _setStatus('❌ 导出失败：' + e.message);
+    }
+  } else {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = defaultName;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+    _setStatus(`✅ 已导出 ${names.length} 个方案`);
+  }
 }
 
 // ── 导入方案（从 JSON 文件）────────────────────────────────────────────
