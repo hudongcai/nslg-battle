@@ -262,6 +262,7 @@ async function dbPut(rec) {
 
 function dbGetAll() {
   return new Promise((resolve, reject) => {
+    if (!db) { resolve([]); return; }
     const tx = db.transaction(['records'], 'readonly');
     const req = tx.objectStore('records').getAll();
     req.onsuccess = () => resolve(req.result);
