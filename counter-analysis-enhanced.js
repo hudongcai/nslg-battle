@@ -204,6 +204,7 @@ function renderWinRateTableEnhanced() {
       const lossColor = parseFloat(lossRatio) <= 50 ? 'var(--green)' : parseFloat(lossRatio) >= 100 ? 'var(--red)' : 'var(--accent)';
 
       return `<tr>
+        <td style="text-align:center;vertical-align:middle;"><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${typeof escHtml === 'function' ? escHtml(d.leftTeam) : d.leftTeam}','${typeof escHtml === 'function' ? escHtml(d.rightTeam) : d.rightTeam}')" style="color:var(--accent);text-decoration:underline;font-size:12px;">📋 溯源</a></td>
         <td style="min-width:240px;vertical-align:middle;">${verticalTeamRowHtml(d.leftGenerals, d.leftTactics)}</td>
         <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.leftFormation || ''}</td>
         <td style="text-align:center;vertical-align:middle;"><span class="wr ${wrCls}" style="font-size:12px;font-weight:900;">${d.winRate.toFixed(0)}%</span><span class="wr-bar ${barCls}" style="width:${barW}px;display:inline-block;"></span></td>
@@ -211,7 +212,6 @@ function renderWinRateTableEnhanced() {
         <td class="num" style="color:var(--text3);font-size:11px;vertical-align:middle;">${d.total}</td>
         <td style="min-width:240px;vertical-align:middle;">${verticalTeamRowHtml(d.rightGenerals, d.rightTactics)}</td>
         <td style="text-align:center;color:var(--text2);vertical-align:middle;">${d.rightFormation || ''}</td>
-        <td style="text-align:center;vertical-align:middle;"><a href="javascript:void(0)" onclick="showTraceByRecords([${d.recordIds.join(',')}],'${typeof escHtml === 'function' ? escHtml(d.leftTeam) : d.leftTeam}','${typeof escHtml === 'function' ? escHtml(d.rightTeam) : d.rightTeam}')" style="color:var(--accent);text-decoration:underline;font-size:12px;">📋 溯源</a></td>
       </tr>`;
     }).join('');
   }

@@ -650,6 +650,7 @@ document.addEventListener('click', function(e) {
         <button class="btn btn-sm btn-secondary" onclick="exportWinRateCSV()" style="margin-left:8px;">📥 导出</button>
       </div>
       <div id="wrTableWrap" style="overflow:auto;max-height:70vh;width:100%;border-radius:8px;border:1px solid var(--border);"><table id="winRateTable" style="min-width:750px;"><thead><tr>
+        <th style="min-width:60px;text-align:center;">溯源</th>
         <th data-sort="leftTeam" style="min-width:240px;text-align:center;">胜方队伍<span class="sort-arrow">↕</span></th>
         <th style="min-width:70px;text-align:center;">胜方阵型</th>
         <th data-sort="winRate" style="min-width:70px;text-align:center;">胜率<span class="sort-arrow">↕</span></th>
@@ -657,7 +658,6 @@ document.addEventListener('click', function(e) {
         <th data-sort="count" style="min-width:50px;text-align:center;">场次<span class="sort-arrow">↕</span></th>
         <th data-sort="rightTeam" style="min-width:240px;text-align:center;">败方队伍<span class="sort-arrow">↕</span></th>
         <th style="min-width:70px;text-align:center;">败方阵型</th>
-        <th style="min-width:80px;text-align:center;">溯源</th>
       </tr></thead><tbody id="winRateTableBody"></tbody></table></div>
     </div>
     <div class="card" id="restrictSection" style="display:none;padding:16px 12px;"><h3>🏆 克制关系总结</h3><div id="restrictCards" class="restrict-cards"></div></div>
