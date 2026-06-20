@@ -1111,7 +1111,7 @@ async function showRecordImage(id) {
 
     try {
       // 先尝试二进制直出端点（更高效）
-      const imgUrl = `${typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : ''}/api/gallery/image/${cloudId}`;
+      const imgUrl = `${typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api'}/gallery/image/${cloudId}`;
       const testRes = await fetch(imgUrl, { method: 'HEAD' });
       if (testRes.ok) {
         imgSrc = imgUrl;
