@@ -86,12 +86,15 @@ let _leImageToken = '';      // Python 侧缓存 token，避免重复传图
 let _leBoxesFromRealSource = false; // boxes 是否来自方案/DB（而非默认值）
 
 // ── 初始化 ───────────────────────────────────────────────────────────
-function onLabelEditorTabShow() {
+async function onLabelEditorTabShow() {
   _initBoxes();
   _renderBoxList();
-  _loadProjectList();
+  await _loadProjectList();
   _renderSchemeSelect();
   leInitProjectRefSelect();
+  // 自动加载 DB 中当前项目/全局的配置到画布，保证显示与实际生效一致
+  await _loadConfig(_leProjectId);
+  if (!_leBoxesFromRealSource) _setStatus('⚠️ 数据库无配置，当前显示默认坐标，请绑定方案后生效');
 }
 
 function _initBoxes() {
