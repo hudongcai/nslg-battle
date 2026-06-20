@@ -567,7 +567,7 @@ document.addEventListener('click', function(e) {
         <button class="btn btn-sm btn-secondary" onclick="repairCloudGeneralsTactics()" title="将本地有武将/战法数据但云端为空的记录重新同步" style="margin-left:8px;">🔧 修复云端武将战法</button>
       </div>
       <div style="overflow-x:auto;"><table id="dataTable"><thead><tr>
-        <th style="width:32px;min-width:32px;padding:0;text-align:center;"><input type="checkbox" id="checkAll" onchange="tableCheckAll(this)" title="全选/取消" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></th><th>#</th><th>时间</th><th>结果</th>
+        <th style="width:32px;min-width:32px;padding:0;text-align:center;"><input type="checkbox" id="checkAll" onchange="tableCheckAll(this)" title="全选/取消" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></th><th>#</th><th>时间</th><th>结果</th><th style="min-width:60px;text-align:center;">原图</th>
         <th>左玩家</th><th style="min-width:77px;">左同盟</th><th style="min-width:56px;white-space:nowrap;">左武将<span data-gen-col="lgen" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="gen-fp-btn" onclick="openGeneralPanel('lgen',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="gen-fp-btn" onclick="openGeneralPanel('lgen',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th><th style="min-width:28px;">左红度</th>
         <th style="min-width:70px;white-space:nowrap;">左战法1<span data-tac-col="lt1" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt1',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt1',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
         <th style="min-width:70px;white-space:nowrap;">左战法2<span data-tac-col="lt2" style="display:inline-flex;gap:1px;margin-left:3px;vertical-align:middle;"><button class="tac-fp-btn" onclick="openTacticPanel('lt2',this,'txt');event.stopPropagation()" title="关键词搜索" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">🔍</button><button class="tac-fp-btn" onclick="openTacticPanel('lt2',this,'sel');event.stopPropagation()" title="下拉筛选" style="background:none;border:none;cursor:pointer;font-size:10px;padding:1px 2px;color:var(--text3);line-height:1;">▼</button></span></th>
@@ -584,7 +584,7 @@ document.addEventListener('click', function(e) {
         <th id="th-rightLoss" onclick="toggleDataSort('rightLoss')" style="min-width:60px;cursor:pointer;">右战损<span class="sort-arrow">↕</span></th>
         <th id="th-rightTotal" onclick="toggleDataSort('rightTotal')" style="min-width:60px;cursor:pointer;">右总兵<span class="sort-arrow">↕</span></th>
         <th id="th-rightLossRate" onclick="toggleDataSort('rightLossRate')" style="min-width:60px;cursor:pointer;">右战损率<span class="sort-arrow">↕</span></th>
-        <th style="min-width:80px;">原图</th><th style="min-width:70px;">操作</th>
+        <th style="min-width:70px;">操作</th>
       </tr></thead><tbody id="dataTableBody"></tbody></table></div>
       <div class="pagination" id="dataPagination"></div>
     </div>
@@ -1952,7 +1952,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data-perm.js?v=202605111120"></script>
   <script src="points-mall.js?v=202606131"></script>
   <script src="ocr-dict-system.js?v=20260619002"></script>
-  <script src="ocr-region-editor.js?v=20260619010"></script>
+  <script src="ocr-region-editor.js?v=20260620001"></script>
 <script>
 // ========== 防抖工具（性能优化）==========
 var _debounceTimers={};
@@ -1998,6 +1998,7 @@ function getFilteredData(){
 function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(typeof updateGeneralFilterIndicators==='function')updateGeneralFilterIndicators();if(page.length===0){tbody.innerHTML='<tr><td colspan="28" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
     <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td><td class="num">${start+i+1}</td><td style="color:var(--text2);font-size:11px;">${r.time||'-'}</td>
     <td><span class="result-badge result-${r.result==='胜'?'win':r.result==='败'?'lose':'draw'}">${r.result||'-'}</span></td>
+    <td style="text-align:center;"><a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;" title="点击查看原图">🔍 原图</a></td>
     <td style="white-space:nowrap;">${escHtml(r.leftPlayer||'')}</td><td style="color:var(--text2);white-space:nowrap;min-width:110px;">${escHtml(r.leftAlliance||'')}</td>
     <td style="white-space:nowrap;min-width:80px;">${getTeamDisplay(getGenerals(r,'left'))}</td>
     <td style="min-width:28px;text-align:center;">${getStarsDisplay(r,'left')}</td>
@@ -2014,7 +2015,6 @@ function renderDataTable(){var data=getFilteredData();var total=data.length;var 
         <td style="min-width:70px;">${getTacticColDisplay(r,'right',3)}</td>
     <td style="color:var(--text2);">${escHtml(r.rightFormation||'')}</td><td class="num">${fmtNum(r.rightLoss)}</td><td class="num">${fmtNum(r.rightTotal)}</td>
     <td class="num" style="font-weight:bold;color:${getLossColor(r.rightLossRate)}">${r.rightLossRate!=null?Number(r.rightLossRate).toFixed(1)+'%':'-'}</td>
-    <td><a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;" title="点击查看原图">🔍 原图</a></td>
     <td><button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button></td>
   </tr>`;}).join('');}var pagEl=document.getElementById('dataPagination');if(pagEl){var sizeSelect=`<select onchange="dataPerPage=+this.value;dataPage=1;renderDataTable()" style="font-size:11px;padding:2px 4px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">${[10,20,30,50,100].map(n=>`<option value="${n}"${n===dataPerPage?' selected':''}>${n}条/页</option>`).join('')}</select>`;if(totalPages<=1)pagEl.innerHTML=sizeSelect;else pagEl.innerHTML=`${sizeSelect}<button ${dataPage<=1?'disabled':''} onclick="dataPage--;renderDataTable()">◀</button><span style="color:var(--text2);font-size:11px;">${dataPage}/${totalPages}</span><button ${dataPage>=totalPages?'disabled':''} onclick="dataPage++;renderDataTable()">▶</button>`;}}
 </script>
