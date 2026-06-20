@@ -932,3 +932,54 @@ function leDeleteScheme() {
   _renderSchemeSelect();
   _setStatus(`已删除方案"${name}"`);
 }
+
+// ── 导出所有方案 ──────────────────────────────────────────────────────
+function leExportSchemes() {
+  const names = _getSchemeNames();
+  if (names.length === 0) { _setStatus('❌ 当前没有任何方案可导出'); return; }
+  const payload = { version: 1, exportedAt: new Date().toISOString(), schemes: {} };
+  names.forEach(n => { payload.schemes[n] = _getSchemeData(n); });
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ocr_schemes_${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+  _setStatus(`✅ 已导出 ${names.length} 个方案`);
+}
+
+// ── 导入方案（从 JSON 文件）────────────────────────────────────────────
+function leImportSchemes() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json,application/json';
+  input.onchange = () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const payload = JSON.parse(e.target.result);
+        if (!payload.schemes || typeof payload.schemes !== 'object') throw new Error('格式不正确');
+        const incoming = Object.keys(payload.schemes);
+        if (incoming.length === 0) { _setStatus('❌ 文件中没有方案数据'); return; }
+        const names = _getSchemeNames();
+        const overwrite = incoming.filter(n => names.includes(n));
+        if (overwrite.length > 0) {
+          if (!confirm(`以下方案已存在，导入将覆盖：\n${overwrite.join('、')}\n\n继续？`)) return;
+        }
+        incoming.forEach(n => {
+          _saveSchemeData(n, payload.schemes[n]);
+          if (!names.includes(n)) names.push(n);
+        });
+        _saveSchemeNames(names);
+        _renderSchemeSelect();
+        _setStatus(`✅ 已导入 ${incoming.length} 个方案：${incoming.join('、')}`);
+      } catch (err) {
+        _setStatus(`❌ 导入失败：${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
