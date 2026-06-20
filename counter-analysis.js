@@ -1,5 +1,5 @@
 /**
- * 克制分析模块 v202605120002
+ * 克制分析模块 v20260621001
  * 1. 克制关系分析  2. 敌方高频队伍  3. 高频克制推荐
  */
 (function () {
@@ -514,6 +514,124 @@
     });
   }
 
+  // ==================== 分析：Tab 6 综合推荐队伍 ====================
+
+  function addBestEncounter(matrix, ek, ck, generals, cWon, cLoss, eLoss, rec) {
+    if (!matrix[ek]) matrix[ek] = {};
+    if (!matrix[ek][ck]) {
+      matrix[ek][ck] = { generals, wins: 0, total: 0, counterLossSum: 0, enemyLossSum: 0, records: [] };
+    }
+    const c = matrix[ek][ck];
+    c.total++;
+    if (cWon) c.wins++;
+    c.counterLossSum += cLoss;
+    c.enemyLossSum   += eLoss;
+    c.records.push(rec);
+  }
+
+  function analyzeBestRecommendation(recs) {
+    // Step 1: 统计右侧（敌方）高频武将组合，仅按武将区分，取 Top 10
+    const enemyStats = {};
+    for (const rec of recs) {
+      const rg = normGens(getGenerals(rec, 'right'));
+      if (!rg.length) continue;
+      const k = teamKeyNoTacs(rg);
+      if (!enemyStats[k]) enemyStats[k] = { generals: normGens(rg).sort(), count: 0 };
+      enemyStats[k].count++;
+    }
+    const top10 = Object.values(enemyStats).sort((a, b) => b.count - a.count).slice(0, 10);
+    const totalCount = top10.reduce((s, e) => s + e.count, 0);
+    if (!top10.length || !totalCount) return null;
+
+    const enemyKeySet = new Set(top10.map(e => teamKeyNoTacs(e.generals)));
+
+    // Step 2: 遍历战报，构建对战矩阵 matrix[enemyKey][counterKey]
+    const matrix = {};
+    for (const rec of recs) {
+      const lg = normGens(getGenerals(rec, 'left'));
+      const rg = normGens(getGenerals(rec, 'right'));
+      if (!lg.length || !rg.length) continue;
+      const lk = teamKeyNoTacs(lg);
+      const rk = teamKeyNoTacs(rg);
+      if (lk === rk) continue; // 同队不比较
+      const w = winner(rec.result);
+      const leftLoss  = parseFloat(rec.leftLoss  || rec.left_loss  || 0);
+      const rightLoss = parseFloat(rec.rightLoss || rec.right_loss || 0);
+
+      // 敌方在右侧 → 左侧是克制方，左胜=克制方胜
+      if (enemyKeySet.has(rk)) {
+        addBestEncounter(matrix, rk, lk, normGens(lg).sort(), w === 'left', leftLoss, rightLoss, rec);
+      }
+      // 敌方在左侧 → 右侧是克制方，右胜=克制方胜（即左败）
+      if (enemyKeySet.has(lk)) {
+        addBestEncounter(matrix, lk, rk, normGens(rg).sort(), w === 'right', rightLoss, leftLoss, rec);
+      }
+    }
+
+    // Step 3: 收集所有出现过的克制方 key
+    const counterKeySet = new Set();
+    for (const ek of Object.keys(matrix)) {
+      for (const ck of Object.keys(matrix[ek])) counterKeySet.add(ck);
+    }
+
+    // Step 4: 计算每支克制队伍的价值分
+    const counterList = [];
+    for (const ck of counterKeySet) {
+      let totalScore = 0;
+      const details = [];
+      let generalsRef = null;
+
+      for (let i = 0; i < top10.length; i++) {
+        const enemy = top10[i];
+        const ek = teamKeyNoTacs(enemy.generals);
+        if (ck === ek) continue; // 同队不比较
+
+        const data = matrix[ek] && matrix[ek][ck];
+        const weight = enemy.count / totalCount;
+
+        let battles = 0, wins = 0, winRate = 0.5, isDefault = true;
+        let avgLossC = 0, avgLossE = 0, lossRate = null;
+        let detailRecords = [];
+
+        if (data && data.total > 0) {
+          battles        = data.total;
+          wins           = data.wins;
+          winRate        = data.wins / data.total;
+          isDefault      = false;
+          avgLossC       = data.counterLossSum / data.total;
+          avgLossE       = data.enemyLossSum   / data.total;
+          lossRate       = avgLossE > 0 ? avgLossC / avgLossE : null;
+          detailRecords  = data.records;
+          generalsRef    = data.generals;
+        }
+
+        const scoreContrib = weight * winRate;
+        totalScore += scoreContrib;
+
+        details.push({
+          enemyIdx: i,
+          enemy: enemy.generals,
+          enemyCount: enemy.count,
+          battles, wins, winRate, isDefault,
+          avgLossC, avgLossE, lossRate,
+          records: detailRecords,
+          scoreContrib
+        });
+      }
+
+      // 按对战得分降序排列细节
+      details.sort((a, b) => b.scoreContrib - a.scoreContrib);
+
+      const generals = generalsRef || ck.split('|');
+      counterList.push({ key: ck, generals, score: totalScore, details });
+    }
+
+    counterList.sort((a, b) => b.score - a.score);
+    // 克制队伍不能和敌方高频队伍相同（自身不能推荐自己）
+    const filteredCounters = counterList.filter(c => !enemyKeySet.has(c.key));
+    return { enemies: top10, totalCount, counters: filteredCounters };
+  }
+
   // ==================== 渲染：Tab 1 克制关系 ====================
 
   window.renderCounterAnalysis = async function () {
@@ -721,6 +839,136 @@
     if (d && d.counters[ci]) showImageSource(d.counters[ci].records);
   };
 
+  // ==================== 渲染：Tab 6 综合推荐队伍 ====================
+
+  window.renderBestRecommendation = async function () {
+    const el = document.getElementById('caPanelBestRec');
+    if (!el) return;
+    await ensureRecords();
+    const data = analyzeBestRecommendation(records());
+    window._caBestData = data;
+    window._caBestSelectedIdx = 0;
+
+    if (!data || !data.counters.length) {
+      el.innerHTML = `<div class="ca-empty-blk">暂无数据<br><small>需要足够的战报才能生成综合推荐</small></div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="ca-hint-row">
+        <p class="ca-hint">基于敌方右侧高频武将组合（Top ${data.enemies.length}）和克制胜率，综合计算最有价值的出战队伍。得分 = Σ(高频权重 × 对战胜率)，满分100，无实战数据以50%胜率填充</p>
+      </div>
+      <div class="ca-best-layout">
+        <div class="ca-best-left">
+          <div class="ca-best-left-title">最有价值克制队伍排名</div>
+          <div class="ca-tbl-wrap" style="border-radius:0 0 8px 8px;">
+            <table class="ca-tbl" style="width:100%;">
+              <thead><tr>
+                <th class="ca-th-idx">#</th>
+                <th style="text-align:left;">克制队伍（武将组合）</th>
+                <th class="ca-th-num" style="width:18%;">得分</th>
+              </tr></thead>
+              <tbody id="caBestLeftBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="ca-best-right">
+          <div id="caBestRightPanel"><div class="ca-empty-blk" style="padding:40px 0;">← 点击左侧队伍查看详情</div></div>
+        </div>
+      </div>`;
+
+    renderBestLeftTable();
+    renderBestRightPanel(0);
+  };
+
+  function renderBestLeftTable() {
+    const data = window._caBestData;
+    const selectedIdx = window._caBestSelectedIdx || 0;
+    const el = document.getElementById('caBestLeftBody');
+    if (!el || !data) return;
+    el.innerHTML = data.counters.map((c, i) => `
+      <tr class="ca-row ca-best-row${i === selectedIdx ? ' ca-best-selected' : ''}" onclick="selectBestCounter(${i})" title="点击查看详情">
+        <td class="ca-idx ca-rank${i < 3 ? ' ca-rank-top' : ''}">${i + 1}</td>
+        <td>${teamChipNoTacs(c.generals, false)}</td>
+        <td class="ca-num-cell ca-best-score">${(c.score * 100).toFixed(2)}</td>
+      </tr>`).join('');
+  }
+
+  function renderBestRightPanel(idx) {
+    const data = window._caBestData;
+    const el = document.getElementById('caBestRightPanel');
+    if (!el || !data) return;
+    const counter = data.counters[idx];
+    if (!counter) return;
+
+    const hasAnyDefault = counter.details.some(d => d.isDefault);
+
+    el.innerHTML = `
+      <div class="ca-best-right-header">
+        <div class="ca-best-right-team">${teamChipNoTacs(counter.generals, false)}</div>
+        <div class="ca-best-right-meta">
+          总得分 <b class="ca-best-score-big">${(counter.score * 100).toFixed(2)}</b>
+          &ensp;|&ensp; 覆盖 ${counter.details.filter(d => !d.isDefault).length} / ${counter.details.length} 支高频队伍
+        </div>
+      </div>
+      <div class="ca-tbl-wrap" style="margin-top:0;border-top:none;border-radius:0 0 8px 8px;">
+        <table class="ca-tbl ca-best-detail-tbl">
+          <thead><tr>
+            <th style="text-align:left;width:24%;">敌方高频队伍</th>
+            <th class="ca-th-num" style="width:9%;">对战次数</th>
+            <th class="ca-th-num" style="width:11%;">对战胜率</th>
+            <th class="ca-th-num" style="width:11%;">战损率</th>
+            <th class="ca-th-num" style="width:11%;">对战得分</th>
+            <th class="ca-th-act" style="width:9%;">溯源</th>
+          </tr></thead>
+          <tbody>
+            ${counter.details.map((d, di) => {
+              const winRateStr = d.isDefault
+                ? `<span class="ca-best-default">50%<sup>*</sup></span>`
+                : `<span class="${d.winRate >= 0.5 ? 'ca-green' : 'ca-best-red'}">${(d.winRate * 100).toFixed(1)}%</span>`;
+              const lossRateStr = d.lossRate !== null
+                ? `${(d.lossRate * 100).toFixed(0)}%`
+                : '<span class="ca-dim">—</span>';
+              const hasSrc = d.records && d.records.length > 0;
+              return `<tr class="ca-row">
+                <td>${teamChipNoTacs(d.enemy, false, {
+                  html: `<span class="ca-badge ca-badge-cnt">×${d.enemyCount}</span>`,
+                  cls: 'ca-gen-extra'
+                })}</td>
+                <td class="ca-num-cell">${d.battles > 0 ? d.battles : '<span class="ca-dim">—</span>'}</td>
+                <td class="ca-num-cell">${winRateStr}</td>
+                <td class="ca-num-cell">${lossRateStr}</td>
+                <td class="ca-num-cell ca-best-score">${(d.scoreContrib * 100).toFixed(3)}</td>
+                <td class="ca-center">
+                  ${hasSrc
+                    ? `<button class="ca-src-btn" onclick="caBestShowSrc(${idx},${di})">溯源</button>`
+                    : '<span class="ca-dim">—</span>'}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${hasAnyDefault ? '<p class="ca-hint" style="margin-top:6px;padding-left:4px;"><sup>*</sup> 无实战数据，采用默认50%胜率</p>' : ''}
+    `;
+  }
+
+  window.selectBestCounter = function (idx) {
+    window._caBestSelectedIdx = idx;
+    renderBestLeftTable();
+    renderBestRightPanel(idx);
+  };
+
+  window.caBestShowSrc = function (counterIdx, detailIdx) {
+    const data = window._caBestData;
+    if (!data) return;
+    const counter = data.counters[counterIdx];
+    if (!counter) return;
+    const detail = counter.details[detailIdx];
+    if (detail && detail.records && detail.records.length) showImageSource(detail.records);
+    else alert('该战报组合暂无图片数据');
+  };
+
   // ==================== 导出打印 ====================
 
   function caGetPrintStyles() {
@@ -791,6 +1039,7 @@ ${clone.innerHTML}
           <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐（有战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频（无战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">克制推荐（无战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('recommend-best')" id="caTabBestBtn">⭐ 综合推荐</button>
         </div>
 
         <div id="caPanelRelationship">
@@ -854,6 +1103,8 @@ ${clone.innerHTML}
           <div class="ca-hint-row"><p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('recommendNoTacs')">⬇ 导出打印</button></div>
           <div id="counterRecommendationsNoTacs"></div>
         </div>
+
+        <div id="caPanelBestRec" style="display:none;"></div>
       </div>`;
 
     switchCounterTab('relationship');
@@ -865,14 +1116,16 @@ ${clone.innerHTML}
       enemy:           'caPanelEnemy',
       recommend:       'caPanelRecommend',
       enemyNoTacs:     'caPanelEnemyNoTacs',
-      recommendNoTacs: 'caPanelRecommendNoTacs'
+      recommendNoTacs: 'caPanelRecommendNoTacs',
+      'recommend-best':'caPanelBestRec'
     };
     const btns = {
       relationship:    'caTabRelBtn',
       enemy:           'caTabEnemyBtn',
       recommend:       'caTabRecBtn',
       enemyNoTacs:     'caTabEnemyNTBtn',
-      recommendNoTacs: 'caTabRecNTBtn'
+      recommendNoTacs: 'caTabRecNTBtn',
+      'recommend-best':'caTabBestBtn'
     };
     Object.keys(panels).forEach(t => {
       const p = document.getElementById(panels[t]);
@@ -884,6 +1137,7 @@ ${clone.innerHTML}
     else if (tab === 'enemy')      await renderEnemyHighFreq();
     else if (tab === 'recommend')  await renderCounterRecommendations();
     else if (tab === 'enemyNoTacs') await renderEnemyHighFreqNoTacs();
+    else if (tab === 'recommend-best') await renderBestRecommendation();
     else                           await renderCounterRecommendationsNoTacs();
   };
 
@@ -1037,6 +1291,27 @@ ${clone.innerHTML}
 	      .ca-rec-sort-btn{flex:1 1 0;min-width:0;cursor:pointer;user-select:none;font-size:12px;padding:2px 6px;border-radius:3px;white-space:nowrap;text-align:center;}
 	      .ca-rec-sort-btn:hover{background:rgba(255,255,255,.06);color:#ccc;}
 	      .ca-rec-sort-spacer{flex:1 1 0;min-width:0;}
+
+      /* ---- Tab6 综合推荐 ---- */
+      .ca-best-layout{display:flex;gap:16px;align-items:flex-start;margin-top:4px;}
+      .ca-best-left{flex:0 0 33%;min-width:0;}
+      .ca-best-right{flex:1 1 0;min-width:0;}
+      .ca-best-left-title{background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);
+        border-radius:8px 8px 0 0;padding:8px 14px;font-size:12px;font-weight:600;
+        color:var(--accent,#f0b429);letter-spacing:.04em;}
+      .ca-best-row{cursor:pointer;transition:background .12s;}
+      .ca-best-row:hover td{background:rgba(91,79,255,.08) !important;}
+      .ca-best-selected td{background:rgba(91,79,255,.14) !important;border-left:3px solid var(--accent,#5b4fff);}
+      .ca-best-score{color:var(--accent,#f0b429);font-weight:700;}
+      .ca-best-default{color:#888;font-size:11px;}
+      .ca-best-red{color:#e74c3c;font-weight:600;}
+      .ca-best-right-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+        background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);
+        border-radius:8px 8px 0 0;padding:10px 14px;}
+      .ca-best-right-team{flex:1 1 auto;min-width:0;}
+      .ca-best-right-meta{flex:0 0 auto;font-size:11px;color:var(--text3,#888);white-space:nowrap;}
+      .ca-best-score-big{color:var(--accent,#f0b429);font-size:14px;}
+      .ca-best-detail-tbl{table-layout:fixed;}
     `;
     document.head.appendChild(s);
   }
