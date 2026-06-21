@@ -121,6 +121,63 @@
   let caRecNTSortField = 'winRate';
   let caRecNTSortDir = 'desc';
 
+  // ---- 平均红度筛选状态（0~5 均已选中） ----
+  let caEnemyNTStarsFilter  = new Set([0,1,2,3,4,5]); // 敌方高频队伍统计 tab
+  let caRecNTEnemyStarsFilter   = new Set([0,1,2,3,4,5]); // 胜率分析 tab - 敌方侧
+  let caRecNTCounterStarsFilter = new Set([0,1,2,3,4,5]); // 胜率分析 tab - 克制侧
+
+  // 计算一组 stars 数组的平均值并取整（0~5）
+  function avgStarsRounded(avgStars) {
+    return Math.round(Math.max(0, Math.min(5, avgStars || 0)));
+  }
+
+  // 生成复选框 HTML（用于静态 HTML 区域，初始全选）
+  function caStarsCheckboxHtml(filterId) {
+    const boxes = [0,1,2,3,4,5].map(v =>
+      `<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:#aaa;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="${filterId}_star${v}" checked onchange="caStarsFilterChange('${filterId}',${v},this.checked)" style="cursor:pointer;margin:0;width:12px;height:12px;"><span>${v}</span></label>`
+    ).join('');
+    return boxes + `<button onclick="caStarsFilterAll('${filterId}')" class="ca-stars-btn">全选</button><button onclick="caStarsFilterInvert('${filterId}')" class="ca-stars-btn">反选</button>`;
+  }
+
+  // 生成复选框 HTML（用于动态渲染区域，根据 Set 状态设置 checked）
+  function caStarsCheckboxHtmlDynamic(filterId, filterSet) {
+    const boxes = [0,1,2,3,4,5].map(v =>
+      `<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:#aaa;cursor:pointer;white-space:nowrap;"><input type="checkbox" ${filterSet.has(v) ? 'checked' : ''} onchange="caStarsFilterChange('${filterId}',${v},this.checked)" style="cursor:pointer;margin:0;width:12px;height:12px;"><span>${v}</span></label>`
+    ).join('');
+    return boxes + `<button onclick="caStarsFilterAll('${filterId}')" class="ca-stars-btn">全选</button><button onclick="caStarsFilterInvert('${filterId}')" class="ca-stars-btn">反选</button>`;
+  }
+
+  window.caStarsFilterChange = function(id, val, checked) {
+    const set = id === 'efnt' ? caEnemyNTStarsFilter
+              : id === 'recnt_e' ? caRecNTEnemyStarsFilter
+              : caRecNTCounterStarsFilter;
+    if (checked) set.add(val); else set.delete(val);
+    if (id === 'efnt') renderEnemyHighFreqNoTacs();
+    else renderCounterRecommendationsNoTacs();
+  };
+
+  window.caStarsFilterAll = function(id) {
+    const set = id === 'efnt' ? caEnemyNTStarsFilter
+              : id === 'recnt_e' ? caRecNTEnemyStarsFilter
+              : caRecNTCounterStarsFilter;
+    [0,1,2,3,4,5].forEach(v => set.add(v));
+    if (id === 'efnt') {
+      [0,1,2,3,4,5].forEach(v => { const el = document.getElementById(`efnt_star${v}`); if (el) el.checked = true; });
+      renderEnemyHighFreqNoTacs();
+    } else { renderCounterRecommendationsNoTacs(); }
+  };
+
+  window.caStarsFilterInvert = function(id) {
+    const set = id === 'efnt' ? caEnemyNTStarsFilter
+              : id === 'recnt_e' ? caRecNTEnemyStarsFilter
+              : caRecNTCounterStarsFilter;
+    [0,1,2,3,4,5].forEach(v => { if (set.has(v)) set.delete(v); else set.add(v); });
+    if (id === 'efnt') {
+      [0,1,2,3,4,5].forEach(v => { const el = document.getElementById(`efnt_star${v}`); if (el) el.checked = set.has(v); });
+      renderEnemyHighFreqNoTacs();
+    } else { renderCounterRecommendationsNoTacs(); }
+  };
+
   window.caRecToggleSort = function (field) {
     if (caRecSortField === field) caRecSortDir = caRecSortDir === 'asc' ? 'desc' : 'asc';
     else { caRecSortField = field; caRecSortDir = 'desc'; }
@@ -383,10 +440,18 @@
       const rg = normGens(getGenerals(rec, 'right'));
       if (!rg.length) continue;
       const k = teamKeyNoTacs(rg);
-      if (!stats[k]) stats[k] = { generals: normGens(rg).sort(), count: 0 };
+      if (!stats[k]) stats[k] = { generals: normGens(rg).sort(), count: 0, starsSum: 0, starsCount: 0 };
       stats[k].count++;
+      const s1 = rec.rightGeneral1Stars || rec.right_general_1_stars || 0;
+      const s2 = rec.rightGeneral2Stars || rec.right_general_2_stars || 0;
+      const s3 = rec.rightGeneral3Stars || rec.right_general_3_stars || 0;
+      stats[k].starsSum += (+s1) + (+s2) + (+s3);
+      stats[k].starsCount += 3;
     }
-    return Object.values(stats).sort((a, b) => b.count - a.count);
+    return Object.values(stats).sort((a, b) => b.count - a.count).map(d => ({
+      ...d,
+      avgStars: d.starsCount > 0 ? d.starsSum / d.starsCount : 0
+    }));
   }
 
   function analyzeRecommend(recs) {
@@ -456,12 +521,13 @@
     c.records.push(rec);
   }
 
-  function addEncounterNoTacs(matrix, enemyKey, cKey, cGens, cWon, cLoss, eLoss, rec) {
+  function addEncounterNoTacs(matrix, enemyKey, cKey, cGens, cWon, cLoss, eLoss, rec, cStars) {
     if (!matrix[enemyKey]) matrix[enemyKey] = {};
     if (!matrix[enemyKey][cKey]) {
       matrix[enemyKey][cKey] = {
         generals: cGens,
-        wins: 0, total: 0, counterLoss: 0, enemyLoss: 0, records: []
+        wins: 0, total: 0, counterLoss: 0, enemyLoss: 0, records: [],
+        starsSum: 0, starsCount: 0
       };
     }
     const c = matrix[enemyKey][cKey];
@@ -470,6 +536,10 @@
     c.counterLoss += cLoss;
     c.enemyLoss  += eLoss;
     c.records.push(rec);
+    if (cStars) {
+      c.starsSum  += (+cStars[0] || 0) + (+cStars[1] || 0) + (+cStars[2] || 0);
+      c.starsCount += 3;
+    }
   }
 
   // 克制推荐（无战法）：所有记录，key 只用武将组合（不区分战法与阵型）
@@ -484,16 +554,23 @@
       if (!lg.length || !rg.length) continue;
       const leftKey  = teamKeyNoTacs(lg);
       const rightKey = teamKeyNoTacs(rg);
+      if (leftKey === rightKey) continue; // 跳过自打自，防止队伍成为自身克制推荐
       const w = winner(rec.result);
       const leftLoss  = parseFloat(rec.leftLoss  || rec.left_loss  || 0);
       const rightLoss = parseFloat(rec.rightLoss || rec.right_loss || 0);
+      const leftStars  = [rec.leftGeneral1Stars  || rec.left_general_1_stars  || 0,
+                          rec.leftGeneral2Stars  || rec.left_general_2_stars  || 0,
+                          rec.leftGeneral3Stars  || rec.left_general_3_stars  || 0];
+      const rightStars = [rec.rightGeneral1Stars || rec.right_general_1_stars || 0,
+                          rec.rightGeneral2Stars || rec.right_general_2_stars || 0,
+                          rec.rightGeneral3Stars || rec.right_general_3_stars || 0];
       // 情况一：敌方高频队伍在右侧 → 左侧是潜在克制方
       if (enemyKeySet.has(rightKey)) {
-        addEncounterNoTacs(matrix, rightKey, leftKey, normGens(lg).sort(), w === 'left', leftLoss, rightLoss, rec);
+        addEncounterNoTacs(matrix, rightKey, leftKey, normGens(lg).sort(), w === 'left', leftLoss, rightLoss, rec, leftStars);
       }
       // 情况二：敌方高频队伍在左侧 → 右侧是潜在克制方
-      if (leftKey !== rightKey && enemyKeySet.has(leftKey)) {
-        addEncounterNoTacs(matrix, leftKey, rightKey, normGens(rg).sort(), w === 'right', rightLoss, leftLoss, rec);
+      if (enemyKeySet.has(leftKey)) {
+        addEncounterNoTacs(matrix, leftKey, rightKey, normGens(rg).sort(), w === 'right', rightLoss, leftLoss, rec, rightStars);
       }
     }
     return enemies.map(enemy => {
@@ -507,7 +584,8 @@
           wins: c.wins,
           winRate:  c.total ? Math.round(c.wins / c.total * 1000) / 10 : 0,
           lossRate: c.enemyLoss ? Math.round(c.counterLoss / c.enemyLoss * 100) : 0,
-          total: c.total
+          total: c.total,
+          avgStars: c.starsCount > 0 ? c.starsSum / c.starsCount : 0
         }))
         .sort((a, b) => b.winRate - a.winRate || b.total - a.total);
       return { enemy, counters };
@@ -759,79 +837,107 @@
     if (d && d.counters[ci]) showImageSource(d.counters[ci].records);
   };
 
-  // ==================== 渲染：Tab 4 高频（无战法）====================
+  // ==================== 渲染：Tab 1 敌方高频队伍统计（无战法）====================
 
   window.renderEnemyHighFreqNoTacs = async function () {
     const el = document.getElementById('enemyHighFreqBodyNoTacs');
     if (!el) return;
     await ensureRecords();
-    const data = analyzeEnemyFreqNoTacs(records());
+    const allData = analyzeEnemyFreqNoTacs(records());
+    const totalRecords = records().length;
+
+    // 应用平均红度筛选
+    const data = allData.filter(d => caEnemyNTStarsFilter.has(avgStarsRounded(d.avgStars)));
 
     if (!data.length) {
-      el.innerHTML = `<tr><td colspan="3" class="ca-empty">暂无敌方队伍数据</td></tr>`;
+      el.innerHTML = `<tr><td colspan="4" class="ca-empty">暂无敌方队伍数据</td></tr>`;
       return;
     }
 
-    el.innerHTML = data.map((d, i) => `
-      <tr class="ca-row${i < 3 ? ' ca-top3' : ''}">
+    el.innerHTML = data.map((d, i) => {
+      const pct = totalRecords > 0 ? (d.count / totalRecords * 100).toFixed(1) : '0.0';
+      return `<tr class="ca-row${i < 3 ? ' ca-top3' : ''}">
         <td class="ca-idx ca-rank${i < 3 ? ' ca-rank-top' : ''}">${i + 1}</td>
         <td>${teamChipNoTacs(d.generals, false)}</td>
-        <td class="ca-num-cell ca-freq-num">×${d.count}</td>
-      </tr>`).join('');
+        <td class="ca-num-cell ca-freq-num">${d.count}</td>
+        <td class="ca-num-cell" style="color:#aaa;">${pct}%</td>
+      </tr>`;
+    }).join('');
   };
 
-  // ==================== 渲染：Tab 5 克制推荐（无战法）====================
+  // ==================== 渲染：Tab 2 敌方高频胜率分析（无战法）====================
 
   window.renderCounterRecommendationsNoTacs = async function () {
     const el = document.getElementById('counterRecommendationsNoTacs');
     if (!el) return;
     await ensureRecords();
-    const data = analyzeRecommendNoTacs(records());
-    window._caRecNTData = data;
+    const allData = analyzeRecommendNoTacs(records());
 
-    if (!data.length) {
-      el.innerHTML = `<div class="ca-empty-blk">暂无克制推荐数据<br><small>需要足够的战报数据才能生成推荐</small></div>`;
+    if (!allData.length) {
+      el.innerHTML = `<div class="ca-empty-blk">暂无数据<br><small>需要足够的战报数据才能生成分析</small></div>`;
       return;
     }
 
-    el.innerHTML = `<div class="ca-rec-header">
-        <div class="ca-rec-header-left">敌方高频（无战法）</div>
-        <div class="ca-rec-arrow-spacer"></div>
-        <div class="ca-rec-header-mid">克制推荐（无战法）</div>
-        <div class="ca-rec-header-right">
-          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('winRate')">胜率 ${caRecNTSortArrow('winRate')}</span>
-          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('lossRate')">战损 ${caRecNTSortArrow('lossRate')}</span>
-          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('total')">场次 ${caRecNTSortArrow('total')}</span>
-          <span class="ca-rec-sort-spacer"></span>
+    // 应用敌方侧平均红度筛选
+    const data = allData.filter(item =>
+      caRecNTEnemyStarsFilter.has(avgStarsRounded(item.enemy.avgStars))
+    );
+
+    window._caRecNTData = data;
+
+    const enemyFilterHtml = `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;">${caStarsCheckboxHtmlDynamic('recnt_e', caRecNTEnemyStarsFilter)}</div>`;
+    const counterFilterHtml = `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;">${caStarsCheckboxHtmlDynamic('recnt_c', caRecNTCounterStarsFilter)}</div>`;
+
+    el.innerHTML = `<div class="ca-rec-header" style="align-items:flex-start;">
+        <div class="ca-rec-header-left">
+          <div style="font-size:12px;font-weight:600;">敌方高频队伍</div>
+          <div style="font-size:10px;color:#777;margin-top:2px;">平均红度：</div>
+          ${enemyFilterHtml}
+        </div>
+        <div class="ca-rec-arrow-spacer" style="padding-top:6px;">▶</div>
+        <div class="ca-rec-header-mid" style="display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:12px;font-weight:600;">克制推荐</span>
+            <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('winRate')">胜率 ${caRecNTSortArrow('winRate')}</span>
+            <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('lossRate')">战损 ${caRecNTSortArrow('lossRate')}</span>
+            <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('total')">场次 ${caRecNTSortArrow('total')}</span>
+          </div>
+          <div style="font-size:10px;color:#777;margin-top:2px;">平均红度：</div>
+          ${counterFilterHtml}
         </div>
       </div>
-      ${data.map((item, gi) => {
-      const sortedCounters = caRecNTSortCounters(item.counters);
-      item.counters = sortedCounters; // 保持溯源下标与显示顺序一致
-      const countersHtml = sortedCounters.length
-        ? sortedCounters.map((c, ci) => `
-          <div class="ca-rec-counter">
-            <div class="ca-rec-counter-team">${teamChipNoTacs(c.generals, true)}</div>
-            <div class="ca-rec-counter-stats">
-              <div class="ca-stat-item ca-stat-win">${c.winRate}% 胜率</div>
-              <div class="ca-stat-item ca-stat-loss">战损 ${c.lossRate}%</div>
-              <div class="ca-stat-item ca-stat-cnt">${c.total} 场</div>
-              <button class="ca-src-btn" onclick="caShowRecSrcNT(${gi},${ci})">溯源</button>
-            </div>
-          </div>`).join('')
-        : `<div class="ca-rec-empty">暂无克制数据</div>`;
+      ${data.length === 0 ? `<div class="ca-empty-blk">当前筛选条件下无数据</div>` :
+        data.map((item, gi) => {
+          const filteredCounters = item.counters.filter(c =>
+            caRecNTCounterStarsFilter.has(avgStarsRounded(c.avgStars))
+          );
+          const sortedCounters = caRecNTSortCounters(filteredCounters);
+          item.counters = sortedCounters;
+          const countersHtml = sortedCounters.length
+            ? sortedCounters.map((c, ci) => `
+              <div class="ca-rec-counter">
+                <div class="ca-rec-counter-team">${teamChipNoTacs(c.generals, true)}</div>
+                <div class="ca-rec-counter-stats">
+                  <div class="ca-stat-item ca-stat-win">${c.winRate}% 胜率</div>
+                  <div class="ca-stat-item ca-stat-loss">战损 ${c.lossRate}%</div>
+                  <div class="ca-stat-item ca-stat-cnt">${c.total} 场</div>
+                  <button class="ca-src-btn" onclick="caShowRecSrcNT(${gi},${ci})">溯源</button>
+                </div>
+              </div>`).join('')
+            : `<div class="ca-rec-empty">暂无克制数据（或被红度筛选过滤）</div>`;
 
-      return `<div class="ca-rec-group">
-        <div class="ca-rec-enemy">
-          ${teamChipNoTacs(item.enemy.generals, false, {
-            html: `<span class="ca-badge ca-badge-cnt">×${item.enemy.count}</span>`,
-            cls: 'ca-gen-extra'
-          })}
-        </div>
-        <div class="ca-rec-arrow">▶</div>
-        <div class="ca-rec-counters">${countersHtml}</div>
-      </div>`;
-    }).join('')}`;
+          return `<div class="ca-rec-group">
+            <div class="ca-rec-enemy">
+              ${teamChipNoTacs(item.enemy.generals, false, {
+                html: `<span class="ca-badge ca-badge-cnt">×${item.enemy.count}</span>`,
+                cls: 'ca-gen-extra'
+              })}
+            </div>
+            <div class="ca-rec-arrow"></div>
+            <div class="ca-rec-counters">${countersHtml}</div>
+          </div>`;
+        }).join('')
+      }`;
   };
 
   window.caShowRecSrcNT = function (gi, ci) {
@@ -1000,8 +1106,8 @@
       relationship:    { id: 'caPanelRelationship',    title: '克制关系分析' },
       enemy:           { id: 'caPanelEnemy',           title: '敌方高频队伍' },
       recommend:       { id: 'caPanelRecommend',       title: '克制推荐' },
-      enemyNoTacs:     { id: 'caPanelEnemyNoTacs',     title: '敌方高频（无战法）' },
-      recommendNoTacs: { id: 'caPanelRecommendNoTacs', title: '克制推荐（无战法）' },
+      enemyNoTacs:     { id: 'caPanelEnemyNoTacs',     title: '敌方高频队伍统计（无战法）' },
+      recommendNoTacs: { id: 'caPanelRecommendNoTacs', title: '敌方高频胜率分析（无战法）' },
     };
     const cfg = panelMap[tab];
     if (!cfg) return;
@@ -1034,15 +1140,39 @@ ${clone.innerHTML}
     parent.innerHTML = `
       <div class="ca-root">
         <div class="ca-tabs">
-          <button class="ca-tab active" onclick="switchCounterTab('relationship')" id="caTabRelBtn">克制关系</button>
+          <button class="ca-tab active" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频队伍统计（无战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">敌方高频胜率分析（无战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('relationship')" id="caTabRelBtn">克制关系</button>
           <button class="ca-tab" onclick="switchCounterTab('enemy')" id="caTabEnemyBtn">敌方高频（有战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐（有战法）</button>
-          <button class="ca-tab" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频（无战法）</button>
-          <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">克制推荐（无战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommend-best')" id="caTabBestBtn">⭐ 综合推荐</button>
         </div>
 
-        <div id="caPanelRelationship">
+        <div id="caPanelEnemyNoTacs">
+          <div class="ca-hint-row"><p class="ca-hint">敌方（右侧）队伍出场频率，仅以武将组合区分，不区分战法与阵型，全部显示。出场占比 = 出场次数 / 全部战报总数。</p><button class="ca-hint-row-export" onclick="caExportTab('enemyNoTacs')">⬇ 导出打印</button></div>
+          <div class="ca-filter-row" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="font-size:11px;color:#888;white-space:nowrap;flex-shrink:0;">平均红度：</span>
+            ${caStarsCheckboxHtml('efnt')}
+          </div>
+          <div class="ca-tbl-wrap">
+            <table class="ca-tbl">
+              <thead><tr>
+                <th class="ca-th-idx">#</th>
+                <th>队伍（武将组合）</th>
+                <th class="ca-th-num">出场次数</th>
+                <th class="ca-th-num">出场占比</th>
+              </tr></thead>
+              <tbody id="enemyHighFreqBodyNoTacs"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="caPanelRecommendNoTacs" style="display:none;">
+          <div class="ca-hint-row"><p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('recommendNoTacs')">⬇ 导出打印</button></div>
+          <div id="counterRecommendationsNoTacs"></div>
+        </div>
+
+        <div id="caPanelRelationship" style="display:none;">
           <div class="ca-hint-row"><p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p><button class="ca-hint-row-export" onclick="caExportTab('relationship')">⬇ 导出打印</button></div>
           <div class="ca-filter-row">
             <input id="caSearchWinner" placeholder="🔍 胜方：武将/战法/阵型" oninput="renderCounterAnalysis()" style="flex:1;min-width:140px;font-size:11px;padding:5px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;">
@@ -1085,46 +1215,27 @@ ${clone.innerHTML}
           <div id="counterRecommendations"></div>
         </div>
 
-        <div id="caPanelEnemyNoTacs" style="display:none;">
-          <div class="ca-hint-row"><p class="ca-hint">敌方（右侧）队伍出场频率，仅以武将组合区分，不区分战法与阵型，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('enemyNoTacs')">⬇ 导出打印</button></div>
-          <div class="ca-tbl-wrap">
-            <table class="ca-tbl">
-              <thead><tr>
-                <th class="ca-th-idx">#</th>
-                <th>队伍（武将组合）</th>
-                <th class="ca-th-num">出场</th>
-              </tr></thead>
-              <tbody id="enemyHighFreqBodyNoTacs"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div id="caPanelRecommendNoTacs" style="display:none;">
-          <div class="ca-hint-row"><p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('recommendNoTacs')">⬇ 导出打印</button></div>
-          <div id="counterRecommendationsNoTacs"></div>
-        </div>
-
         <div id="caPanelBestRec" style="display:none;"></div>
       </div>`;
 
-    switchCounterTab('relationship');
+    switchCounterTab('enemyNoTacs');
   };
 
   window.switchCounterTab = async function (tab) {
     const panels = {
+      enemyNoTacs:     'caPanelEnemyNoTacs',
+      recommendNoTacs: 'caPanelRecommendNoTacs',
       relationship:    'caPanelRelationship',
       enemy:           'caPanelEnemy',
       recommend:       'caPanelRecommend',
-      enemyNoTacs:     'caPanelEnemyNoTacs',
-      recommendNoTacs: 'caPanelRecommendNoTacs',
       'recommend-best':'caPanelBestRec'
     };
     const btns = {
+      enemyNoTacs:     'caTabEnemyNTBtn',
+      recommendNoTacs: 'caTabRecNTBtn',
       relationship:    'caTabRelBtn',
       enemy:           'caTabEnemyBtn',
       recommend:       'caTabRecBtn',
-      enemyNoTacs:     'caTabEnemyNTBtn',
-      recommendNoTacs: 'caTabRecNTBtn',
       'recommend-best':'caTabBestBtn'
     };
     Object.keys(panels).forEach(t => {
@@ -1133,12 +1244,12 @@ ${clone.innerHTML}
       if (p) p.style.display = t === tab ? 'block' : 'none';
       if (b) b.classList.toggle('active', t === tab);
     });
-    if (tab === 'relationship')    await renderCounterAnalysis();
+    if (tab === 'enemyNoTacs')     await renderEnemyHighFreqNoTacs();
+    else if (tab === 'recommendNoTacs') await renderCounterRecommendationsNoTacs();
+    else if (tab === 'relationship')    await renderCounterAnalysis();
     else if (tab === 'enemy')      await renderEnemyHighFreq();
     else if (tab === 'recommend')  await renderCounterRecommendations();
-    else if (tab === 'enemyNoTacs') await renderEnemyHighFreqNoTacs();
     else if (tab === 'recommend-best') await renderBestRecommendation();
-    else                           await renderCounterRecommendationsNoTacs();
   };
 
   // ==================== 样式注入 ====================
@@ -1254,6 +1365,10 @@ ${clone.innerHTML}
       .ca-empty small{display:block;color:#444;margin-top:6px;font-size:11px;}
       .ca-empty-blk{text-align:center;color:#555;padding:60px 20px;font-size:13px;}
       .ca-empty-blk small{display:block;color:#444;margin-top:6px;font-size:11px;}
+
+      /* ---- 平均红度筛选按钮 ---- */
+      .ca-stars-btn{padding:1px 7px;border:1px solid #333;border-radius:3px;background:transparent;color:#777;font-size:10px;cursor:pointer;white-space:nowrap;transition:all .15s;}
+      .ca-stars-btn:hover{background:rgba(255,255,255,.06);color:#ccc;border-color:#555;}
 
       /* ---- Tab3 克制推荐 ---- */
       .ca-rec-header{display:flex;align-items:center;
