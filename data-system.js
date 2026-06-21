@@ -12,6 +12,8 @@ let winRateSortField = null;
 let winRateSortDir = 'desc';
 let gallerySelectedIds = new Set();
 let cachedWinRateData = [];
+let _dupFilterActive = false;
+let _dupSelectIds = new Set(); // 预选待删除的重复记录ID
 
 // ========== 武将/战法独立字段 helper ==========
 function getGenerals(rec, side) {
@@ -933,6 +935,13 @@ function getFilteredData() {
     );
   }
 
+  // 重复战报筛选
+  if (_dupFilterActive) {
+    const dupGroups = getDuplicateGroups();
+    const dupIdSet = new Set(dupGroups.flat().map(r => r.id));
+    data = data.filter(r => dupIdSet.has(r.id));
+  }
+
   // 排序逻辑
   if (dataSortField) {
     data.sort((a, b) => {
@@ -970,7 +979,7 @@ function renderDataTable() {
   } else {
     tbody.innerHTML = page.map((r, i) => `
       <tr>
-        <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td>
+        <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" ${_dupSelectIds.has(r.id) ? 'checked' : ''} onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td>
         <td class="num">${start + i + 1}</td>
         <td style="color:var(--text2);font-size:11px;">${r.time || '-'}</td>
         <td><span class="result-badge result-${r.result === '胜' ? 'win' : r.result === '败' ? 'lose' : 'draw'}">${r.result || '-'}</span></td>
@@ -1040,9 +1049,69 @@ async function deleteSelected() {
   const ids = [...document.querySelectorAll('#dataTableBody .row-check:checked')].map(c => +c.dataset.id).filter(id => id);
   if (!ids.length) return;
   if (!confirm(`确定删除选中的 ${ids.length} 条记录？`)) return;
+  _dupSelectIds.clear();
   for (const id of ids) await dbDelete(id);
   await loadAllRecords();
   renderDataTable();
+}
+
+// ── 重复战报检测 ─────────────────────────────────────────────────────
+function getDuplicateGroups() {
+  const groups = {};
+  for (const r of allRecords) {
+    if (r.leftLoss == null || r.rightLoss == null) continue;
+    const key = r.leftLoss + '|' + r.rightLoss;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  }
+  return Object.values(groups).filter(g => g.length >= 2);
+}
+
+function filterDuplicates() {
+  _dupFilterActive = !_dupFilterActive;
+  _dupSelectIds.clear();
+  dataPage = 1;
+  const btn = document.getElementById('btnFilterDuplicates');
+  if (btn) btn.textContent = _dupFilterActive ? '✕ 取消重复筛选' : '筛选重复战报';
+  renderDataTable();
+  if (_dupFilterActive) {
+    const groups = getDuplicateGroups();
+    const dupCount = groups.reduce((sum, g) => sum + g.length, 0);
+    const groupCount = groups.length;
+    const tip = document.getElementById('dupFilterTip');
+    if (tip) tip.textContent = `共 ${groupCount} 组重复，${dupCount} 条记录`;
+  } else {
+    const tip = document.getElementById('dupFilterTip');
+    if (tip) tip.textContent = '';
+  }
+}
+
+function selectDuplicatesForDeletion() {
+  const groups = getDuplicateGroups();
+  if (groups.length === 0) { alert('当前项目中未检测到重复战报'); return; }
+  _dupSelectIds.clear();
+  let toDeleteCount = 0;
+  for (const group of groups) {
+    const sorted = [...group].sort((a, b) => a.id - b.id);
+    for (let i = 1; i < sorted.length; i++) {
+      _dupSelectIds.add(sorted[i].id);
+      toDeleteCount++;
+    }
+  }
+  if (!_dupFilterActive) {
+    _dupFilterActive = true;
+    const btn = document.getElementById('btnFilterDuplicates');
+    if (btn) btn.textContent = '✕ 取消重复筛选';
+  }
+  const tip = document.getElementById('dupFilterTip');
+  if (tip) tip.textContent = `共 ${groups.length} 组重复，已预选 ${toDeleteCount} 条待删除`;
+  dataPerPage = 100;
+  dataPage = 1;
+  renderDataTable();
+  document.querySelectorAll('#dataTableBody .row-check').forEach(cb => {
+    if (_dupSelectIds.has(+cb.dataset.id)) cb.checked = true;
+  });
+  updateSelectionCount();
 }
 // 事件委托：直接挂 document，捕获所有 row-check 的变更（动态内容也适用）
 document.addEventListener('change', function(e) {

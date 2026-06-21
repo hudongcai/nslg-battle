@@ -564,6 +564,10 @@ document.addEventListener('click', function(e) {
   <option value="all">全部数据</option>
 </select>
         <button class="btn btn-sm btn-secondary" onclick="tableSelectAll()">全选</button><button class="btn btn-sm btn-secondary" onclick="tableInvertSelect()">反选</button><button class="btn btn-sm btn-danger" id="btnDeleteSelected" disabled style="opacity:.4;cursor:not-allowed" onclick="deleteSelected()">删除选中(<span id="dataSelectedCount">0</span>)</button>
+        <span style="display:inline-block;width:1px;height:16px;background:var(--border);margin:0 8px;vertical-align:middle;"></span>
+        <button class="btn btn-sm btn-secondary" id="btnFilterDuplicates" onclick="filterDuplicates()" title="筛选出左侧战损和右侧战损完全相同的战报">筛选重复战报</button>
+        <button class="btn btn-sm btn-secondary" onclick="selectDuplicatesForDeletion()" title="每组重复战报保留最早一条，其余全部勾选" style="margin-left:4px;color:#e67e22;border-color:#e67e22;">选择重复删除</button>
+        <span id="dupFilterTip" style="margin-left:8px;font-size:11px;color:var(--accent);"></span>
         <button class="btn btn-sm btn-secondary" onclick="repairCloudGeneralsTactics()" title="将本地有武将/战法数据但云端为空的记录重新同步" style="margin-left:8px;">🔧 修复云端武将战法</button>
       </div>
       <div style="overflow-x:auto;"><table id="dataTable"><thead><tr>
@@ -1942,8 +1946,8 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 </div>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="cloud-sync.js?v=20260619"></script>
-  <script src="data-system.js?v=202606163"></script>
-  <script src="counter-analysis.js?v=20260621002"></script>
+  <script src="data-system.js?v=20260621004"></script>
+  <script src="counter-analysis.js?v=20260621019"></script>
   <script src="counter-analysis-enhanced.js?v=202605190002"></script>
   <script src="user-system.js?v=202605111900"></script>
   <script src="project-system.js?v=20260619001"></script>
@@ -1992,11 +1996,32 @@ function getFilteredData(){
     var f=col.f,keys=col.keys;
     if(f.sel||f.txt){var txt=f.txt.toLowerCase();data=data.filter(function(r){if(f.sel==='__EMPTY__'){return keys.some(function(k){var v=r[k]||'';return!v;});}return keys.some(function(k){var v=r[k]||'';if(!v)return false;if(f.sel&&v!==f.sel)return false;if(txt&&!v.toLowerCase().includes(txt))return false;return true;});});}
   });
-  data.sort(function(a,b){return(b.id||0)-(a.id||0);});
+  if(typeof _dupFilterActive!=='undefined'&&_dupFilterActive&&typeof getDuplicateGroups==='function'){
+    var dupGroups=getDuplicateGroups();
+    var dupIdSet=new Set(dupGroups.flat().map(function(r){return r.id;}));
+    data=data.filter(function(r){return dupIdSet.has(r.id);});
+  }
+  var sf=typeof dataSortField!=='undefined'?dataSortField:null;
+  var sd=typeof dataSortDir!=='undefined'?dataSortDir:'desc';
+  if(sf){
+    data.sort(function(a,b){
+      var va,vb;
+      if(sf==='leftLoss'){va=a.leftLoss||0;vb=b.leftLoss||0;}
+      else if(sf==='rightLoss'){va=a.rightLoss||0;vb=b.rightLoss||0;}
+      else if(sf==='leftTotal'){va=a.leftTotal||0;vb=b.leftTotal||0;}
+      else if(sf==='rightTotal'){va=a.rightTotal||0;vb=b.rightTotal||0;}
+      else if(sf==='leftLossRate'){va=a.leftLossRate||0;vb=b.leftLossRate||0;}
+      else if(sf==='rightLossRate'){va=a.rightLossRate||0;vb=b.rightLossRate||0;}
+      else{va=a.id||0;vb=b.id||0;}
+      return sd==='asc'?va-vb:vb-va;
+    });
+  }else{
+    data.sort(function(a,b){return(b.id||0)-(a.id||0);});
+  }
   return data;
 }
-function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(typeof updateGeneralFilterIndicators==='function')updateGeneralFilterIndicators();if(page.length===0){tbody.innerHTML='<tr><td colspan="28" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
-    <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td><td class="num">${start+i+1}</td><td style="color:var(--text2);font-size:11px;">${r.time||'-'}</td>
+function renderDataTable(){var data=getFilteredData();var total=data.length;var totalPages=Math.ceil(total/dataPerPage);if(dataPage>totalPages)dataPage=Math.max(1,totalPages);var start=(dataPage-1)*dataPerPage;var page=data.slice(start,start+dataPerPage);var tbody=document.getElementById('dataTableBody');if(typeof updateTacticFilterIndicators==='function')updateTacticFilterIndicators();if(typeof updateGeneralFilterIndicators==='function')updateGeneralFilterIndicators();if(typeof updateDataTableHeaders==='function')updateDataTableHeaders();if(page.length===0){tbody.innerHTML='<tr><td colspan="28" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';}else{tbody.innerHTML=page.map(function(r,i){return`<tr>
+    <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" ${(typeof _dupSelectIds!=='undefined'&&_dupSelectIds.has(r.id))?'checked':''} onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td><td class="num">${start+i+1}</td><td style="color:var(--text2);font-size:11px;">${r.time||'-'}</td>
     <td style="text-align:center;"><a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;" title="点击查看原图">🔍 原图</a></td>
     <td><span class="result-badge result-${r.result==='胜'?'win':r.result==='败'?'lose':'draw'}">${r.result||'-'}</span></td>
     <td style="white-space:nowrap;">${escHtml(r.leftPlayer||'')}</td><td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.leftAlliance||'')}</td>

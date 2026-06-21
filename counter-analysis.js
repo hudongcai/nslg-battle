@@ -577,7 +577,6 @@
       const ek = teamKeyNoTacs(enemy.generals);
       const allCounters = Object.values(matrix[ek] || {});
       const counters = allCounters
-        .filter(c => c.wins > 0)
         .map(c => ({
           generals: c.generals,
           records: c.records,
@@ -590,6 +589,62 @@
         .sort((a, b) => b.winRate - a.winRate || b.total - a.total);
       return { enemy, counters };
     });
+  }
+
+  // ==================== 分析：矩阵 敌方克制分析矩阵 ====================
+
+  function analyzeCounterMatrix(recs) {
+    const allEnemies = analyzeEnemyFreqNoTacs(recs);
+    const top10 = allEnemies.slice(0, 10);
+    if (!top10.length) return { top10: [], top10Keys: [], ourTeams: [], matrix: {} };
+
+    const top10Keys = top10.map(e => teamKeyNoTacs(e.generals));
+    const top10KeySet = new Set(top10Keys);
+
+    const matrix = {};     // matrix[ourKey][enemyKey] = { wins, total, counterLoss, enemyLoss, records }
+    const ourTeamMap = {}; // ourKey -> { generals, total }
+
+    for (const rec of recs) {
+      const lg = normGens(getGenerals(rec, 'left'));
+      const rg = normGens(getGenerals(rec, 'right'));
+      if (!lg.length || !rg.length) continue;
+
+      const leftKey  = teamKeyNoTacs(lg);
+      const rightKey = teamKeyNoTacs(rg);
+      const w = winner(rec.result);
+      const leftLoss  = parseFloat(rec.leftLoss  || rec.left_loss  || 0);
+      const rightLoss = parseFloat(rec.rightLoss || rec.right_loss || 0);
+
+      if (top10KeySet.has(rightKey)) {
+        if (!matrix[leftKey]) matrix[leftKey] = {};
+        if (!matrix[leftKey][rightKey]) matrix[leftKey][rightKey] = { wins: 0, total: 0, counterLoss: 0, enemyLoss: 0, records: [] };
+        matrix[leftKey][rightKey].wins += (w === 'left') ? 1 : (w === 'draw') ? 0.5 : 0;
+        matrix[leftKey][rightKey].total++;
+        matrix[leftKey][rightKey].counterLoss += leftLoss;
+        matrix[leftKey][rightKey].enemyLoss   += rightLoss;
+        matrix[leftKey][rightKey].records.push(rec);
+        if (!ourTeamMap[leftKey]) ourTeamMap[leftKey] = { generals: normGens(lg).sort(), total: 0 };
+        ourTeamMap[leftKey].total++;
+      }
+
+      if (top10KeySet.has(leftKey) && leftKey !== rightKey) {
+        if (!matrix[rightKey]) matrix[rightKey] = {};
+        if (!matrix[rightKey][leftKey]) matrix[rightKey][leftKey] = { wins: 0, total: 0, counterLoss: 0, enemyLoss: 0, records: [] };
+        matrix[rightKey][leftKey].wins += (w === 'right') ? 1 : (w === 'draw') ? 0.5 : 0;
+        matrix[rightKey][leftKey].total++;
+        matrix[rightKey][leftKey].counterLoss += rightLoss;
+        matrix[rightKey][leftKey].enemyLoss   += leftLoss;
+        matrix[rightKey][leftKey].records.push(rec);
+        if (!ourTeamMap[rightKey]) ourTeamMap[rightKey] = { generals: normGens(rg).sort(), total: 0 };
+        ourTeamMap[rightKey].total++;
+      }
+    }
+
+    const ourTeams = Object.entries(ourTeamMap)
+      .map(([k, v]) => ({ key: k, generals: v.generals, total: v.total }))
+      .sort((a, b) => b.total - a.total);
+
+    return { top10, top10Keys, ourTeams, matrix };
   }
 
   // ==================== 分析：Tab 6 综合推荐队伍 ====================
@@ -891,7 +946,7 @@
     el.innerHTML = `<div class="ca-rec-header">
         <div class="ca-rec-header-left">敌方高频队伍</div>
         <div class="ca-rec-arrow-spacer"></div>
-        <div class="ca-rec-header-mid">克制推荐</div>
+        <div class="ca-rec-header-mid">对战胜率分析</div>
         <div class="ca-rec-header-right">
           <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('winRate')">胜率 ${caRecNTSortArrow('winRate')}</span>
           <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('lossRate')">战损 ${caRecNTSortArrow('lossRate')}</span>
@@ -947,6 +1002,128 @@
   window.caShowRecSrcNT = function (gi, ci) {
     const d = (window._caRecNTData || [])[gi];
     if (d && d.counters[ci]) showImageSource(d.counters[ci].records);
+  };
+
+  // ==================== 渲染：矩阵 敌方克制分析矩阵 ====================
+
+  window.renderCounterMatrix = async function () {
+    const el = document.getElementById('caPanelMatrix');
+    if (!el) return;
+    el.innerHTML = '<div style="padding:20px;color:#666;font-size:12px;text-align:center;">计算中...</div>';
+    await ensureRecords();
+    const recs = records();
+    const { top10, top10Keys, ourTeams, matrix } = analyzeCounterMatrix(recs);
+
+    if (!top10.length) {
+      el.innerHTML = '<div class="ca-empty-blk">暂无足够数据<br><small>需要战报数据才能生成矩阵</small></div>';
+      return;
+    }
+
+    window._caMxData = { ourTeams, top10Keys, matrix };
+
+    const colW = (80 / top10.length).toFixed(1);
+
+    const headerCols = top10.map((e, i) => `<th class="ca-mx-col-head">
+        <div class="ca-mx-rank">Top${i + 1}</div>
+        ${e.generals.map(g => `<div class="ca-mx-gen" style="color:${heroColor(g)}">${escHtml(g)}</div>`).join('')}
+      </th>`).join('');
+
+    const countCols = top10.map(e => `<th class="ca-mx-count-cell">${e.count}场</th>`).join('');
+
+    // 汇总：每个 top10 敌方 → 绝对克制（≥75%且≥10场）/ 相对优势（50-75%且≥10场）
+    const summaryData = top10Keys.map(ek => {
+      const absolute = [], relative = [];
+      for (const ot of ourTeams) {
+        if (ot.key === ek) continue;
+        const cell = matrix[ot.key] && matrix[ot.key][ek];
+        if (!cell || cell.total < 10) continue;
+        const wr = Math.round(cell.wins / cell.total * 1000) / 10;
+        const label = ot.generals.map(g => escHtml(g)).join('·');
+        if (wr >= 75)       absolute.push({ label, wr });
+        else if (wr >= 50)  relative.push({ label, wr });
+      }
+      absolute.sort((a, b) => b.wr - a.wr);
+      relative.sort((a, b) => b.wr - a.wr);
+      return { absolute, relative };
+    });
+
+    const mkSumCell = (arr, cls) => {
+      if (!arr.length) return `<td class="ca-mx-sum-data ca-mx-empty-cell">—</td>`;
+      return `<td class="ca-mx-sum-data">${arr.map(t => `<div class="ca-mx-sum-item">${t.label}<br><span class="${cls}">${t.wr}%</span></div>`).join('')}</td>`;
+    };
+    const absCells = summaryData.map(s => mkSumCell(s.absolute, 'ca-mx-sum-abs')).join('');
+    const relCells = summaryData.map(s => mkSumCell(s.relative, 'ca-mx-sum-rel')).join('');
+
+    const summaryRows = `
+      <tr class="ca-mx-sum-row">
+        <td class="ca-mx-sum-label" rowspan="2">克制队伍<br>分析总结</td>
+        <td class="ca-mx-sum-type ca-mx-sum-type-abs">绝对克制队伍<div class="ca-mx-sum-note">胜率≥75%&nbsp;且≥10场</div></td>
+        ${absCells}
+      </tr>
+      <tr class="ca-mx-sum-row">
+        <td class="ca-mx-sum-type ca-mx-sum-type-rel">相对优势队伍<div class="ca-mx-sum-note">胜率50%~75%&nbsp;且≥10场</div></td>
+        ${relCells}
+      </tr>`;
+
+    const bodyRows = ourTeams.map((ot, ri) => {
+      const cells = top10Keys.map((ek, ci) => {
+        if (ot.key === ek) return `<td class="ca-mx-empty-cell">—</td>`;
+        const cell = matrix[ot.key] && matrix[ot.key][ek];
+        if (!cell || cell.total === 0) return `<td class="ca-mx-empty-cell">—</td>`;
+        const wr = Math.round(cell.wins / cell.total * 1000) / 10;
+        const avgLoss = cell.enemyLoss ? Math.round(cell.counterLoss / cell.enemyLoss * 100) : 0;
+        let bg, tc;
+        if (wr > 50)      { bg = 'rgba(46,204,113,0.18)'; tc = '#2ecc71'; }
+        else if (wr < 50) { bg = 'rgba(231,76,60,0.18)';  tc = '#e74c3c'; }
+        else              { bg = 'rgba(150,150,150,0.13)'; tc = '#aaa'; }
+        return `<td class="ca-mx-data-cell ca-mx-clickable" style="background:${bg};cursor:pointer;" onclick="caMxShowSrc(${ri},${ci})" title="点击查看溯源战报">
+          <div class="ca-mx-wr" style="color:${tc};">${wr}%</div>
+          <div class="ca-mx-sub">${cell.total}场</div>
+          <div class="ca-mx-sub">战损${avgLoss}%</div>
+        </td>`;
+      }).join('');
+      const gensHtml = ot.generals.map(g => `<div class="ca-mx-gen" style="color:${heroColor(g)}">${escHtml(g)}</div>`).join('');
+      return `<tr class="ca-mx-row"><td class="ca-mx-left-cell" colspan="2">${gensHtml}</td>${cells}</tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="ca-hint-row">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <p class="ca-hint" style="text-align:center;margin:0;">敌方高频武将组合 Top${top10.length}（列）× 所有参与对战的队伍（行）。绿色=胜率&gt;50%，红色=胜率&lt;50%，灰色=50%，空格=无交战记录。</p>
+          <p style="margin:0;text-align:center;font-size:15px;font-weight:700;color:var(--accent,#5b4fff);letter-spacing:.02em;">基于 <span style="font-size:22px;font-weight:900;">${recs.length}</span> 封有效战报分析</p>
+        </div>
+        <button class="ca-hint-row-export" onclick="caExportTab('matrix')">⬇ 导出打印</button>
+      </div>
+      <div class="ca-mx-wrap">
+        <table class="ca-mx-tbl">
+          <colgroup>
+            <col style="width:10%;">
+            <col style="width:10%;">
+            ${top10.map(() => `<col style="width:${colW}%;">`).join('')}
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="ca-mx-left-head" rowspan="3" colspan="2" style="font-weight:700;">对战队伍</th>
+              <th colspan="${top10.length}" style="text-align:center;background:var(--bg2,#111122);color:var(--accent,#5b4fff);font-size:12px;font-weight:600;padding:6px 4px;border:1px solid var(--border,#2a2a3e);letter-spacing:.04em;">敌方高频队伍 Top${top10.length}</th>
+            </tr>
+            <tr class="ca-mx-head-row">
+              ${headerCols}
+            </tr>
+            <tr class="ca-mx-count-row">${countCols}</tr>
+          </thead>
+          <tbody>${summaryRows}${bodyRows}</tbody>
+        </table>
+      </div>`;
+  };
+
+  window.caMxShowSrc = function (ri, ci) {
+    const d = window._caMxData;
+    if (!d) return;
+    const ot = d.ourTeams[ri];
+    const ek = d.top10Keys[ci];
+    if (!ot || !ek) return;
+    const cell = d.matrix[ot.key] && d.matrix[ot.key][ek];
+    if (cell && cell.records && cell.records.length) showImageSource(cell.records);
   };
 
   // ==================== 渲染：Tab 6 综合推荐队伍 ====================
@@ -1112,6 +1289,7 @@
       recommend:       { id: 'caPanelRecommend',       title: '克制推荐' },
       enemyNoTacs:     { id: 'caPanelEnemyNoTacs',     title: '敌方高频队伍统计（无战法）' },
       recommendNoTacs: { id: 'caPanelRecommendNoTacs', title: '敌方高频胜率分析（无战法）' },
+      matrix:          { id: 'caPanelMatrix',          title: '敌方克制分析矩阵表' },
     };
     const cfg = panelMap[tab];
     if (!cfg) return;
@@ -1121,15 +1299,21 @@
     const clone = panel.cloneNode(true);
     clone.querySelectorAll('.ca-hint-row-export').forEach(el => el.remove());
 
+    const projName = window.currentProjectName || '';
+    const recCount = typeof records === 'function' ? records().length : '';
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    const fullTitle = `${projName}[${recCount}]${cfg.title}${dateStr}`;
+
     const win = window.open('', '_blank', 'width=980,height=760');
     if (!win) { alert('请允许浏览器弹出窗口后重试'); return; }
     win.document.write(`<!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>${escHtml(cfg.title)}</title>
+<head><meta charset="UTF-8"><title>${escHtml(fullTitle)}</title>
 <style>${caGetPrintStyles()}</style>
 </head>
 <body>
-<h2>${escHtml(cfg.title)}</h2>
+<h2>${escHtml(fullTitle)}</h2>
 ${clone.innerHTML}
 <script>window.onload=function(){window.print();}<\/script>
 </body></html>`);
@@ -1146,10 +1330,10 @@ ${clone.innerHTML}
         <div class="ca-tabs">
           <button class="ca-tab active" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频队伍统计（无战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">敌方高频胜率分析（无战法）</button>
+          <button class="ca-tab" onclick="switchCounterTab('matrix')" id="caTabMatrixBtn">敌方克制分析矩阵表</button>
           <button class="ca-tab" onclick="switchCounterTab('relationship')" id="caTabRelBtn">克制关系</button>
           <button class="ca-tab" onclick="switchCounterTab('enemy')" id="caTabEnemyBtn">敌方高频（有战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐（有战法）</button>
-          <button class="ca-tab" onclick="switchCounterTab('recommend-best')" id="caTabBestBtn">⭐ 综合推荐</button>
         </div>
 
         <div id="caPanelEnemyNoTacs">
@@ -1175,6 +1359,8 @@ ${clone.innerHTML}
           <div class="ca-hint-row"><p class="ca-hint">针对高频武将组合，找出有战胜记录的克制武将组合（不区分战法与阵型），至少1胜，全部显示</p><button class="ca-hint-row-export" onclick="caExportTab('recommendNoTacs')">⬇ 导出打印</button></div>
           <div id="counterRecommendationsNoTacs"></div>
         </div>
+
+        <div id="caPanelMatrix" style="display:none;"></div>
 
         <div id="caPanelRelationship" style="display:none;">
           <div class="ca-hint-row"><p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p><button class="ca-hint-row-export" onclick="caExportTab('relationship')">⬇ 导出打印</button></div>
@@ -1219,7 +1405,6 @@ ${clone.innerHTML}
           <div id="counterRecommendations"></div>
         </div>
 
-        <div id="caPanelBestRec" style="display:none;"></div>
       </div>`;
 
     switchCounterTab('enemyNoTacs');
@@ -1229,18 +1414,18 @@ ${clone.innerHTML}
     const panels = {
       enemyNoTacs:     'caPanelEnemyNoTacs',
       recommendNoTacs: 'caPanelRecommendNoTacs',
+      matrix:          'caPanelMatrix',
       relationship:    'caPanelRelationship',
       enemy:           'caPanelEnemy',
       recommend:       'caPanelRecommend',
-      'recommend-best':'caPanelBestRec'
     };
     const btns = {
       enemyNoTacs:     'caTabEnemyNTBtn',
       recommendNoTacs: 'caTabRecNTBtn',
+      matrix:          'caTabMatrixBtn',
       relationship:    'caTabRelBtn',
       enemy:           'caTabEnemyBtn',
       recommend:       'caTabRecBtn',
-      'recommend-best':'caTabBestBtn'
     };
     Object.keys(panels).forEach(t => {
       const p = document.getElementById(panels[t]);
@@ -1248,12 +1433,12 @@ ${clone.innerHTML}
       if (p) p.style.display = t === tab ? 'block' : 'none';
       if (b) b.classList.toggle('active', t === tab);
     });
-    if (tab === 'enemyNoTacs')     await renderEnemyHighFreqNoTacs();
+    if (tab === 'enemyNoTacs')          await renderEnemyHighFreqNoTacs();
     else if (tab === 'recommendNoTacs') await renderCounterRecommendationsNoTacs();
+    else if (tab === 'matrix')          await renderCounterMatrix();
     else if (tab === 'relationship')    await renderCounterAnalysis();
     else if (tab === 'enemy')      await renderEnemyHighFreq();
     else if (tab === 'recommend')  await renderCounterRecommendations();
-    else if (tab === 'recommend-best') await renderBestRecommendation();
   };
 
   // ==================== 样式注入 ====================
@@ -1410,6 +1595,37 @@ ${clone.innerHTML}
 	      .ca-rec-sort-btn{flex:1 1 0;min-width:0;cursor:pointer;user-select:none;font-size:12px;padding:2px 6px;border-radius:3px;white-space:nowrap;text-align:center;}
 	      .ca-rec-sort-btn:hover{background:rgba(255,255,255,.06);color:#ccc;}
 	      .ca-rec-sort-spacer{flex:1 1 0;min-width:0;}
+
+      /* ---- 矩阵表 ---- */
+      .ca-mx-wrap{overflow-x:auto;}
+      .ca-mx-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+      .ca-mx-tbl th,.ca-mx-tbl td{border:1px solid var(--border,#2a2a3e);padding:4px 6px;vertical-align:middle;}
+      .ca-mx-left-head{background:var(--bg2,#111122);color:#888;font-size:11px;text-align:center;font-weight:500;white-space:nowrap;}
+      .ca-mx-col-head{background:var(--bg2,#111122);text-align:center;vertical-align:top;padding:6px 4px;}
+      .ca-mx-rank{color:#555;font-size:10px;margin-bottom:3px;}
+      .ca-mx-gen{font-size:11px;white-space:nowrap;font-weight:600;line-height:1.5;}
+      .ca-mx-count-row th{background:var(--bg,#0a0a1a);}
+      .ca-mx-count-cell{text-align:center;color:#666;font-size:11px;font-weight:normal;padding:3px 4px;}
+      .ca-mx-left-cell{background:var(--bg2,#111122);padding:6px 10px;text-align:center;}
+      .ca-mx-empty-cell{text-align:center;color:#2a2a3e;font-size:13px;}
+      .ca-mx-data-cell{text-align:center;padding:5px 4px;}
+      .ca-mx-row:hover .ca-mx-left-cell{background:rgba(255,255,255,.04);}
+      .ca-mx-row:hover .ca-mx-data-cell{filter:brightness(1.2);}
+      .ca-mx-wr{font-size:14px;font-weight:700;line-height:1.4;}
+      .ca-mx-sub{font-size:10px;color:#777;margin-top:1px;white-space:nowrap;}
+
+      /* ---- 矩阵汇总行 ---- */
+      .ca-mx-sum-row{border-top:2px solid var(--accent,#5b4fff);}
+      .ca-mx-sum-row:last-of-type{border-bottom:2px solid var(--accent,#5b4fff);}
+      .ca-mx-sum-label{background:rgba(91,79,255,.12);color:var(--accent,#5b4fff);font-size:11px;font-weight:700;text-align:center;vertical-align:middle;padding:6px 4px;white-space:nowrap;line-height:1.6;}
+      .ca-mx-sum-type{background:var(--bg2,#111122);font-size:10px;font-weight:600;vertical-align:middle;padding:5px 6px;white-space:nowrap;line-height:1.5;}
+      .ca-mx-sum-type-abs{color:#2ecc71;}
+      .ca-mx-sum-type-rel{color:#f39c12;}
+      .ca-mx-sum-note{font-size:9px;font-weight:400;color:#555;margin-top:2px;}
+      .ca-mx-sum-data{background:var(--bg,#0a0a1a);padding:5px 6px;vertical-align:top;text-align:center;}
+      .ca-mx-sum-item{font-size:10px;color:#bbb;line-height:1.7;white-space:nowrap;}
+      .ca-mx-sum-abs{color:#2ecc71;font-weight:700;margin-left:4px;}
+      .ca-mx-sum-rel{color:#f39c12;font-weight:700;margin-left:4px;}
 
       /* ---- Tab6 综合推荐 ---- */
       .ca-best-layout{display:flex;gap:16px;align-items:flex-start;margin-top:4px;}

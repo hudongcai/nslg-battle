@@ -588,6 +588,7 @@ async function viewProject(projectId){
   const proj = await getProjectWithFallback(projectId);
   if(!proj){ alert('项目不存在'); return; }
   window.currentProjectId = projectId;
+  window.currentProjectName = proj.name || '';
   // 标记当前用户是否为项目所有者（创建者或超管），供图库等模块判断
   const _isOwner = proj.creator === currentUser.phone || proj.creator_phone === currentUser.phone;
   const _isSuperAdmin = currentUser && currentUser.role === 'super_admin';
