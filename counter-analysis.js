@@ -885,24 +885,28 @@
 
     window._caRecNTData = data;
 
-    const enemyFilterHtml = `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;">${caStarsCheckboxHtmlDynamic('recnt_e', caRecNTEnemyStarsFilter)}</div>`;
-    const counterFilterHtml = `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px;">${caStarsCheckboxHtmlDynamic('recnt_c', caRecNTCounterStarsFilter)}</div>`;
+    const enemyFilterHtml = caStarsCheckboxHtmlDynamic('recnt_e', caRecNTEnemyStarsFilter);
+    const counterFilterHtml = caStarsCheckboxHtmlDynamic('recnt_c', caRecNTCounterStarsFilter);
 
-    el.innerHTML = `<div class="ca-rec-header" style="align-items:flex-start;">
-        <div class="ca-rec-header-left">
-          <div style="font-size:12px;font-weight:600;">敌方高频队伍</div>
-          <div style="font-size:10px;color:#777;margin-top:2px;">平均红度：</div>
+    el.innerHTML = `<div class="ca-rec-header">
+        <div class="ca-rec-header-left">敌方高频队伍</div>
+        <div class="ca-rec-arrow-spacer"></div>
+        <div class="ca-rec-header-mid">克制推荐</div>
+        <div class="ca-rec-header-right">
+          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('winRate')">胜率 ${caRecNTSortArrow('winRate')}</span>
+          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('lossRate')">战损 ${caRecNTSortArrow('lossRate')}</span>
+          <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('total')">场次 ${caRecNTSortArrow('total')}</span>
+          <span class="ca-rec-sort-spacer"></span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);border-top:none;padding:6px 14px;">
+        <div style="flex:0 0 33.333%;min-width:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:#777;white-space:nowrap;flex-shrink:0;">均红：</span>
           ${enemyFilterHtml}
         </div>
-        <div class="ca-rec-arrow-spacer" style="padding-top:6px;">▶</div>
-        <div class="ca-rec-header-mid" style="display:flex;flex-direction:column;">
-          <div style="display:flex;align-items:center;gap:4px;">
-            <span style="font-size:12px;font-weight:600;">克制推荐</span>
-            <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('winRate')">胜率 ${caRecNTSortArrow('winRate')}</span>
-            <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('lossRate')">战损 ${caRecNTSortArrow('lossRate')}</span>
-            <span class="ca-rec-sort-btn" onclick="caRecNTToggleSort('total')">场次 ${caRecNTSortArrow('total')}</span>
-          </div>
-          <div style="font-size:10px;color:#777;margin-top:2px;">平均红度：</div>
+        <div style="flex:0 0 26px;"></div>
+        <div style="flex:1 1 0;min-width:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:#777;white-space:nowrap;flex-shrink:0;">均红：</span>
           ${counterFilterHtml}
         </div>
       </div>
