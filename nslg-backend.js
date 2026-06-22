@@ -539,6 +539,53 @@ const PADDLE_TEST_URL = 'http://127.0.0.1:8003/test';
 const PADDLE_STARS_URL = 'http://127.0.0.1:8003/test-stars';
 const PADDLE_CACHE_IMG_URL = 'http://127.0.0.1:8003/cache-image';
 
+// ── OCR 全局串行锁（防止并发调用 PaddleOCR 撑爆内存）──
+// PaddleOCR 单进程处理一张图约用 1-2 GB；并发两路直接 OOM 死机
+let _ocrLockPromise = Promise.resolve();
+function withOcrLock(fn) {
+  const next = _ocrLockPromise.then(() => fn());
+  _ocrLockPromise = next.catch(() => {});
+  return next;
+}
+
+// ── 公共 PaddleOCR 调用（带串行锁 + 错误分类）──
+// 返回 { record, paddleRaw, paddleProcessError }
+// record 非 null 表示成功；paddleProcessError 非 null 表示 Python 内部错误（422）；
+// 两者均 null 表示服务不可达（503）
+async function _callPaddleOcr(body, imageName) {
+  return withOcrLock(async () => {
+    const MAX_RETRIES = 3;
+    const RETRY_BASE_MS = 2000;
+    let record = null, paddleRaw = null, paddleProcessError = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const paddleResp = await fetch(PADDLE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(240000)  // 4 分钟，给大图充裕时间
+        });
+        if (paddleResp.ok) {
+          paddleRaw = await paddleResp.json();
+          if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; }
+          // Python 内部处理失败 → 不重试
+          paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
+          console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
+          if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
+          break;
+        }
+        console.warn(`[OCR] HTTP ${paddleResp.status} (尝试 ${attempt + 1}/${MAX_RETRIES})`);
+      } catch (e) {
+        console.error(`[OCR] 连接失败 (尝试 ${attempt + 1}/${MAX_RETRIES}):`, e.message);
+      }
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, RETRY_BASE_MS * Math.pow(2, attempt)));
+      }
+    }
+    return { record, paddleRaw, paddleProcessError };
+  });
+}
+
 // ── 字典缓存（减少长时间批处理中的 DB 查询）──
 const _dictCache = { heroNames: null, tacticNames: null, playerDicts: {} };
 const _DICT_CACHE_TTL_MS = 5 * 60 * 1000;  // 5 分钟
@@ -616,42 +663,9 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
 
     const { heroNames, tacticNames, playerNames, allianceNames } = await getCachedDicts(projectId);
 
-    let record = null, paddleRaw = null;
-
-    // ── 重试调用 PaddleOCR（仅在连接/超时失败时重试，处理错误不重试）──
-    // 区分两类错误：
-    //   503 = 服务不可达/超时 → 重试有意义
-    //   422 = Python 内部处理失败(ok:false) → 重试无意义，直接跳过
-    const MAX_PADDLE_RETRIES = 3;
-    const PADDLE_RETRY_BASE_MS = 2000;
-    let paddleProcessError = null; // Python 返回的处理错误详情
-    for (let attempt = 0; attempt < MAX_PADDLE_RETRIES; attempt++) {
-      try {
-        const body = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
-        if (labelConfig) body.labelConfig = labelConfig;
-        const paddleResp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000) });
-        if (paddleResp.ok) {
-          paddleRaw = await paddleResp.json();
-          if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; }
-          // Python 处理失败（ok:false）—— 不重试，记录原因直接跳出
-          paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
-          console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
-          if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
-          break; // 不重试
-        }
-        // HTTP 非 200 → 服务异常，重试
-        console.warn(`[OCR] HTTP ${paddleResp.status} (尝试 ${attempt + 1}/${MAX_PADDLE_RETRIES})`);
-        if (attempt < MAX_PADDLE_RETRIES - 1) {
-          await new Promise(r => setTimeout(r, PADDLE_RETRY_BASE_MS * Math.pow(2, attempt)));
-        }
-      } catch (e) {
-        // 连接失败/超时 → 服务不可达，重试
-        console.error(`[OCR] 连接失败 (尝试 ${attempt + 1}/${MAX_PADDLE_RETRIES}):`, e.message);
-        if (attempt < MAX_PADDLE_RETRIES - 1) {
-          await new Promise(r => setTimeout(r, PADDLE_RETRY_BASE_MS * Math.pow(2, attempt)));
-        }
-      }
-    }
+    const ocrBody = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
+    if (labelConfig) ocrBody.labelConfig = labelConfig;
+    const { record, paddleRaw, paddleProcessError } = await _callPaddleOcr(ocrBody, imageName);
 
     const pendingTactics = [];
     if (paddleRaw && paddleRaw.ok) {
@@ -979,19 +993,10 @@ async function _processOcrImageFile(filePath, imageName, projectId, userId) {
   const { heroNames, tacticNames, playerNames, allianceNames } = await getCachedDicts(projectId);
   const labelCfg = await _getLabelConfigForProject(projectId);
 
-  let record = null, paddleRaw = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const body = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
-      if (labelCfg) body.labelConfig = labelCfg;
-      const paddleResp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
-      if (paddleResp.ok) { paddleRaw = await paddleResp.json(); if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; } }
-      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
-    } catch (e) {
-      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
-      else throw e;
-    }
-  }
+  const ocrBody = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
+  if (labelCfg) ocrBody.labelConfig = labelCfg;
+  const { record, paddleRaw, paddleProcessError } = await _callPaddleOcr(ocrBody, imageName);
+  if (paddleProcessError) throw new Error(`图片处理失败: ${paddleProcessError}`);
   if (!record) throw new Error('OCR 服务不可用');
 
   const now = new Date();
