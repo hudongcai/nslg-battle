@@ -5,7 +5,7 @@
 启动: python ocr_paddle_service.py
 """
 
-import json, base64, io, re, os, sys
+import json, base64, io, re, os, sys, gc
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
@@ -46,6 +46,41 @@ SCALE = 2  # 预处理放大倍数
 print('初始化 PaddleOCR (PP-OCRv5) ...')
 _ocr = PaddleOCR(lang='ch', use_angle_cls=True, use_gpu=False, show_log=False)
 print('PaddleOCR ready')
+
+# ── 长时间运行稳定性 ─────────────────────────────────────────────────
+_request_count = 0
+_GC_INTERVAL = 50          # 每 N 次请求执行一次 gc.collect()
+_LOG_MAX_MB = 10           # 日志文件上限 MB
+_LOG_BACKUPS = 3           # 保留备份数
+
+def _rotate_log_if_needed(path):
+    """日志文件超过上限时自动轮转"""
+    if not os.path.exists(path):
+        return
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    if size_mb < _LOG_MAX_MB:
+        return
+    try:
+        for i in range(_LOG_BACKUPS - 1, -1, -1):
+            old = path + (f'.{i}' if i > 0 else '')
+            new = path + f'.{i + 1}'
+            if os.path.exists(old):
+                if i >= _LOG_BACKUPS - 1:
+                    os.remove(old)
+                else:
+                    os.rename(old, new)
+        os.rename(path, path + '.1')
+        print(f'[日志轮转] {path} 已轮转', file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f'[日志轮转] {path} 轮转失败: {e}', file=sys.stderr, flush=True)
+
+def _maybe_gc():
+    """每 N 次请求执行垃圾回收，防止内存累积"""
+    global _request_count
+    _request_count += 1
+    if _request_count % _GC_INTERVAL == 0:
+        collected = gc.collect()
+        print(f'[GC] 第 {_request_count} 次请求后 gc.collect(), 回收 {collected} 个对象', file=sys.stderr, flush=True)
 
 # ── 图片缓存（避免重复传输大图）────────────────────────────────────────
 _img_cache: dict = {}  # token -> (img_arr, img_w, img_h)
@@ -992,7 +1027,10 @@ def health():
 
 @app.post('/ocr')
 def paddle_ocr(req: OcrRequest):
+    img_arr = None
     try:
+        _maybe_gc()
+
         b64      = re.sub(r'^data:[^;]+;base64,', '', req.image)
         img_bytes = base64.b64decode(b64)
         img      = Image.open(io.BytesIO(img_bytes)).convert('RGB')
@@ -1025,6 +1063,8 @@ def paddle_ocr(req: OcrRequest):
             'result': record
         }
         log_path = os.path.join(_here, 'ocr_debug.log')
+        _rotate_log_if_needed(log_path)
+        _rotate_log_if_needed(_debug_log)
         with open(log_path, 'a', encoding='utf-8') as lf:
             lf.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
@@ -1032,6 +1072,11 @@ def paddle_ocr(req: OcrRequest):
     except Exception as e:
         import traceback
         return {'ok': False, 'error': str(e), 'trace': traceback.format_exc()}
+    finally:
+        # 显式释放大对象，辅助 GC
+        if img_arr is not None:
+            del img_arr
+        del b64, img_bytes, img
 
 
 # ── 图片预上传缓存接口 ─────────────────────────────────────────────

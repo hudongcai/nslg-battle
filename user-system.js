@@ -737,6 +737,8 @@ async function onLoginSuccess(){
   renderUserBar();
   // 更新导航权限显示
   updateNavByRole();
+  // 服务端文件夹监听面板（仅超管可见）
+  if(typeof svrWatchInit === 'function') svrWatchInit();
   // 异步从云端拉最新积分（管理员可能已调整），完成后刷新右上角显示
   if(currentUser && currentUser.phone && typeof getUserPoints === 'function'){
     getUserPoints(currentUser.phone).then(() => {

@@ -539,6 +539,49 @@ const PADDLE_TEST_URL = 'http://127.0.0.1:8003/test';
 const PADDLE_STARS_URL = 'http://127.0.0.1:8003/test-stars';
 const PADDLE_CACHE_IMG_URL = 'http://127.0.0.1:8003/cache-image';
 
+// ── 字典缓存（减少长时间批处理中的 DB 查询）──
+const _dictCache = { heroNames: null, tacticNames: null, playerDicts: {} };
+const _DICT_CACHE_TTL_MS = 5 * 60 * 1000;  // 5 分钟
+
+async function getCachedDicts(projectId) {
+  const now = Date.now();
+  // 英雄 & 战法字典（全局，很少变动）
+  if (!_dictCache.heroNames || (now - _dictCache.heroNames._ts) > _DICT_CACHE_TTL_MS) {
+    const [rows] = await pool.query('SELECT name FROM ocr_hero_dict ORDER BY id');
+    _dictCache.heroNames = { data: rows.map(r => r.name), _ts: now };
+  }
+  if (!_dictCache.tacticNames || (now - _dictCache.tacticNames._ts) > _DICT_CACHE_TTL_MS) {
+    const [rows] = await pool.query('SELECT name FROM ocr_tactic_dict ORDER BY id');
+    _dictCache.tacticNames = { data: rows.map(r => r.name), _ts: now };
+  }
+  // 项目玩家字典（按 projectId 缓存）
+  const pid = projectId || 0;
+  const pc = _dictCache.playerDicts[pid];
+  if (!pc || (now - pc._ts) > _DICT_CACHE_TTL_MS) {
+    if (projectId) {
+      const [rows] = await pool.query(
+        'SELECT DISTINCT player_name, alliance_name FROM project_player_dict WHERE project_id = ? AND (player_name != \'\' OR alliance_name != \'\')',
+        [projectId]
+      );
+      _dictCache.playerDicts[pid] = {
+        data: {
+          playerNames: [...new Set(rows.map(r => r.player_name).filter(Boolean))],
+          allianceNames: [...new Set(rows.map(r => r.alliance_name).filter(Boolean))],
+        },
+        _ts: now,
+      };
+    } else {
+      _dictCache.playerDicts[pid] = { data: { playerNames: [], allianceNames: [] }, _ts: now };
+    }
+  }
+  return {
+    heroNames: _dictCache.heroNames.data,
+    tacticNames: _dictCache.tacticNames.data,
+    playerNames: _dictCache.playerDicts[pid].data.playerNames,
+    allianceNames: _dictCache.playerDicts[pid].data.allianceNames,
+  };
+}
+
 app.post('/api/ocr-paddle', requireActiveUser, async (req, res) => {
   try {
     const { image, labelConfig } = req.body;
@@ -571,23 +614,44 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
     if ((uRows[0].credit_balance || 0) <= 0) return res.json({ code: 402, message: '积分不足' });
     const cleanImage = image.replace(/^data:[^;]+;base64,/, '');
 
-    const [[heroRows], [tacticRows], [playerRows]] = await Promise.all([
-      pool.query('SELECT name FROM ocr_hero_dict ORDER BY id'),
-      pool.query('SELECT name FROM ocr_tactic_dict ORDER BY id'),
-      projectId ? pool.query('SELECT DISTINCT player_name, alliance_name FROM project_player_dict WHERE project_id = ? AND (player_name != \'\' OR alliance_name != \'\')', [projectId]) : Promise.resolve([[]])
-    ]);
-    const heroNames = heroRows.map(r => r.name);
-    const tacticNames = tacticRows.map(r => r.name);
-    const playerNames = !Array.isArray(playerRows) ? [] : [...new Set(playerRows.map(r => r.player_name).filter(Boolean))];
-    const allianceNames = !Array.isArray(playerRows) ? [] : [...new Set(playerRows.map(r => r.alliance_name).filter(Boolean))];
+    const { heroNames, tacticNames, playerNames, allianceNames } = await getCachedDicts(projectId);
 
     let record = null, paddleRaw = null;
-    try {
-      const body = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
-      if (labelConfig) body.labelConfig = labelConfig;
-      const paddleResp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
-      if (paddleResp.ok) { paddleRaw = await paddleResp.json(); if (paddleRaw.ok) record = mapPaddleResult(paddleRaw); }
-    } catch (e) { console.error('[OCR] 请求异常:', e.message); }
+
+    // ── 重试调用 PaddleOCR（仅在连接/超时失败时重试，处理错误不重试）──
+    // 区分两类错误：
+    //   503 = 服务不可达/超时 → 重试有意义
+    //   422 = Python 内部处理失败(ok:false) → 重试无意义，直接跳过
+    const MAX_PADDLE_RETRIES = 3;
+    const PADDLE_RETRY_BASE_MS = 2000;
+    let paddleProcessError = null; // Python 返回的处理错误详情
+    for (let attempt = 0; attempt < MAX_PADDLE_RETRIES; attempt++) {
+      try {
+        const body = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
+        if (labelConfig) body.labelConfig = labelConfig;
+        const paddleResp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000) });
+        if (paddleResp.ok) {
+          paddleRaw = await paddleResp.json();
+          if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; }
+          // Python 处理失败（ok:false）—— 不重试，记录原因直接跳出
+          paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
+          console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
+          if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
+          break; // 不重试
+        }
+        // HTTP 非 200 → 服务异常，重试
+        console.warn(`[OCR] HTTP ${paddleResp.status} (尝试 ${attempt + 1}/${MAX_PADDLE_RETRIES})`);
+        if (attempt < MAX_PADDLE_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, PADDLE_RETRY_BASE_MS * Math.pow(2, attempt)));
+        }
+      } catch (e) {
+        // 连接失败/超时 → 服务不可达，重试
+        console.error(`[OCR] 连接失败 (尝试 ${attempt + 1}/${MAX_PADDLE_RETRIES}):`, e.message);
+        if (attempt < MAX_PADDLE_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, PADDLE_RETRY_BASE_MS * Math.pow(2, attempt)));
+        }
+      }
+    }
 
     const pendingTactics = [];
     if (paddleRaw && paddleRaw.ok) {
@@ -595,6 +659,9 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
         if (typeof t === 'string' && t.startsWith('待确认:')) { const raw = t.slice(4).trim(); if (raw) pendingTactics.push(raw); }
       }
     }
+    // 处理失败（Python 内部错误）→ 422，前端立即跳过不重试
+    if (paddleProcessError) return res.json({ code: 422, message: `图片处理失败: ${paddleProcessError}` });
+    // 服务不可达 → 503，前端可重试
     if (!record) return res.json({ code: 503, message: 'OCR 服务不可用，请检查本地 PaddleOCR 是否正在运行' });
 
     const now = new Date();
@@ -876,4 +943,185 @@ app.post('/api/ocr-preview/test-stars', requireSuperAdmin, async (req, res) => {
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
-app.listen(PORT, async () => { await initDB(); console.log(`🚀 服务运行在 http://localhost:${PORT}`); });
+// ========== 服务端文件夹监听（不依赖浏览器，48小时稳定运行）==========
+const FOLDER_WATCH_CONFIG_PATH = path.join(__dirname, 'folder_watch_config.json');
+
+function loadFolderWatchConfig() {
+  try {
+    if (fs.existsSync(FOLDER_WATCH_CONFIG_PATH))
+      return JSON.parse(fs.readFileSync(FOLDER_WATCH_CONFIG_PATH, 'utf8'));
+  } catch (e) {}
+  return { enabled: false, folderPath: '', projectId: null, ownerPhone: '', intervalSec: 10 };
+}
+
+function saveFolderWatchConfig(cfg) {
+  fs.writeFileSync(FOLDER_WATCH_CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+const folderWatchState = { running: false, timer: null, lastScanAt: null, processedCount: 0, errorCount: 0, pendingFiles: 0, lastError: null };
+
+async function _getLabelConfigForProject(projectId) {
+  const pid = projectId || 0;
+  const [rows] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = ? LIMIT 1', [pid]);
+  if (rows.length && rows[0].categories_json) {
+    try { return JSON.parse(rows[0].categories_json); } catch (e) {}
+  }
+  if (pid !== 0) {
+    const [g] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = 0 LIMIT 1');
+    if (g.length && g[0].categories_json) { try { return JSON.parse(g[0].categories_json); } catch (e) {} }
+  }
+  return null;
+}
+
+async function _processOcrImageFile(filePath, imageName, projectId, userId) {
+  const imageBuffer = await fs.promises.readFile(filePath);
+  const cleanImage = imageBuffer.toString('base64');
+  const { heroNames, tacticNames, playerNames, allianceNames } = await getCachedDicts(projectId);
+  const labelCfg = await _getLabelConfigForProject(projectId);
+
+  let record = null, paddleRaw = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const body = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
+      if (labelCfg) body.labelConfig = labelCfg;
+      const paddleResp = await fetch(PADDLE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
+      if (paddleResp.ok) { paddleRaw = await paddleResp.json(); if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; } }
+      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+    } catch (e) {
+      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+      else throw e;
+    }
+  }
+  if (!record) throw new Error('OCR 服务不可用');
+
+  const now = new Date();
+  record.battleDate = now.toISOString().split('T')[0];
+  const fv = v => (v && v !== '') ? v : null;
+  const insertParams = [
+    projectId || null, record.leftPlayer || '', record.rightPlayer || '',
+    record.result || '', record.battleDate, '',
+    fv(record.leftLoss), fv(record.rightLoss), fv(record.leftTotal), fv(record.rightTotal),
+    record.leftLossRate ?? null, record.rightLossRate ?? null,
+    fv(record.leftFormation), fv(record.rightFormation), fv(record.leftAlliance), fv(record.rightAlliance),
+    fv(record.leftGeneral1), fv(record.leftGeneral2), fv(record.leftGeneral3),
+    fv(record.rightGeneral1), fv(record.rightGeneral2), fv(record.rightGeneral3),
+    fv(record.leftTactic1_1), fv(record.leftTactic1_2), fv(record.leftTactic1_3),
+    fv(record.leftTactic2_1), fv(record.leftTactic2_2), fv(record.leftTactic2_3),
+    fv(record.leftTactic3_1), fv(record.leftTactic3_2), fv(record.leftTactic3_3),
+    fv(record.rightTactic1_1), fv(record.rightTactic1_2), fv(record.rightTactic1_3),
+    fv(record.rightTactic2_1), fv(record.rightTactic2_2), fv(record.rightTactic2_3),
+    fv(record.rightTactic3_1), fv(record.rightTactic3_2), fv(record.rightTactic3_3),
+    record.leftGeneral1Stars ?? 0, record.leftGeneral2Stars ?? 0, record.leftGeneral3Stars ?? 0,
+    record.rightGeneral1Stars ?? 0, record.rightGeneral2Stars ?? 0, record.rightGeneral3Stars ?? 0,
+    userId, 1, now, now
+  ];
+  const [ins] = await pool.query(
+    'INSERT INTO battle_records (project_id, attacker_name, enemy_name, result, battle_date, description, left_loss, right_loss, left_total, right_total, left_loss_rate, right_loss_rate, left_formation, right_formation, left_alliance, right_alliance, left_general_1, left_general_2, left_general_3, right_general_1, right_general_2, right_general_3, left_tactic_1_1, left_tactic_1_2, left_tactic_1_3, left_tactic_2_1, left_tactic_2_2, left_tactic_2_3, left_tactic_3_1, left_tactic_3_2, left_tactic_3_3, right_tactic_1_1, right_tactic_1_2, right_tactic_1_3, right_tactic_2_1, right_tactic_2_2, right_tactic_2_3, right_tactic_3_1, right_tactic_3_2, right_tactic_3_3, left_general_1_stars, left_general_2_stars, left_general_3_stars, right_general_1_stars, right_general_2_stars, right_general_3_stars, created_by, status, created_at, updated_at) VALUES (' + insertParams.map(() => '?').join(',') + ')',
+    insertParams
+  );
+  const newId = ins.insertId;
+  await pool.query('INSERT INTO battle_gallery (project_id, battle_id, image_data, original_name, file_size, uploaded_by, created_at, updated_at) VALUES (?,?,?,?,?,?,NOW(),NOW())', [projectId || null, newId, imageBuffer, imageName, imageBuffer.length, userId]);
+  await pool.query('UPDATE users SET credit_balance = credit_balance - 1 WHERE id = ?', [userId]);
+  await pool.query('INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) SELECT ?, -1, credit_balance, ?, ?, ?, NOW() FROM users WHERE id = ?', [userId, 'consume', `服务端OCR: ${imageName}`, userId, userId]);
+  if (paddleRaw && paddleRaw.ok) {
+    for (const t of [...(paddleRaw.leftTactics || []), ...(paddleRaw.rightTactics || [])]) {
+      if (typeof t === 'string' && t.startsWith('待确认:')) { const raw = t.slice(4).trim(); if (raw) await pool.query(`INSERT INTO ocr_tactic_pending (raw_text, detect_count, source_battle_id, status, created_at) VALUES (?, 1, ?, 'pending', NOW()) ON DUPLICATE KEY UPDATE detect_count = detect_count + 1`, [raw, newId]); }
+    }
+  }
+  return newId;
+}
+
+async function _scanFolderOnce() {
+  const cfg = loadFolderWatchConfig();
+  if (!cfg.folderPath || !cfg.ownerPhone) return;
+  const [uRows] = await pool.query('SELECT id, credit_balance FROM users WHERE phone = ? AND status = 1 LIMIT 1', [cfg.ownerPhone]);
+  if (!uRows.length) { folderWatchState.lastError = '配置用户不存在'; return; }
+  const { id: userId, credit_balance } = uRows[0];
+  if ((credit_balance || 0) <= 0) { folderWatchState.lastError = '积分不足，自动停止'; stopFolderWatch(); return; }
+
+  let files;
+  try { files = (await fs.promises.readdir(cfg.folderPath)).filter(f => /\.(png|jpg|jpeg)$/i.test(f)); }
+  catch (e) { folderWatchState.lastError = '读取文件夹失败: ' + e.message; return; }
+
+  const pending = [];
+  for (const name of files) {
+    const [ex] = await pool.query('SELECT id FROM battle_gallery WHERE original_name = ? LIMIT 1', [name]);
+    if (!ex.length) pending.push(name);
+  }
+  folderWatchState.lastScanAt = new Date().toISOString();
+  folderWatchState.pendingFiles = pending.length;
+
+  for (const name of pending) {
+    if (!folderWatchState.running) break;
+    try {
+      await _processOcrImageFile(path.join(cfg.folderPath, name), name, cfg.projectId, userId);
+      folderWatchState.processedCount++;
+      folderWatchState.pendingFiles = Math.max(0, folderWatchState.pendingFiles - 1);
+      folderWatchState.lastError = null;
+      console.log(`[FolderWatch] ✅ ${name}`);
+    } catch (e) {
+      folderWatchState.errorCount++;
+      folderWatchState.lastError = `${name}: ${e.message}`;
+      console.error(`[FolderWatch] ❌ ${name}:`, e.message);
+    }
+  }
+}
+
+function startFolderWatch() {
+  if (folderWatchState.running) return;
+  const cfg = loadFolderWatchConfig();
+  if (!cfg.folderPath) return;
+  folderWatchState.running = true;
+  const iv = Math.max(5, cfg.intervalSec || 10) * 1000;
+  const tick = async () => { if (!folderWatchState.running) return; try { await _scanFolderOnce(); } catch (e) { console.error('[FolderWatch]', e.message); } };
+  tick();
+  folderWatchState.timer = setInterval(tick, iv);
+  console.log(`[FolderWatch] 启动 路径=${cfg.folderPath} 间隔=${iv / 1000}s`);
+}
+
+function stopFolderWatch() {
+  folderWatchState.running = false;
+  if (folderWatchState.timer) { clearInterval(folderWatchState.timer); folderWatchState.timer = null; }
+  console.log('[FolderWatch] 已停止');
+}
+
+app.get('/api/folder-watch/status', requireSuperAdmin, (req, res) => {
+  const cfg = loadFolderWatchConfig();
+  res.json({ code: 200, data: { config: cfg, state: { running: folderWatchState.running, lastScanAt: folderWatchState.lastScanAt, processedCount: folderWatchState.processedCount, errorCount: folderWatchState.errorCount, pendingFiles: folderWatchState.pendingFiles, lastError: folderWatchState.lastError } } });
+});
+
+app.post('/api/folder-watch/config', requireSuperAdmin, (req, res) => {
+  const cfg = loadFolderWatchConfig();
+  const { folderPath, projectId, ownerPhone, intervalSec } = req.body;
+  if (folderPath !== undefined) cfg.folderPath = folderPath;
+  if (projectId !== undefined) cfg.projectId = projectId;
+  if (ownerPhone !== undefined) cfg.ownerPhone = ownerPhone;
+  if (intervalSec !== undefined) cfg.intervalSec = Math.max(5, parseInt(intervalSec) || 10);
+  saveFolderWatchConfig(cfg);
+  if (folderWatchState.running) { stopFolderWatch(); startFolderWatch(); }
+  res.json({ code: 200, data: cfg });
+});
+
+app.post('/api/folder-watch/start', requireSuperAdmin, (req, res) => {
+  const cfg = loadFolderWatchConfig();
+  if (!cfg.folderPath) return res.json({ code: 400, message: '请先配置文件夹路径' });
+  if (!cfg.ownerPhone) return res.json({ code: 400, message: '请先配置处理账号' });
+  cfg.enabled = true; saveFolderWatchConfig(cfg);
+  startFolderWatch();
+  res.json({ code: 200, message: '已启动' });
+});
+
+app.post('/api/folder-watch/stop', requireSuperAdmin, (req, res) => {
+  const cfg = loadFolderWatchConfig();
+  cfg.enabled = false; saveFolderWatchConfig(cfg);
+  stopFolderWatch();
+  res.json({ code: 200, message: '已停止' });
+});
+
+app.listen(PORT, async () => {
+  await initDB();
+  console.log(`🚀 服务运行在 http://localhost:${PORT}`);
+  // 若上次已开启监听，自动恢复
+  const _fwCfg = loadFolderWatchConfig();
+  if (_fwCfg.enabled && _fwCfg.folderPath) { startFolderWatch(); }
+});

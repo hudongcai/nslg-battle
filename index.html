@@ -504,7 +504,7 @@ document.addEventListener('click', function(e) {
   <div style="flex-shrink:0;width:80px;"></div>
 </div>
 
-<div class="main" id="mainApp">
+<div class="main" id="mainApp" style="display:none">
 
   <!-- Tab 1: 战报导入 -->
   <div id="tab-data" class="tab-content">
@@ -526,6 +526,34 @@ document.addEventListener('click', function(e) {
           <button class="btn btn-sm btn-primary" id="btnFolderWatch" onclick="toggleFolderWatch()" disabled>▶ 启动</button>
         </div>
         <div id="folderWatchStats" style="display:none;margin-top:6px;font-size:11px;color:var(--text3);">已处理 <span id="folderProcessedCount">0</span> 张 · 本次新增 <span id="folderNewCount">0</span> 张</div>
+      </div>
+      <!-- 服务端自动处理（不依赖浏览器，刷新后状态持久） -->
+      <div id="svrWatchPanel" style="margin-top:10px;padding:12px 14px;background:var(--bg2);border-radius:8px;border:1px solid rgba(99,179,237,0.25);display:none;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:700;color:var(--accent);">🖥️ 服务端自动处理</span>
+          <span id="svrWatchStatus" style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--text3);">加载中...</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto;">不依赖浏览器 · 重启恢复 · 适合48h连续运行</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:200px;">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">监听文件夹路径</div>
+            <input id="svrWatchPath" type="text" placeholder="如 C:\AutoScreenshotTool2\Screenshots"
+              style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);">
+          </div>
+          <div style="width:100px;">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">间隔(秒)</div>
+            <input id="svrWatchInterval" type="number" min="5" max="300" value="10"
+              style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);">
+          </div>
+          <button class="btn btn-sm btn-secondary" onclick="saveSvrWatchConfig()" style="height:28px;">保存配置</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <button class="btn btn-sm btn-primary" id="btnSvrWatchStart" onclick="svrWatchStart()">▶ 启动</button>
+          <button class="btn btn-sm btn-danger" id="btnSvrWatchStop" onclick="svrWatchStop()" style="display:none;">⏹ 停止</button>
+          <span style="font-size:11px;color:var(--text3);">已处理 <b id="svrWatchProcessed" style="color:var(--accent)">0</b> 张 · 错误 <b id="svrWatchErrors" style="color:var(--red)">0</b> 张 · 待处理 <b id="svrWatchPending">0</b> 张</span>
+        </div>
+        <div id="svrWatchLastScan" style="font-size:10px;color:var(--text3);"></div>
+        <div id="svrWatchLastError" style="font-size:10px;color:var(--red);margin-top:2px;"></div>
       </div>
       <div id="queueArea" style="display:none;margin-top:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -1767,7 +1795,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 
 </div><!-- 关闭 mainApp -->
 <!-- 登录首页（全屏） -->
-<div id="loginPage" class="login-page">
+<div id="loginPage" class="login-page" style="display:none">
   <div class="login-card">
     <div class="login-brand">
       <h1>🔒 真武团战报分析</h1>
@@ -2068,6 +2096,21 @@ async function appInit(){
   document.body.addEventListener('dragover',function(e){if(e.dataTransfer&&e.dataTransfer.files.length>0)e.preventDefault();});
   document.body.addEventListener('drop',function(e){if(e.dataTransfer&&e.dataTransfer.files.length>0){e.preventDefault();if(document.getElementById('tab-data')&&document.getElementById('tab-data').classList.contains('active'))handleBatchUpload(e.dataTransfer.files);}});
 }
+// 同步预判：有 session 直接显示主界面，避免登录页闪烁
+(function(){
+  var hasSession = !!localStorage.getItem('sm_session');
+  if (hasSession) {
+    var m = document.getElementById('mainApp');
+    var h = document.querySelector('.header');
+    var n = document.getElementById('topNav');
+    if (m) m.style.display = '';
+    if (h) h.style.display = '';
+    if (n) n.style.display = '';
+  } else {
+    var l = document.getElementById('loginPage');
+    if (l) l.style.display = 'flex';
+  }
+})();
 appInit();
 </script>
 <script>
