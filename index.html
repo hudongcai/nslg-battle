@@ -309,6 +309,70 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
   .project-grid{padding:10px !important;}
   /* 积分商城 */
   .points-insufficient-panel{padding:20px 16px;}
+
+  /* ===== 克制分析页面竖版适配 ===== */
+
+  /* 隐藏与表格列对齐的固定宽度搜索行（让主搜索框正常显示） */
+  #tab-winrate .card>div[style*="white-space:nowrap"]{display:none !important;}
+
+  /* 敌方高频队伍表 → 卡片 */
+  #efTableWrap{overflow:visible !important;border:none !important;max-height:none !important;background:transparent;}
+  #efTable{min-width:0 !important;width:100% !important;}
+  #efTable thead{display:none;}
+  #efTable tbody tr{
+    display:block;padding:10px 12px;margin-bottom:8px;
+    background:var(--bg2);border-radius:8px;border:1px solid var(--border);
+  }
+  #efTable tbody td{display:block;padding:3px 0;border:none;font-size:12px;}
+  /* 排名 */
+  #efTable tbody td:nth-child(1){display:flex;align-items:center;gap:6px;padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:4px;}
+  #efTable tbody td:nth-child(1)::before{content:"排名";font-size:10px;color:var(--text3);flex-shrink:0;}
+  /* 队伍配置：label在上 */
+  #efTable tbody td:nth-child(2)::before{content:"队伍配置";display:block;font-size:10px;color:var(--text3);font-weight:bold;margin-bottom:4px;}
+  /* 阵型 */
+  #efTable tbody td:nth-child(3){display:flex;align-items:center;gap:6px;margin-top:4px;}
+  #efTable tbody td:nth-child(3)::before{content:"阵型";font-size:10px;color:var(--text3);flex-shrink:0;min-width:28px;}
+  /* 次数+占比+战绩+胜率：横排一行 */
+  #efTable tbody td:nth-child(4),
+  #efTable tbody td:nth-child(5),
+  #efTable tbody td:nth-child(6),
+  #efTable tbody td:nth-child(7){display:inline-flex;align-items:center;gap:4px;margin-right:10px;margin-top:4px;vertical-align:middle;}
+  #efTable tbody td:nth-child(4)::before{content:"次数 ";font-size:10px;color:var(--text3);}
+  #efTable tbody td:nth-child(5)::before{content:"占比 ";font-size:10px;color:var(--text3);}
+  #efTable tbody td:nth-child(6)::before{content:"";} /* 胜败平已有自己的彩色文字 */
+  #efTable tbody td:nth-child(7)::before{content:"胜率 ";font-size:10px;color:var(--text3);}
+  /* 占比进度条：缩短 */
+  #efTable tbody td:nth-child(5) div[style*="min-width:60px"]{min-width:40px !important;}
+
+  /* 队伍克制关系表 → 卡片 */
+  #wrTableWrap{overflow:visible !important;border:none !important;max-height:none !important;background:transparent;}
+  #winRateTable{min-width:0 !important;width:100% !important;}
+  #winRateTable thead{display:none;}
+  #winRateTable tbody tr{
+    display:block;padding:10px 12px;margin-bottom:8px;
+    background:var(--bg2);border-radius:8px;border:1px solid var(--border);
+  }
+  #winRateTable tbody td{display:block;padding:3px 0;border:none;font-size:12px;white-space:normal !important;}
+  /* 溯源+胜率+战损比+场次：顶部一行 */
+  #winRateTable tbody td:nth-child(1),
+  #winRateTable tbody td:nth-child(4),
+  #winRateTable tbody td:nth-child(5),
+  #winRateTable tbody td:nth-child(6){display:inline-flex;align-items:center;gap:4px;margin-right:8px;margin-bottom:6px;vertical-align:middle;}
+  #winRateTable tbody td:nth-child(4)::before{content:"胜率 ";font-size:10px;color:var(--text3);}
+  #winRateTable tbody td:nth-child(5)::before{content:"战损 ";font-size:10px;color:var(--text3);}
+  #winRateTable tbody td:nth-child(6)::before{content:"场次 ";font-size:10px;color:var(--text3);}
+  /* 胜方队伍：label醒目 */
+  #winRateTable tbody td:nth-child(2){border-top:1px solid var(--border);padding-top:6px;}
+  #winRateTable tbody td:nth-child(2)::before{content:"⚔ 胜方队伍";display:block;font-size:10px;color:var(--green);font-weight:bold;margin-bottom:4px;}
+  /* 胜方阵型 */
+  #winRateTable tbody td:nth-child(3){display:flex;align-items:center;gap:6px;margin-top:2px;}
+  #winRateTable tbody td:nth-child(3)::before{content:"阵型";font-size:10px;color:var(--text3);flex-shrink:0;min-width:28px;}
+  /* 败方队伍：label醒目 */
+  #winRateTable tbody td:nth-child(7){border-top:1px solid var(--border);padding-top:6px;margin-top:4px;}
+  #winRateTable tbody td:nth-child(7)::before{content:"🛡 败方队伍";display:block;font-size:10px;color:var(--red);font-weight:bold;margin-bottom:4px;}
+  /* 败方阵型 */
+  #winRateTable tbody td:nth-child(8){display:flex;align-items:center;gap:6px;margin-top:2px;}
+  #winRateTable tbody td:nth-child(8)::before{content:"阵型";font-size:10px;color:var(--text3);flex-shrink:0;min-width:28px;}
 }
 @media(max-width:480px){
   .main{padding:8px 6px;}
