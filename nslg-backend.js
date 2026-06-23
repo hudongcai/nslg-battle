@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const XLSX = require('xlsx');
+const os = require('os');
 const { mapPaddleResult } = require('./ocr-parser');
 
 const app = express();
@@ -541,9 +542,39 @@ const PADDLE_CACHE_IMG_URL = 'http://127.0.0.1:8003/cache-image';
 
 // ── OCR 全局串行锁（防止并发调用 PaddleOCR 撑爆内存）──
 // PaddleOCR 单进程处理一张图约用 1-2 GB；并发两路直接 OOM 死机
+const OCR_QUEUE_LIMIT = 5;      // 最多允许 N 个任务在队列里等待
+const OCR_COOLDOWN_MS = 3000;   // 每张图处理完后冷却 3 秒让内存回收
+const OCR_MEM_THRESHOLD = 0.88; // 可用内存低于总量 12% 时暂停等待
 let _ocrLockPromise = Promise.resolve();
-function withOcrLock(fn) {
-  const next = _ocrLockPromise.then(() => fn());
+let _ocrQueueDepth = 0;
+
+// 等到内存充裕再继续（最多等 60 秒）
+async function _waitForMemory(imageName) {
+  const total = os.totalmem();
+  for (let i = 0; i < 12; i++) {
+    const usedRatio = (total - os.freemem()) / total;
+    if (usedRatio < OCR_MEM_THRESHOLD) return;
+    console.warn(`[OCR] 内存占用 ${(usedRatio * 100).toFixed(1)}%，等待 5s 后继续 文件=${imageName}`);
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  console.warn(`[OCR] 内存等待超时，强制继续 文件=${imageName}`);
+}
+
+function withOcrLock(fn, imageName) {
+  if (_ocrQueueDepth >= OCR_QUEUE_LIMIT) {
+    return Promise.reject(Object.assign(new Error('OCR队列已满，请稍后重试'), { code: 'OCR_QUEUE_FULL' }));
+  }
+  _ocrQueueDepth++;
+  const next = _ocrLockPromise.then(async () => {
+    await _waitForMemory(imageName);
+    try {
+      return await fn();
+    } finally {
+      // 任务完成后冷却，让 Python GC 有时间回收内存
+      await new Promise(r => setTimeout(r, OCR_COOLDOWN_MS));
+      _ocrQueueDepth = Math.max(0, _ocrQueueDepth - 1);
+    }
+  });
   _ocrLockPromise = next.catch(() => {});
   return next;
 }
@@ -583,7 +614,7 @@ async function _callPaddleOcr(body, imageName) {
       }
     }
     return { record, paddleRaw, paddleProcessError };
-  });
+  }, imageName);
 }
 
 // ── 字典缓存（减少长时间批处理中的 DB 查询）──
@@ -665,7 +696,14 @@ app.post('/api/battles/ocr-upload', requireActiveUser, async (req, res) => {
 
     const ocrBody = { image: cleanImage, heroNames, tacticNames, playerNames, allianceNames };
     if (labelConfig) ocrBody.labelConfig = labelConfig;
-    const { record, paddleRaw, paddleProcessError } = await _callPaddleOcr(ocrBody, imageName);
+    let ocrResult;
+    try {
+      ocrResult = await _callPaddleOcr(ocrBody, imageName);
+    } catch (e) {
+      if (e.code === 'OCR_QUEUE_FULL') return res.json({ code: 429, message: 'OCR队列已满，请稍后重试' });
+      throw e;
+    }
+    const { record, paddleRaw, paddleProcessError } = ocrResult;
 
     const pendingTactics = [];
     if (paddleRaw && paddleRaw.ok) {
