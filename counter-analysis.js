@@ -1604,10 +1604,10 @@ ${clone.innerHTML}
 
       /* ---- 矩阵表 ---- */
       .ca-mx-wrap{overflow-x:auto;}
-      .ca-mx-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+      .ca-mx-tbl{width:auto;min-width:100%;border-collapse:collapse;font-size:12px;table-layout:auto;}
       .ca-mx-tbl th,.ca-mx-tbl td{border:1px solid var(--border,#2a2a3e);padding:4px 6px;vertical-align:middle;}
-      .ca-mx-left-head{background:var(--bg2,#111122);color:#888;font-size:11px;text-align:center;font-weight:500;white-space:nowrap;}
-      .ca-mx-col-head{background:var(--bg2,#111122);text-align:center;vertical-align:top;padding:6px 4px;}
+      .ca-mx-left-head{background:var(--bg2,#111122);color:#888;font-size:11px;text-align:center;font-weight:500;white-space:nowrap;min-width:70px;}
+      .ca-mx-col-head{background:var(--bg2,#111122);text-align:center;vertical-align:top;padding:6px 4px;min-width:90px;}
       .ca-mx-rank{color:#555;font-size:10px;margin-bottom:3px;}
       .ca-mx-gen{font-size:11px;white-space:nowrap;font-weight:600;line-height:1.5;}
       .ca-mx-count-row th{background:var(--bg,#0a0a1a);}
@@ -1629,7 +1629,7 @@ ${clone.innerHTML}
       .ca-mx-sum-type-rel{color:#f39c12;}
       .ca-mx-sum-note{font-size:9px;font-weight:400;color:#555;margin-top:2px;}
       .ca-mx-sum-data{background:var(--bg,#0a0a1a);padding:5px 6px;vertical-align:top;text-align:center;}
-      .ca-mx-sum-item{font-size:10px;color:#bbb;line-height:1.7;white-space:nowrap;}
+      .ca-mx-sum-item{font-size:10px;color:#bbb;line-height:1.7;white-space:normal;}
       .ca-mx-sum-abs{color:#2ecc71;font-weight:700;margin-left:4px;}
       .ca-mx-sum-rel{color:#f39c12;font-weight:700;margin-left:4px;}
 
