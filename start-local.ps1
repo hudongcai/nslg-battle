@@ -51,7 +51,7 @@ if (-not $NoTunnel) {
         Write-Host "[3/4] Cloudflare 隧道已在运行" -ForegroundColor Green
     } elseif (Test-Path $cfExe) {
         Write-Host "[3/4] 启动 Cloudflare 隧道..." -ForegroundColor Green
-        Start-Process powershell -ArgumentList "-NoExit", "-Command", "& '$cfExe' tunnel --config '$cfConfig' run" -WindowStyle Minimized
+        Start-Process -FilePath $cfExe -ArgumentList "tunnel", "--config", $cfConfig, "run" -WindowStyle Hidden
         Start-Sleep -Seconds 4
         if (Get-Process cloudflared -ErrorAction SilentlyContinue) {
             Write-Host "      OK  api.zhenwu.fun -> localhost:3000" -ForegroundColor Green
