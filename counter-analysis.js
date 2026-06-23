@@ -954,13 +954,13 @@
           <span class="ca-rec-sort-spacer"></span>
         </div>
       </div>
-      <div style="display:flex;align-items:center;background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);border-top:none;padding:6px 14px;">
-        <div style="flex:0 0 33.333%;min-width:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+      <div class="ca-rec-sub-filter">
+        <div class="ca-rec-sub-filter-col">
           <span style="font-size:11px;color:#777;white-space:nowrap;flex-shrink:0;">均红：</span>
           ${enemyFilterHtml}
         </div>
-        <div style="flex:0 0 26px;"></div>
-        <div style="flex:1 1 0;min-width:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+        <div style="flex:0 0 26px;" class="ca-rec-sub-filter-spacer"></div>
+        <div class="ca-rec-sub-filter-col">
           <span style="font-size:11px;color:#777;white-space:nowrap;flex-shrink:0;">均红：</span>
           ${counterFilterHtml}
         </div>
@@ -1596,6 +1596,12 @@ ${clone.innerHTML}
 	      .ca-rec-sort-btn:hover{background:rgba(255,255,255,.06);color:#ccc;}
 	      .ca-rec-sort-spacer{flex:1 1 0;min-width:0;}
 
+      /* ---- 均红筛选副行 ---- */
+      .ca-rec-sub-filter{display:flex;align-items:center;background:var(--bg2,#111122);border:1px solid var(--border,#2a2a3e);border-top:none;padding:6px 14px;}
+      .ca-rec-sub-filter-col{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;}
+      .ca-rec-sub-filter-col:first-child{flex:0 0 33.333%;}
+      .ca-rec-sub-filter-col:last-child{flex:1 1 0;}
+
       /* ---- 矩阵表 ---- */
       .ca-mx-wrap{overflow-x:auto;}
       .ca-mx-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
@@ -1687,6 +1693,15 @@ ${clone.innerHTML}
 
         /* 通用表格：触控滚动 */
         .ca-tbl-wrap{-webkit-overflow-scrolling:touch;}
+
+        /* 均红筛选副行：竖排两行 */
+        .ca-rec-sub-filter{flex-wrap:wrap;padding:6px 10px;gap:6px;}
+        .ca-rec-sub-filter-col:first-child{flex:1 1 100%;}
+        .ca-rec-sub-filter-col:last-child{flex:1 1 100%;}
+        .ca-rec-sub-filter-spacer{display:none;}
+
+        /* 矩阵表：触控滚动 */
+        .ca-mx-wrap{-webkit-overflow-scrolling:touch;}
       }
     `;
     document.head.appendChild(s);

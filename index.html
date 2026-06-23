@@ -296,6 +296,9 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
   .mall-grid{grid-template-columns:repeat(2,1fr) !important;}
   .mall-header{flex-direction:column;gap:8px;align-items:flex-start;}
   .mall-desc{text-align:left !important;}
+  /* 服务端自动处理卡片：头部换行 */
+  #svrWatchPanel>div:first-child{flex-wrap:wrap;}
+  #svrWatchPanel>div:first-child>span:last-child{margin-left:0 !important;width:100%;margin-top:2px;font-size:10px;}
   /* 溯源详情面板：去掉最小宽度 */
   .trace-panel{min-width:0 !important;width:calc(100vw - 16px) !important;}
   .trace-team{min-width:0 !important;flex:1 1 100%;}
