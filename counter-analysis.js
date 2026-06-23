@@ -1647,6 +1647,47 @@ ${clone.innerHTML}
       .ca-best-right-meta{flex:0 0 auto;font-size:11px;color:var(--text3,#888);white-space:nowrap;}
       .ca-best-score-big{color:var(--accent,#f0b429);font-size:14px;}
       .ca-best-detail-tbl{table-layout:fixed;}
+
+      /* ==================== 移动端适配 ==================== */
+      @media(max-width:768px){
+        /* 根容器 */
+        .ca-root{padding:8px 4px;}
+
+        /* 子标签导航 → 横向滚动，禁止换行 */
+        .ca-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;
+          scrollbar-width:none;padding-bottom:2px;}
+        .ca-tabs::-webkit-scrollbar{display:none;}
+        .ca-tab{flex-shrink:0;white-space:nowrap;padding:6px 10px;font-size:11px;}
+
+        /* 矩阵表：提示横屏 */
+        .ca-mx-wrap::before{content:"矩阵表较宽，建议横屏查看";display:block;
+          text-align:center;color:#777;font-size:11px;padding:6px 0 4px;font-style:italic;}
+
+        /* 克制推荐 Tab3/Tab6：敌方+克制方改竖排 */
+        .ca-rec-header{flex-wrap:wrap;gap:4px;padding:8px 10px;}
+        .ca-rec-header-left,.ca-rec-header-mid{flex:1 1 auto;text-align:left;}
+        .ca-rec-header-right{flex:1 1 100%;justify-content:flex-start;}
+        .ca-rec-arrow-spacer{display:none;}
+        .ca-rec-group{flex-direction:column;}
+        .ca-rec-enemy{flex:none;border-right:none;border-bottom:1px solid var(--border,#2a2a3e);}
+        .ca-rec-arrow{display:none;}
+        .ca-rec-counter{flex-direction:column;}
+        .ca-rec-counter-team{border-right:none;border-bottom:1px solid rgba(255,255,255,.04);}
+        .ca-rec-counter-stats{flex-wrap:wrap;gap:4px;padding:6px 10px;}
+        .ca-stat-item{flex:0 0 auto;min-width:70px;font-size:12px;}
+
+        /* Tab6 综合推荐：左右改上下 */
+        .ca-best-layout{flex-direction:column;gap:10px;}
+        .ca-best-left{flex:none;width:100%;}
+        .ca-best-right-header{flex-wrap:wrap;}
+
+        /* 导出按钮行：手机上折叠 */
+        .ca-hint-row{flex-wrap:wrap;}
+        .ca-hint-row-export{align-self:flex-start;}
+
+        /* 通用表格：触控滚动 */
+        .ca-tbl-wrap{-webkit-overflow-scrolling:touch;}
+      }
     `;
     document.head.appendChild(s);
   }
