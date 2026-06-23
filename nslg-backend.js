@@ -581,36 +581,58 @@ function withOcrLock(fn, imageName) {
 
 // ── 公共 PaddleOCR 调用（带串行锁 + 错误分类）──
 // 返回 { record, paddleRaw, paddleProcessError }
-// record 非 null 表示成功；paddleProcessError 非 null 表示 Python 内部错误（422）；
-// 两者均 null 表示服务不可达（503）
+// record 非 null 表示成功；paddleProcessError 非 null 表示 Python 内部错误；
+// 两者均 null 表示服务真正不可达（多次重连均失败）
+//
+// 重试策略分两层：
+//   连接失败（服务重启中）→ 每 10s 静默重连，最多等 90s（覆盖计划重启窗口）
+//   HTTP 错误（服务在跑但返回异常）→ 快速重试 3 次后报错
 async function _callPaddleOcr(body, imageName) {
   return withOcrLock(async () => {
-    const MAX_RETRIES = 3;
-    const RETRY_BASE_MS = 2000;
+    const CONNECT_RETRY_MS = 10000;   // 连接失败时每隔 10s 重试
+    const CONNECT_MAX_RETRIES = 9;    // 最多等 90s（覆盖 OCR 服务重启加载时间）
+    const HTTP_MAX_RETRIES = 3;       // HTTP 异常最多重试 3 次
+    const HTTP_RETRY_BASE_MS = 2000;
+
     let record = null, paddleRaw = null, paddleProcessError = null;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        const paddleResp = await fetch(PADDLE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(240000)  // 4 分钟，给大图充裕时间
-        });
-        if (paddleResp.ok) {
-          paddleRaw = await paddleResp.json();
-          if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; }
-          // Python 内部处理失败 → 不重试
-          paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
-          console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
-          if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
+
+    for (let ci = 0; ci < CONNECT_MAX_RETRIES; ci++) {
+      let connected = false;
+      for (let hi = 0; hi < HTTP_MAX_RETRIES; hi++) {
+        try {
+          const paddleResp = await fetch(PADDLE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(240000)
+          });
+          connected = true;
+          if (paddleResp.ok) {
+            paddleRaw = await paddleResp.json();
+            if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; }
+            // Python 内部处理失败 → 不重试
+            paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
+            console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
+            if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
+            break;
+          }
+          console.warn(`[OCR] HTTP ${paddleResp.status} (HTTP重试 ${hi + 1}/${HTTP_MAX_RETRIES}) 文件=${imageName}`);
+          if (hi < HTTP_MAX_RETRIES - 1) {
+            await new Promise(r => setTimeout(r, HTTP_RETRY_BASE_MS * Math.pow(2, hi)));
+          }
+        } catch (e) {
+          // 连接失败（服务不在线/正在重启）→ 跳出 HTTP 重试，进入连接等待
           break;
         }
-        console.warn(`[OCR] HTTP ${paddleResp.status} (尝试 ${attempt + 1}/${MAX_RETRIES})`);
-      } catch (e) {
-        console.error(`[OCR] 连接失败 (尝试 ${attempt + 1}/${MAX_RETRIES}):`, e.message);
       }
-      if (attempt < MAX_RETRIES - 1) {
-        await new Promise(r => setTimeout(r, RETRY_BASE_MS * Math.pow(2, attempt)));
+      // 已拿到结果（成功或 Python 内部错误）→ 退出
+      if (connected) break;
+      // 服务不可达，静默等待后重连
+      if (ci < CONNECT_MAX_RETRIES - 1) {
+        console.warn(`[OCR] 服务不可达，${CONNECT_RETRY_MS / 1000}s 后重连 (${ci + 1}/${CONNECT_MAX_RETRIES}) 文件=${imageName}`);
+        await new Promise(r => setTimeout(r, CONNECT_RETRY_MS));
+      } else {
+        console.error(`[OCR] 服务连接超时，已等待 ${CONNECT_RETRY_MS * CONNECT_MAX_RETRIES / 1000}s 文件=${imageName}`);
       }
     }
     return { record, paddleRaw, paddleProcessError };
