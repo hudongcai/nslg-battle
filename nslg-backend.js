@@ -1050,7 +1050,14 @@ async function _scanFolderOnce() {
 
   const pending = [];
   for (const name of files) {
-    const [ex] = await pool.query('SELECT id FROM battle_gallery WHERE original_name = ? LIMIT 1', [name]);
+    // 只有 battle_gallery 关联到真实 battle_records 才算"已OCR"，否则重新处理
+    const [ex] = await pool.query(
+      `SELECT bg.id FROM battle_gallery bg
+       INNER JOIN battle_records br ON bg.battle_id = br.id
+       WHERE bg.original_name = ?
+       LIMIT 1`,
+      [name]
+    );
     if (!ex.length) pending.push(name);
   }
   folderWatchState.lastScanAt = new Date().toISOString();
