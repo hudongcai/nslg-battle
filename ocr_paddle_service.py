@@ -5,7 +5,7 @@
 启动: python ocr_paddle_service.py
 """
 
-import json, base64, io, re, os, sys, gc
+import json, base64, io, re, os, sys, gc, threading, time
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
@@ -1568,5 +1568,19 @@ def test_stars(req: TestStarsRequest):
         return {'ok': False, 'error': str(e), 'logs': logs, 'trace': traceback.format_exc()}
 
 
+def _mem_watchdog_thread():
+    """后台线程：每 30s 主动检查系统内存，超过阈值时强制重启，不依赖请求触发"""
+    CHECK_INTERVAL = 30
+    while True:
+        time.sleep(CHECK_INTERVAL)
+        mem_pct = _sys_mem_pct()
+        if mem_pct >= _MEM_RESTART_PCT:
+            print(f'[MEM-WATCHDOG] 系统内存 {mem_pct}% >= {_MEM_RESTART_PCT}%，主动退出(42)让 watchdog 重启',
+                  file=sys.stderr, flush=True)
+            os._exit(42)  # 强制退出，不等待 uvicorn 优雅关闭（内存已告急）
+
 if __name__ == '__main__':
+    t = threading.Thread(target=_mem_watchdog_thread, daemon=True, name='mem-watchdog')
+    t.start()
+    print(f'[MEM-WATCHDOG] 后台内存监控已启动，阈值={_MEM_RESTART_PCT}%，检查间隔=30s', file=sys.stderr, flush=True)
     uvicorn.run(app, host='127.0.0.1', port=8003, log_level='warning')
