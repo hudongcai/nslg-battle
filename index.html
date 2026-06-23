@@ -280,6 +280,54 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .pkg-tool { border-color: rgba(81,207,102,.3); }
 .pkg-tool .pkg-label { color: var(--green); font-size: 11px; }
 .pkg-tool .pkg-note { color: var(--accent); font-size: 10px; }
+/* ===== 移动端适配 ===== */
+@media(max-width:768px){
+  .main{padding:12px 10px;}
+  .card{padding:14px 12px;margin-bottom:10px;}
+  /* 项目内子导航：换行布局 */
+  #projectSubNav{padding:10px 10px !important;gap:8px !important;flex-wrap:wrap !important;justify-content:flex-start !important;}
+  #projectSubNav>div[style*="flex:1"]{flex-wrap:wrap !important;gap:8px !important;justify-content:center !important;width:100%;}
+  #projectSubNav>div[style*="flex:1"]>button{min-width:0 !important;flex:1 !important;padding:8px 10px !important;font-size:12px !important;}
+  #projectSubNav>div[style*="width:80px"]{display:none !important;}
+  /* 克制分析：强制单列 */
+  .restrict-cards{grid-template-columns:1fr !important;}
+  .restrict-group-title{grid-column:1 !important;}
+  /* 积分商城：双列 */
+  .mall-grid{grid-template-columns:repeat(2,1fr) !important;}
+  .mall-header{flex-direction:column;gap:8px;align-items:flex-start;}
+  .mall-desc{text-align:left !important;}
+  /* 溯源详情面板：去掉最小宽度 */
+  .trace-panel{min-width:0 !important;width:calc(100vw - 16px) !important;}
+  .trace-team{min-width:0 !important;flex:1 1 100%;}
+  .trace-teams{flex-direction:column;}
+  .trace-stats{flex-wrap:wrap;gap:8px;padding:8px 14px;}
+  /* 表单行 */
+  .form-row select,.form-row input{min-width:0 !important;width:auto;flex:1 1 120px;}
+  /* 图库高度收紧 */
+  #imageGallery{max-height:200px !important;}
+  /* 项目管理 */
+  .project-grid{padding:10px !important;}
+  /* 积分商城 */
+  .points-insufficient-panel{padding:20px 16px;}
+}
+@media(max-width:480px){
+  .main{padding:8px 6px;}
+  .card{padding:10px 8px;margin-bottom:8px;}
+  .card h3{font-size:13px;}
+  /* 积分商城单列 */
+  .mall-grid{grid-template-columns:1fr !important;}
+  /* 子导航更紧凑 */
+  #projectSubNav>div[style*="flex:1"]>button{font-size:11px !important;padding:7px 8px !important;}
+  /* 溯源统计栏 */
+  .trace-stat{min-width:60px !important;padding:6px 10px;}
+  .trace-stat .ts-val{font-size:16px;}
+  /* 上传区 */
+  .upload-zone{padding:20px 12px;}
+  .upload-zone .icon{font-size:28px;margin-bottom:6px;}
+  /* 按钮组 */
+  .btn{padding:6px 10px;font-size:11px;}
+  .btn-sm{padding:3px 8px;font-size:10px;}
+}
 /* ===== 自定义角色下拉组件 ===== */
 .rd-wrap{position:relative;display:inline-block;width:100%;}
 .rd-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;cursor:pointer;user-select:none;transition:border-color .2s,background .2s;}
