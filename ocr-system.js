@@ -276,19 +276,16 @@ async function selectWatchFolder() {
 }
 
 async function loadFolderProcessedSet(folderName) {
-  // 优先从服务端拉取已上传文件名（跨session持久化，不依赖localStorage）
+  // 只排除已成功 OCR 的文件（有关联 battle_records），失败/未处理的允许重试
   try {
-    const data = await cloudRequest('/gallery/imagenames');
+    const data = await cloudRequest('/gallery/imagenames?successOnly=true');
     if (data && data.code === 200 && Array.isArray(data.data)) {
-      const serverSet = new Set(data.data);
-      // 合并localStorage作为补充（兼容本地未同步到服务端的情况）
-      const localSet = loadFolderProcessed(folderName);
-      localSet.forEach(n => serverSet.add(n));
-      return serverSet;
+      return new Set(data.data);
     }
   } catch (e) {
     console.warn('[FolderWatch] 服务端查询已处理文件失败，回退localStorage:', e.message);
   }
+  // 回退：localStorage 仅作降级兜底（网络不可达时）
   return loadFolderProcessed(folderName);
 }
 
