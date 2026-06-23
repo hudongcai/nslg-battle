@@ -647,6 +647,57 @@
     return { top10, top10Keys, ourTeams, matrix };
   }
 
+  // ==================== 分析：玩家胜率排行榜 ====================
+
+  function analyzePlayerLeaderboard(recs) {
+    const players = {};
+
+    function addEntry(pName, gens, tacs, form, side, rec, w) {
+      if (!pName || !gens.length) return;
+      if (!players[pName]) players[pName] = { name: pName, totalBattles: 0, totalWins: 0, teams: {} };
+      const p = players[pName];
+      p.totalBattles++;
+      const wonScore = w === side ? 1 : w === 'draw' ? 0.5 : 0;
+      p.totalWins += wonScore;
+      const tk = teamKey(gens, tacs, form);
+      if (!p.teams[tk]) p.teams[tk] = { generals: gens, tactics: tacs, formation: form, battles: 0, wins: 0, records: [], sides: [] };
+      p.teams[tk].battles++;
+      p.teams[tk].wins += wonScore;
+      p.teams[tk].records.push(rec);
+      p.teams[tk].sides.push(side);
+    }
+
+    for (const rec of recs) {
+      const lp = (rec.leftPlayer || '').trim();
+      const rp = (rec.rightPlayer || '').trim();
+      const lg = normGens(getGenerals(rec, 'left'));
+      const lt = normTacs(getTactics(rec, 'left'));
+      const lf = rec.leftFormation || rec.left_formation || '';
+      const rg = normGens(getGenerals(rec, 'right'));
+      const rt = normTacs(getTactics(rec, 'right'));
+      const rf = rec.rightFormation || rec.right_formation || '';
+      const w = winner(rec.result);
+      addEntry(lp, lg, lt, lf, 'left', rec, w);
+      addEntry(rp, rg, rt, rf, 'right', rec, w);
+    }
+
+    return Object.values(players)
+      .map(p => ({
+        name: p.name,
+        totalBattles: p.totalBattles,
+        totalWins: p.totalWins,
+        avgWinRate: p.totalBattles > 0 ? Math.round(p.totalWins / p.totalBattles * 1000) / 10 : 0,
+        teamList: Object.values(p.teams)
+          .map(t => ({
+            generals: t.generals, tactics: t.tactics, formation: t.formation,
+            battles: t.battles, wins: t.wins, records: t.records, sides: t.sides,
+            winRate: t.battles > 0 ? Math.round(t.wins / t.battles * 1000) / 10 : 0
+          }))
+          .sort((a, b) => b.winRate - a.winRate || b.battles - a.battles)
+      }))
+      .sort((a, b) => b.avgWinRate - a.avgWinRate || b.totalBattles - a.totalBattles);
+  }
+
   // ==================== 分析：Tab 6 综合推荐队伍 ====================
 
   function addBestEncounter(matrix, ek, ck, generals, cWon, cLoss, eLoss, rec) {
@@ -1119,6 +1170,168 @@
     if (cell && cell.records && cell.records.length) showImageSource(cell.records);
   };
 
+  // ==================== 渲染：玩家胜率排行榜 ====================
+
+  window.renderPlayerLeaderboard = async function () {
+    const el = document.getElementById('caPanelPlayerLeaderboard');
+    if (!el) return;
+    el.innerHTML = '<div style="padding:20px;color:#666;font-size:12px;text-align:center;">计算中...</div>';
+    await ensureRecords();
+    const recs = records();
+    const data = analyzePlayerLeaderboard(recs);
+    window._caPlayerData = data;
+
+    if (!data.length) {
+      el.innerHTML = '<div class="ca-empty-blk">暂无玩家数据<br><small>战报中需要填写玩家名称才能统计</small></div>';
+      return;
+    }
+
+    const bodyHtml = data.map((player, pi) => {
+      const teams = player.teamList;
+      const rowspan = Math.max(teams.length, 1);
+      const rankClass = pi < 3 ? ' ca-rank-top' : '';
+      const top3Cls = pi < 3 ? ' ca-plb-top3' : '';
+      const wrColor = player.avgWinRate >= 60 ? '#2ecc71' : player.avgWinRate < 40 ? '#e74c3c' : '#f39c12';
+
+      if (!teams.length) {
+        return `<tr class="ca-row ca-plb-first-row${top3Cls}">
+          <td class="ca-idx ca-rank${rankClass}">${pi + 1}</td>
+          <td class="ca-plb-name">${escHtml(player.name)}</td>
+          <td class="ca-plb-stat" style="color:${wrColor}">${player.avgWinRate}%</td>
+          <td class="ca-plb-stat">${player.totalBattles}场</td>
+          <td class="ca-plb-team" colspan="4"><span class="ca-dim">—</span></td>
+        </tr>`;
+      }
+
+      return teams.map((team, ti) => {
+        const isFirst = ti === 0;
+        const firstCols = isFirst ? `
+          <td class="ca-idx ca-rank${rankClass} ca-plb-rsep" rowspan="${rowspan}">${pi + 1}</td>
+          <td class="ca-plb-name ca-plb-rsep" rowspan="${rowspan}">${escHtml(player.name)}</td>
+          <td class="ca-plb-stat ca-plb-rsep" rowspan="${rowspan}" style="color:${wrColor}">${player.avgWinRate}%</td>
+          <td class="ca-plb-stat ca-plb-rsep" rowspan="${rowspan}">${player.totalBattles}场</td>
+        ` : '';
+        const wr = team.winRate;
+        const wrCls = wr > 50 ? 'ca-green' : wr < 50 ? 'ca-best-red' : '';
+        return `<tr class="ca-row ca-plb-team-row${isFirst ? ' ca-plb-first-row' + top3Cls : ''}">
+          ${firstCols}
+          <td class="ca-plb-team">${teamChip(team.generals, team.tactics, team.formation, null)}</td>
+          <td class="ca-num-cell">${team.battles}场</td>
+          <td class="ca-num-cell ${wrCls}">${wr}%</td>
+          <td class="ca-center"><button class="ca-src-btn" onclick="caShowPlayerSrc(${pi},${ti})">溯源</button></td>
+        </tr>`;
+      }).join('');
+    }).join('');
+
+    el.innerHTML = `
+      <div class="ca-hint-row">
+        <p class="ca-hint">统计所有上场玩家（左右双方均计入）的胜率排行，先按平均胜率降序、再按总场次降序。每行展示该玩家使用的队伍，按队伍胜率降序排列。胜率 = 总胜分 / 总场次（平局各计0.5分）。</p>
+      </div>
+      <div class="ca-tbl-wrap">
+        <table class="ca-tbl ca-plb-tbl">
+          <thead><tr>
+            <th class="ca-th-idx">#</th>
+            <th class="ca-plb-th-name">玩家名称</th>
+            <th class="ca-th-num">平均胜率</th>
+            <th class="ca-th-num">总场次</th>
+            <th class="ca-plb-th-team">队伍 / 战法</th>
+            <th class="ca-th-num">队伍场次</th>
+            <th class="ca-th-num">队伍胜率</th>
+            <th class="ca-th-act">溯源</th>
+          </tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>`;
+  };
+
+  window.caShowPlayerSrc = async function (pi, ti) {
+    const player = (window._caPlayerData || [])[pi];
+    if (!player) return;
+    const team = player.teamList[ti];
+    if (!team) return;
+    await showPlayerTeamSource(team.records, team.sides, player.name, team.generals);
+  };
+
+  async function showPlayerTeamSource(recs, sides, playerName, generals) {
+    let modal = document.getElementById('_caModal');
+    if (modal) modal.remove();
+    modal = document.createElement('div');
+    modal.id = '_caModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9999;overflow-y:auto;padding:48px 20px 20px;display:flex;flex-direction:column;align-items:center;gap:16px;';
+    modal.onclick = e => { if (e.target === modal) modal.remove(); };
+    const close = document.createElement('button');
+    close.textContent = '✕';
+    close.style.cssText = 'position:fixed;top:14px;right:16px;background:#e74c3c;color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;z-index:10000;';
+    close.onclick = () => modal.remove();
+    modal.appendChild(close);
+
+    const gensStr = generals.map(g => g).join('·');
+    const tableDiv = document.createElement('div');
+    tableDiv.style.cssText = 'width:min(760px,92vw);background:#111122;border-radius:8px;padding:16px;border:1px solid #2a2a3e;';
+
+    const rowsHtml = recs.map((r, i) => {
+      const side = sides[i] || 'left';
+      const oppSide = side === 'left' ? 'right' : 'left';
+      const oppPlayer = ((oppSide === 'right' ? r.rightPlayer : r.leftPlayer) || '—').trim();
+      const oppGens = normGens(getGenerals(r, oppSide));
+      const w = winner(r.result);
+      const wonLabel = w === side ? '胜' : w === 'draw' ? '平' : '负';
+      const resultColor = wonLabel === '胜' ? '#2ecc71' : wonLabel === '负' ? '#e74c3c' : '#aaa';
+      const date = (r.createdAt || r.created_at || '').substring(0, 10);
+      const oppGensHtml = oppGens.length
+        ? oppGens.map(g => `<b style="color:${heroColor(g)}">${escHtml(g)}</b>`).join('<span style="color:#333;margin:0 1px;">·</span>')
+        : '<span style="color:#444;">—</span>';
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        <td style="padding:5px 8px;text-align:center;color:#555;font-size:11px;">${i + 1}</td>
+        <td style="padding:5px 8px;color:#777;font-size:11px;white-space:nowrap;">${escHtml(date)}</td>
+        <td style="padding:5px 8px;color:#bbb;font-size:12px;white-space:nowrap;">${escHtml(oppPlayer)}</td>
+        <td style="padding:5px 8px;font-size:12px;">${oppGensHtml}</td>
+        <td style="padding:5px 8px;text-align:center;font-weight:700;font-size:13px;color:${resultColor};white-space:nowrap;">${wonLabel}</td>
+      </tr>`;
+    }).join('');
+
+    tableDiv.innerHTML = `
+      <div style="color:#9d8fff;font-size:13px;font-weight:600;margin-bottom:10px;">${escHtml(playerName)} · ${escHtml(gensStr)} — 共 ${recs.length} 场</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="color:#555;font-size:11px;border-bottom:1px solid #2a2a3e;">
+          <th style="padding:4px 8px;text-align:center;">#</th>
+          <th style="padding:4px 8px;text-align:left;">日期</th>
+          <th style="padding:4px 8px;text-align:left;">对手玩家</th>
+          <th style="padding:4px 8px;text-align:left;">对手队伍</th>
+          <th style="padding:4px 8px;text-align:center;">结果</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    modal.appendChild(tableDiv);
+    document.body.appendChild(modal);
+
+    const resolved = await Promise.all(recs.map(async r => {
+      if (r.imageBase64 || r.imageData) return r.imageBase64 || r.imageData;
+      const cid = r.cloudId || r.cloud_id;
+      if (!cid) return null;
+      try {
+        const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+        const res = await fetch(`${base}/gallery/by-battle/${cid}`);
+        const json = await res.json();
+        if (json.code === 200 && json.data && json.data.image_data) return json.data.image_data;
+      } catch(e) {}
+      return null;
+    }));
+    const imgs = resolved.filter(Boolean);
+    if (imgs.length) {
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'color:#888;font-size:11px;width:min(760px,92vw);text-align:left;margin-top:4px;';
+      hdr.textContent = `图片溯源（共 ${imgs.length} 张）`;
+      modal.appendChild(hdr);
+      imgs.forEach((src, i) => {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = `<div style="color:#666;font-size:11px;margin-bottom:4px;">第 ${i+1}/${imgs.length} 张</div>
+          <img src="${escHtml(src)}" style="max-width:min(860px,90vw);border-radius:8px;border:1px solid #444;">`;
+        modal.appendChild(wrap);
+      });
+    }
+  }
+
   // ==================== 渲染：Tab 6 综合推荐队伍 ====================
 
   window.renderBestRecommendation = async function () {
@@ -1324,6 +1537,7 @@ ${clone.innerHTML}
           <button class="ca-tab active" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频队伍统计（无战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">敌方高频胜率分析（无战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('matrix')" id="caTabMatrixBtn">敌方克制分析矩阵表</button>
+          <button class="ca-tab" onclick="switchCounterTab('playerLeaderboard')" id="caTabPlayerLBBtn">玩家胜率排行榜</button>
           <button class="ca-tab" onclick="switchCounterTab('relationship')" id="caTabRelBtn">克制关系</button>
           <button class="ca-tab" onclick="switchCounterTab('enemy')" id="caTabEnemyBtn">敌方高频（有战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommend')" id="caTabRecBtn">克制推荐（有战法）</button>
@@ -1354,6 +1568,8 @@ ${clone.innerHTML}
         </div>
 
         <div id="caPanelMatrix" style="display:none;"></div>
+
+        <div id="caPanelPlayerLeaderboard" style="display:none;"></div>
 
         <div id="caPanelRelationship" style="display:none;">
           <div class="ca-hint-row"><p class="ca-hint">双方队伍（武将＋战法＋阵型均相同）即可统计，胜率高者显示在左侧</p><button class="ca-hint-row-export" onclick="caExportTab('relationship')">⬇ 导出打印</button></div>
@@ -1405,20 +1621,22 @@ ${clone.innerHTML}
 
   window.switchCounterTab = async function (tab) {
     const panels = {
-      enemyNoTacs:     'caPanelEnemyNoTacs',
-      recommendNoTacs: 'caPanelRecommendNoTacs',
-      matrix:          'caPanelMatrix',
-      relationship:    'caPanelRelationship',
-      enemy:           'caPanelEnemy',
-      recommend:       'caPanelRecommend',
+      enemyNoTacs:       'caPanelEnemyNoTacs',
+      recommendNoTacs:   'caPanelRecommendNoTacs',
+      matrix:            'caPanelMatrix',
+      playerLeaderboard: 'caPanelPlayerLeaderboard',
+      relationship:      'caPanelRelationship',
+      enemy:             'caPanelEnemy',
+      recommend:         'caPanelRecommend',
     };
     const btns = {
-      enemyNoTacs:     'caTabEnemyNTBtn',
-      recommendNoTacs: 'caTabRecNTBtn',
-      matrix:          'caTabMatrixBtn',
-      relationship:    'caTabRelBtn',
-      enemy:           'caTabEnemyBtn',
-      recommend:       'caTabRecBtn',
+      enemyNoTacs:       'caTabEnemyNTBtn',
+      recommendNoTacs:   'caTabRecNTBtn',
+      matrix:            'caTabMatrixBtn',
+      playerLeaderboard: 'caTabPlayerLBBtn',
+      relationship:      'caTabRelBtn',
+      enemy:             'caTabEnemyBtn',
+      recommend:         'caTabRecBtn',
     };
     Object.keys(panels).forEach(t => {
       const p = document.getElementById(panels[t]);
@@ -1426,12 +1644,13 @@ ${clone.innerHTML}
       if (p) p.style.display = t === tab ? 'block' : 'none';
       if (b) b.classList.toggle('active', t === tab);
     });
-    if (tab === 'enemyNoTacs')          await renderEnemyHighFreqNoTacs();
-    else if (tab === 'recommendNoTacs') await renderCounterRecommendationsNoTacs();
-    else if (tab === 'matrix')          await renderCounterMatrix();
-    else if (tab === 'relationship')    await renderCounterAnalysis();
-    else if (tab === 'enemy')      await renderEnemyHighFreq();
-    else if (tab === 'recommend')  await renderCounterRecommendations();
+    if (tab === 'enemyNoTacs')              await renderEnemyHighFreqNoTacs();
+    else if (tab === 'recommendNoTacs')    await renderCounterRecommendationsNoTacs();
+    else if (tab === 'matrix')             await renderCounterMatrix();
+    else if (tab === 'playerLeaderboard')  await renderPlayerLeaderboard();
+    else if (tab === 'relationship')       await renderCounterAnalysis();
+    else if (tab === 'enemy')              await renderEnemyHighFreq();
+    else if (tab === 'recommend')          await renderCounterRecommendations();
   };
 
   // ==================== 样式注入 ====================
@@ -1647,6 +1866,17 @@ ${clone.innerHTML}
       .ca-best-right-meta{flex:0 0 auto;font-size:11px;color:var(--text3,#888);white-space:nowrap;}
       .ca-best-score-big{color:var(--accent,#f0b429);font-size:14px;}
       .ca-best-detail-tbl{table-layout:fixed;}
+
+      /* ---- 玩家胜率排行榜 ---- */
+      .ca-plb-tbl{table-layout:auto;}
+      .ca-plb-th-name{text-align:left;min-width:80px;white-space:nowrap;}
+      .ca-plb-th-team{text-align:left;}
+      .ca-plb-name{font-size:13px;color:#ddd;font-weight:600;white-space:nowrap;padding-right:12px;vertical-align:top;padding-top:14px;}
+      .ca-plb-stat{text-align:center;font-size:14px;font-weight:700;white-space:nowrap;vertical-align:top;padding-top:14px;}
+      .ca-plb-team{padding:6px 10px;}
+      .ca-plb-first-row td{border-top:2px solid rgba(255,255,255,.08) !important;}
+      .ca-plb-top3.ca-plb-first-row td{border-top-color:rgba(245,197,66,.18) !important;}
+      .ca-plb-rsep{border-right:1px solid rgba(255,255,255,.05);}
 
       /* ==================== 移动端适配 ==================== */
       @media(max-width:768px){
