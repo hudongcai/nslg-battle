@@ -1021,8 +1021,6 @@
 
     window._caMxData = { ourTeams, top10Keys, matrix };
 
-    const colW = (80 / top10.length).toFixed(1);
-
     const headerCols = top10.map((e, i) => `<th class="ca-mx-col-head">
         <div class="ca-mx-rank">Top${i + 1}</div>
         ${e.generals.map(g => `<div class="ca-mx-gen" style="color:${heroColor(g)}">${escHtml(g)}</div>`).join('')}
@@ -1096,11 +1094,6 @@
       </div>
       <div class="ca-mx-wrap">
         <table class="ca-mx-tbl">
-          <colgroup>
-            <col style="width:10%;">
-            <col style="width:10%;">
-            ${top10.map(() => `<col style="width:${colW}%;">`).join('')}
-          </colgroup>
           <thead>
             <tr>
               <th class="ca-mx-left-head" rowspan="3" colspan="2" style="font-weight:700;">对战队伍</th>
@@ -1606,19 +1599,19 @@ ${clone.innerHTML}
       .ca-mx-wrap{overflow-x:auto;}
       .ca-mx-tbl{width:auto;min-width:100%;border-collapse:collapse;font-size:12px;table-layout:auto;}
       .ca-mx-tbl th,.ca-mx-tbl td{border:1px solid var(--border,#2a2a3e);padding:4px 6px;vertical-align:middle;}
-      .ca-mx-left-head{background:var(--bg2,#111122);color:#888;font-size:11px;text-align:center;font-weight:500;white-space:nowrap;min-width:70px;}
+      .ca-mx-left-head{background:var(--bg2,#111122);color:#888;font-size:11px;text-align:center;font-weight:500;white-space:nowrap;min-width:120px;}
       .ca-mx-col-head{background:var(--bg2,#111122);text-align:center;vertical-align:top;padding:6px 4px;min-width:90px;}
       .ca-mx-rank{color:#555;font-size:10px;margin-bottom:3px;}
-      .ca-mx-gen{font-size:11px;white-space:nowrap;font-weight:600;line-height:1.5;}
+      .ca-mx-gen{font-size:11px;white-space:nowrap;font-weight:600;line-height:1.5;display:block;}
       .ca-mx-count-row th{background:var(--bg,#0a0a1a);}
-      .ca-mx-count-cell{text-align:center;color:#666;font-size:11px;font-weight:normal;padding:3px 4px;}
-      .ca-mx-left-cell{background:var(--bg2,#111122);padding:6px 10px;text-align:center;}
-      .ca-mx-empty-cell{text-align:center;color:#2a2a3e;font-size:13px;}
-      .ca-mx-data-cell{text-align:center;padding:5px 4px;}
+      .ca-mx-count-cell{text-align:center;color:#666;font-size:11px;font-weight:normal;padding:3px 4px;min-width:90px;}
+      .ca-mx-left-cell{background:var(--bg2,#111122);padding:6px 10px;text-align:center;min-width:120px;}
+      .ca-mx-empty-cell{text-align:center;color:#2a2a3e;font-size:13px;min-width:90px;}
+      .ca-mx-data-cell{text-align:center;padding:5px 4px;min-width:90px;}
       .ca-mx-row:hover .ca-mx-left-cell{background:rgba(255,255,255,.04);}
       .ca-mx-row:hover .ca-mx-data-cell{filter:brightness(1.2);}
-      .ca-mx-wr{font-size:14px;font-weight:700;line-height:1.4;}
-      .ca-mx-sub{font-size:10px;color:#777;margin-top:1px;white-space:nowrap;}
+      .ca-mx-wr{font-size:14px;font-weight:700;line-height:1.4;display:block;}
+      .ca-mx-sub{font-size:10px;color:#777;margin-top:1px;white-space:nowrap;display:block;}
 
       /* ---- 矩阵汇总行 ---- */
       .ca-mx-sum-row{border-top:2px solid var(--accent,#5b4fff);}
@@ -1628,10 +1621,11 @@ ${clone.innerHTML}
       .ca-mx-sum-type-abs{color:#2ecc71;}
       .ca-mx-sum-type-rel{color:#f39c12;}
       .ca-mx-sum-note{font-size:9px;font-weight:400;color:#555;margin-top:2px;}
-      .ca-mx-sum-data{background:var(--bg,#0a0a1a);padding:5px 6px;vertical-align:top;text-align:center;}
-      .ca-mx-sum-item{font-size:10px;color:#bbb;line-height:1.7;white-space:normal;}
-      .ca-mx-sum-abs{color:#2ecc71;font-weight:700;margin-left:4px;}
-      .ca-mx-sum-rel{color:#f39c12;font-weight:700;margin-left:4px;}
+      .ca-mx-sum-data{background:var(--bg,#0a0a1a);padding:5px 6px;vertical-align:top;text-align:center;min-width:90px;}
+      .ca-mx-sum-item{font-size:10px;color:#bbb;line-height:1.6;white-space:normal;display:block;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+      .ca-mx-sum-item:last-child{border-bottom:none;}
+      .ca-mx-sum-abs{color:#2ecc71;font-weight:700;margin-left:4px;display:inline;}
+      .ca-mx-sum-rel{color:#f39c12;font-weight:700;margin-left:4px;display:inline;}
 
       /* ---- Tab6 综合推荐 ---- */
       .ca-best-layout{display:flex;gap:16px;align-items:flex-start;margin-top:4px;}
