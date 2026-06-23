@@ -49,10 +49,35 @@ print('PaddleOCR ready')
 
 # ── 长时间运行稳定性 ─────────────────────────────────────────────────
 _request_count = 0
-_GC_INTERVAL = 5                    # 每 N 次请求执行一次 gc.collect()（频繁一些）
-_MAX_REQUESTS_BEFORE_RESTART = 25   # 处理 N 张图后主动退出让 watchdog 重启，防止内存无限累积
+_GC_INTERVAL = 5           # 每 N 次请求执行一次 gc.collect()
+_MEM_RESTART_PCT = 80      # 系统内存使用率超过此值时主动重启（释放内存）
 _LOG_MAX_MB = 10           # 日志文件上限 MB
 _LOG_BACKUPS = 3           # 保留备份数
+
+import ctypes
+
+class _MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [
+        ('dwLength',                ctypes.c_ulong),
+        ('dwMemoryLoad',            ctypes.c_ulong),
+        ('ullTotalPhys',            ctypes.c_ulonglong),
+        ('ullAvailPhys',            ctypes.c_ulonglong),
+        ('ullTotalPageFile',        ctypes.c_ulonglong),
+        ('ullAvailPageFile',        ctypes.c_ulonglong),
+        ('ullTotalVirtual',         ctypes.c_ulonglong),
+        ('ullAvailVirtual',         ctypes.c_ulonglong),
+        ('ullAvailExtendedVirtual', ctypes.c_ulonglong),
+    ]
+
+def _sys_mem_pct() -> int:
+    """返回系统内存使用百分比（Windows GlobalMemoryStatusEx）"""
+    try:
+        stat = _MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+        return int(stat.dwMemoryLoad)
+    except Exception:
+        return 0
 
 def _rotate_log_if_needed(path):
     """日志文件超过上限时自动轮转"""
@@ -76,15 +101,16 @@ def _rotate_log_if_needed(path):
         print(f'[日志轮转] {path} 轮转失败: {e}', file=sys.stderr, flush=True)
 
 def _maybe_gc():
-    """每 N 次请求执行垃圾回收；达到上限后主动退出让 watchdog 重启"""
+    """每 N 次请求执行垃圾回收；系统内存超阈值时主动退出让 watchdog 重启"""
     global _request_count
     _request_count += 1
     if _request_count % _GC_INTERVAL == 0:
         collected = gc.collect()
-        print(f'[GC] #{_request_count} gc.collect() 回收 {collected} 个对象', file=sys.stderr, flush=True)
-    if _request_count >= _MAX_REQUESTS_BEFORE_RESTART:
-        print(f'[RESTART] 已处理 {_request_count} 张图，主动退出(42)让 watchdog 重启以释放内存', file=sys.stderr, flush=True)
-        sys.exit(42)
+        mem_pct = _sys_mem_pct()
+        print(f'[GC] #{_request_count} gc.collect() 回收 {collected} 个对象, 系统内存={mem_pct}%', file=sys.stderr, flush=True)
+        if mem_pct >= _MEM_RESTART_PCT:
+            print(f'[RESTART] 系统内存 {mem_pct}% >= {_MEM_RESTART_PCT}%，主动退出(42)让 watchdog 重启', file=sys.stderr, flush=True)
+            sys.exit(42)
 
 # ── 图片缓存（避免重复传输大图）────────────────────────────────────────
 _img_cache: dict = {}  # token -> (img_arr, img_w, img_h)
