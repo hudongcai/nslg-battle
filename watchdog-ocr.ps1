@@ -111,8 +111,13 @@ while ($restartCount -lt $MaxRestarts) {
     }
 
     if ($exitCode -eq 0) {
-        Write-WatchLog "INFO: process exited normally, watchdog done"
+        Write-WatchLog "INFO: process exited normally (code 0), watchdog done"
         exit 0
+    }
+    if ($exitCode -eq 42) {
+        Write-WatchLog "INFO: planned memory-restart (code 42), restarting immediately..."
+        $rapidFailCount = [Math]::Max(0, $rapidFailCount - 1)
+        continue
     }
 }
 

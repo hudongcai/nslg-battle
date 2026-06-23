@@ -49,7 +49,8 @@ print('PaddleOCR ready')
 
 # ── 长时间运行稳定性 ─────────────────────────────────────────────────
 _request_count = 0
-_GC_INTERVAL = 50          # 每 N 次请求执行一次 gc.collect()
+_GC_INTERVAL = 5                    # 每 N 次请求执行一次 gc.collect()（频繁一些）
+_MAX_REQUESTS_BEFORE_RESTART = 25   # 处理 N 张图后主动退出让 watchdog 重启，防止内存无限累积
 _LOG_MAX_MB = 10           # 日志文件上限 MB
 _LOG_BACKUPS = 3           # 保留备份数
 
@@ -75,12 +76,15 @@ def _rotate_log_if_needed(path):
         print(f'[日志轮转] {path} 轮转失败: {e}', file=sys.stderr, flush=True)
 
 def _maybe_gc():
-    """每 N 次请求执行垃圾回收，防止内存累积"""
+    """每 N 次请求执行垃圾回收；达到上限后主动退出让 watchdog 重启"""
     global _request_count
     _request_count += 1
     if _request_count % _GC_INTERVAL == 0:
         collected = gc.collect()
-        print(f'[GC] 第 {_request_count} 次请求后 gc.collect(), 回收 {collected} 个对象', file=sys.stderr, flush=True)
+        print(f'[GC] #{_request_count} gc.collect() 回收 {collected} 个对象', file=sys.stderr, flush=True)
+    if _request_count >= _MAX_REQUESTS_BEFORE_RESTART:
+        print(f'[RESTART] 已处理 {_request_count} 张图，主动退出(42)让 watchdog 重启以释放内存', file=sys.stderr, flush=True)
+        sys.exit(42)
 
 # ── 图片缓存（避免重复传输大图）────────────────────────────────────────
 _img_cache: dict = {}  # token -> (img_arr, img_w, img_h)
