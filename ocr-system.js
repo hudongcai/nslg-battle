@@ -241,6 +241,7 @@ let folderWatchActive = false;
 let folderProcessedSet = new Set();   // 服务端已成功处理的文件名集合（每次扫描前刷新）
 let _sessionQueuedSet = new Set();    // 当前会话已加入队列的文件名（避免重复添加）
 let folderNewCount = 0;
+let _keepAliveCtx = null;             // 静默音频 AudioContext，防止后台标签页被 Chrome 节流
 
 function getFolderStorageKey(name) {
   return `folder-watch-processed::${name}`;
@@ -306,6 +307,8 @@ async function startFolderWatch() {
   folderWatchActive = true;
   folderNewCount = 0;
   _sessionQueuedSet = new Set();
+  // 静默音频保持后台活跃（必须在 await 之前创建，利用用户点击手势上下文）
+  _startKeepAlive();
   // 启动时刷新服务端成功列表
   folderProcessedSet = await loadServerSuccessSet();
   const btn = document.getElementById('btnFolderWatch');
@@ -330,10 +333,45 @@ async function startFolderWatch() {
 function stopFolderWatch() {
   folderWatchActive = false;
   if (folderWatchTimer) { clearTimeout(folderWatchTimer); folderWatchTimer = null; }
+  _stopKeepAlive();
   const btn = document.getElementById('btnFolderWatch');
   const statusEl = document.getElementById('folderWatchStatus');
   if (btn) { btn.textContent = '▶ 启动'; btn.className = 'btn btn-sm btn-primary'; }
   if (statusEl) { statusEl.textContent = '已停止'; statusEl.style.cssText += ';background:var(--bg3);color:var(--text3);'; }
+}
+
+// 静默音频防止 Chrome 后台标签页节流（播放无声循环音频，Chrome 认为标签页"正在播放音频"而不节流）
+function _startKeepAlive() {
+  if (_keepAliveCtx) {
+    // 如果已存在但被挂起（异步 await 后可能失去用户手势上下文），恢复播放
+    if (_keepAliveCtx.state === 'suspended') { _keepAliveCtx.resume(); }
+    return;
+  }
+  try {
+    _keepAliveCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // 创建 1 秒静默 buffer
+    const buffer = _keepAliveCtx.createBuffer(1, _keepAliveCtx.sampleRate, _keepAliveCtx.sampleRate);
+    const source = _keepAliveCtx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const gain = _keepAliveCtx.createGain();
+    gain.gain.value = 0; // 完全静音，不打扰用户
+    source.connect(gain);
+    gain.connect(_keepAliveCtx.destination);
+    source.start();
+    // 如果因为用户手势丢失而被挂起，尝试恢复
+    if (_keepAliveCtx.state === 'suspended') { _keepAliveCtx.resume(); }
+  } catch (e) {
+    // AudioContext 创建失败不影响主流程
+    _keepAliveCtx = null;
+  }
+}
+
+function _stopKeepAlive() {
+  if (_keepAliveCtx) {
+    try { _keepAliveCtx.close(); } catch (e) {}
+    _keepAliveCtx = null;
+  }
 }
 
 // ========== 页面可见性检测：后台标签页恢复 ==========
