@@ -241,7 +241,8 @@ let folderWatchActive = false;
 let folderProcessedSet = new Set();   // 服务端已成功处理的文件名集合（每次扫描前刷新）
 let _sessionQueuedSet = new Set();    // 当前会话已加入队列的文件名（避免重复添加）
 let folderNewCount = 0;
-let _popupWindow = null;              // 辅助弹窗，可见窗口不受 Chrome 后台节流
+let _keepAliveCtx = null;             // 静默音频 AudioContext，防止后台标签页被 Chrome 节流
+let _keepAliveTimer = null;           // 1 秒心跳计时器
 
 function getFolderStorageKey(name) {
   return `folder-watch-processed::${name}`;
@@ -307,6 +308,8 @@ async function startFolderWatch() {
   folderWatchActive = true;
   folderNewCount = 0;
   _sessionQueuedSet = new Set();
+  // 静默音频保持后台活跃（必须在 await 之前创建，利用用户点击手势上下文）
+  _startKeepAlive();
   // 启动时刷新服务端成功列表
   folderProcessedSet = await loadServerSuccessSet();
   const btn = document.getElementById('btnFolderWatch');
@@ -317,9 +320,6 @@ async function startFolderWatch() {
 
   // 注册页面可见性检测（回到页面时自动恢复扫描和批处理）
   _initVisibilityHandler();
-
-  // 打开辅助弹窗做持续扫描（可见窗口不受 Chrome 后台节流）
-  _openPopupWorker();
 
   await scanWatchFolder();
   // 主窗口也保留轮询作为双保险
@@ -334,204 +334,59 @@ async function startFolderWatch() {
 function stopFolderWatch() {
   folderWatchActive = false;
   if (folderWatchTimer) { clearTimeout(folderWatchTimer); folderWatchTimer = null; }
-  _closePopupWorker();
+  if (_keepAliveTimer) { clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
+  _stopKeepAlive();
   const btn = document.getElementById('btnFolderWatch');
   const statusEl = document.getElementById('folderWatchStatus');
   if (btn) { btn.textContent = '▶ 启动'; btn.className = 'btn btn-sm btn-primary'; }
   if (statusEl) { statusEl.textContent = '已停止'; statusEl.style.cssText += ';background:var(--bg3);color:var(--text3);'; }
 }
 
-// ========== 辅助弹窗：可见窗口不受 Chrome 后台节流 ==========
+// ========== 后台保活：音频 + 心跳，防止 Chrome 对后台标签页深度节流 ==========
 
-function _openPopupWorker() {
-  if (_popupWindow && !_popupWindow.closed) return;
-  try {
-    // 在屏幕右下角开一个小窗口
-    const w = 280, h = 150;
-    const left = screen.width - w - 20;
-    const top = screen.height - h - 80;
-    _popupWindow = window.open('about:blank', 'ocr_folder_watch',
-      `width=${w},height=${h},left=${left},top=${top},noopener=0`);
-    if (!_popupWindow) return;
+function _startKeepAlive() {
+  // ① 静默音频 —— Chrome 不对"正在播放音频"的标签页做深度节流
+  if (!_keepAliveCtx) {
+    try {
+      _keepAliveCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // 用极轻的白噪声而非纯静音，Chrome 更大概率识别为"有音频输出"
+      const len = _keepAliveCtx.sampleRate; // 1 秒
+      const buffer = _keepAliveCtx.createBuffer(1, len, _keepAliveCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() - 0.5) * 0.0001; // 极轻噪声
+      const source = _keepAliveCtx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      const gain = _keepAliveCtx.createGain();
+      gain.gain.value = 0.001; // 接近无声但不为零
+      source.connect(gain);
+      gain.connect(_keepAliveCtx.destination);
+      source.start();
+      if (_keepAliveCtx.state === 'suspended') _keepAliveCtx.resume();
+    } catch (e) { _keepAliveCtx = null; }
+  } else if (_keepAliveCtx.state === 'suspended') {
+    _keepAliveCtx.resume();
+  }
 
-    // 获取 API base 和 token 传给弹窗
-    const apiBase = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'http://localhost:3000/api';
-    const token = typeof getToken === 'function' ? getToken() : '';
-    const projectId = window.currentProjectId || null;
-
-    _popupWindow.document.write(`
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OCR 监听</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font:12px/1.4 system-ui,sans-serif;padding:10px;color:#e0e0e0;background:#1a1a2e;user-select:none}
-  .title{font-weight:700;color:#63b3ed;margin-bottom:4px}
-  .stat{color:#aaa;margin-bottom:2px}
-  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
-  .dot.on{background:#48c78e;animation:pulse 1.5s infinite}
-  .dot.warn{background:#f0ad4e;animation:pulse 1.5s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-</style></head><body>
-  <div class="title"><span class="dot on" id="pwDot"></span>OCR 文件夹监听运行中</div>
-  <div class="stat" id="pwStatus">等待文件夹...</div>
-  <div class="stat" style="font-size:10px;color:#666;margin-top:6px">请勿关闭此窗口 · 自动置顶</div>
-  <script>
-    var dirHandle = null;
-    var active = false;
-    var timer = null;
-    var focusTimer = null;
-    var sessionQueued = new Set();
-    var processedSet = new Set();
-    var newCount = 0;
-    var mainPending = 0;
-    var API_BASE = '${apiBase.replace(/'/g, "\\'")}';
-    var AUTH_TOKEN = '${token.replace(/'/g, "\\'")}';
-    var PROJECT_ID = ${projectId ? ('\'' + projectId + '\'') : 'null'};
-
-    window.addEventListener('message', async function(e) {
-      if (e.data === 'stop') { active = false; if(timer) clearTimeout(timer); if(focusTimer) clearInterval(focusTimer); return; }
-      if (e.data === 'start') { active = true; poll(); startFocusKeep(); }
-      if (e.data && e.data.type === 'handle') {
-        dirHandle = e.data.handle;
-        document.getElementById('pwStatus').textContent = '已就绪';
+  // ② 1 秒心跳 —— 高频短 timer 让 Chrome 保持该标签页的 timer budget
+  if (!_keepAliveTimer) {
+    _keepAliveTimer = setInterval(() => {
+      // 如果 AudioContext 被挂起，尝试恢复
+      if (_keepAliveCtx && _keepAliveCtx.state === 'suspended') {
+        try { _keepAliveCtx.resume(); } catch (e) {}
       }
-      if (e.data && e.data.type === 'processed') {
-        processedSet = new Set(e.data.list);
-      }
-      if (e.data && e.data.type === 'queueStatus') {
-        mainPending = e.data.pending || 0;
-        var dot = document.getElementById('pwDot');
-        if (dot) dot.className = 'dot ' + (mainPending > 3 ? 'warn' : 'on');
-      }
-    });
-
-    // 每30秒聚焦一次保持窗口在前
-    function startFocusKeep() {
-      if (focusTimer) clearInterval(focusTimer);
-      focusTimer = setInterval(function() {
-        try { window.focus(); } catch(e) {}
-      }, 30000);
-      try { window.focus(); } catch(e) {}
-    }
-
-    async function loadServerSuccessSet() {
-      try {
-        var resp = await fetch(API_BASE + '/gallery/imagenames?successOnly=true', {
-          headers: AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {}
-        });
-        var data = await resp.json();
-        if (data && data.code === 200 && Array.isArray(data.data)) {
-          processedSet = new Set(data.data);
-        }
-      } catch(e) { console.warn('[Popup] 查询失败:', e.message); }
-    }
-
-    async function scan() {
-      if (!dirHandle || !active) return;
-      // 背压：主窗口待处理队列 > 5 时暂停扫描
-      if (mainPending > 5) {
-        document.getElementById('pwStatus').textContent =
-          new Date().toLocaleTimeString() + ' | 等待处理中(' + mainPending + '个排队)';
-        return;
-      }
-      try {
-        await loadServerSuccessSet();
-        var newFiles = [];
-        for await (var entry of dirHandle.entries()) {
-          var name = entry[0], handle = entry[1];
-          if (handle.kind !== 'file') continue;
-          if (!/\\.(png|jpg|jpeg)\$/i.test(name)) continue;
-          if (processedSet.has(name)) continue;
-          if (sessionQueued.has(name)) continue;
-          var file = await handle.getFile();
-          newFiles.push({ name: name, file: file });
-        }
-        if (newFiles.length > 0) {
-          // 每次最多发送3张
-          var sendCount = Math.min(newFiles.length, 3);
-          for (var i = 0; i < sendCount; i++) {
-            var f = newFiles[i];
-            sessionQueued.add(f.name);
-            var buf = await f.file.arrayBuffer();
-            if (window.opener && !window.opener.closed) {
-              window.opener.postMessage({
-                type: 'popupFile',
-                name: f.name,
-                buffer: buf,
-                projectId: PROJECT_ID
-              }, '*', [buf]);
-            }
-            newCount++;
-          }
-          document.getElementById('pwStatus').textContent =
-            new Date().toLocaleTimeString() + ' | +' + sendCount + '张 | 累计' + newCount +
-            (newFiles.length > sendCount ? ' (余' + (newFiles.length - sendCount) + ')' : '');
-        }
-      } catch(e) { console.warn('[Popup] 扫描出错:', e.message); }
-    }
-
-    async function poll() {
-      if (!active) return;
-      try { await scan(); } catch(e) {}
-      var delay = mainPending > 3 ? 3000 : 5000;
-      if (active) timer = setTimeout(poll, delay);
-    }
-
-    window.addEventListener('beforeunload', function() {
-      if (window.opener && !window.opener.closed && active) {
-        window.opener.postMessage({type:'popupClosed'}, '*');
-      }
-    });
-  <\/script>
-</body></html>`);
-    _popupWindow.document.close();
-
-    // 弹窗就绪后发送 handle 和 processedSet
-    setTimeout(() => {
-      if (_popupWindow && !_popupWindow.closed) {
-        _popupWindow.postMessage({ type: 'handle', handle: folderWatchHandle }, '*');
-        _popupWindow.postMessage({ type: 'processed', list: [...folderProcessedSet] }, '*');
-        _popupWindow.postMessage('start', '*');
-      }
-    }, 500);
-  } catch (e) {
-    console.warn('[FolderWatch] 无法打开辅助窗口:', e.message);
-    _popupWindow = null;
+    }, 1000);
   }
 }
 
-function _closePopupWorker() {
-  if (_popupWindow && !_popupWindow.closed) {
-    try { _popupWindow.postMessage('stop', '*'); } catch(e) {}
-    try { _popupWindow.close(); } catch(e) {}
+function _stopKeepAlive() {
+  if (_keepAliveTimer) { clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
+  if (_keepAliveCtx) {
+    try { _keepAliveCtx.close(); } catch (e) {}
+    _keepAliveCtx = null;
   }
-  _popupWindow = null;
 }
 
-function _notifyPopupQueueStatus() {
-  if (!_popupWindow || _popupWindow.closed) return;
-  const pending = ocrQueue.filter(function(q) { return q.status === 'pending' || q.status === 'processing'; }).length;
-  try { _popupWindow.postMessage({ type: 'queueStatus', pending: pending }, '*'); } catch(e) {}
-}
-
-// 接收弹窗发来的文件、状态等消息
-window.addEventListener('message', async (e) => {
-  if (e.data && e.data.type === 'popupFile' && folderWatchActive) {
-    _notifyPopupQueueStatus();
-    // 弹窗扫描到的新文件，加入 OCR 队列
-    const { name, buffer } = e.data;
-    const file = new File([buffer], name, { type: 'image/png' });
-    _sessionQueuedSet.add(name);
-    ocrQueue.push({ file, name, status: 'pending', error: null, projectId: window.currentProjectId || null });
-    folderNewCount++;
-    updateFolderWatchStats();
-    document.getElementById('queueArea').style.display = 'block';
-    renderOCRQueue();
-    if (!ocrRunning && !ocrPausedByUser) startBatchProcess();
-  }
-  if (e.data && e.data.type === 'popupClosed') {
-    if (folderWatchActive) stopFolderWatch();
-  }
-});
 let _visibilityHandlerInstalled = false;
 
 function _initVisibilityHandler() {
@@ -690,7 +545,7 @@ let _visibilityWarned = false;
 document.addEventListener('visibilitychange', function() {
   if (document.hidden) {
     _visibilityWarned = true;
-    showToast('⚠️ 请保持此标签页在前台，后台运行会被浏览器限速', 'warn');
+    showToast('🔇 已启用后台保活，监听持续运行中', 'info');
   } else {
     if (_visibilityWarned) {
       showToast('✅ 标签页已激活，恢复正常处理', 'info');
@@ -969,7 +824,6 @@ async function startBatchProcess() {
       renderOCRQueue();
       updateOCRProgress();
       saveBatchProgress();
-      if (typeof _notifyPopupQueueStatus === 'function') _notifyPopupQueueStatus();
 
       if (_renderCount % OCR_CONFIG.renderThrottleCount === 0) {
         throttledRenderAll();
