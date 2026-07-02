@@ -238,14 +238,15 @@ function clearQueue() {
 let folderWatchHandle = null;
 let folderWatchTimer = null;
 let folderWatchActive = false;
-let folderProcessedSet = new Set();
+let folderProcessedSet = new Set();   // 服务端已成功处理的文件名集合（每次扫描前刷新）
+let _sessionQueuedSet = new Set();    // 当前会话已加入队列的文件名（避免重复添加）
 let folderNewCount = 0;
 
 function getFolderStorageKey(name) {
   return `folder-watch-processed::${name}`;
 }
 
-function loadFolderProcessed(name) {
+function loadFolderProcessedCache(name) {
   try {
     const raw = localStorage.getItem(getFolderStorageKey(name));
     if (raw) return new Set(JSON.parse(raw));
@@ -253,7 +254,7 @@ function loadFolderProcessed(name) {
   return new Set();
 }
 
-function saveFolderProcessed(name, set) {
+function saveFolderProcessedCache(name, set) {
   try {
     localStorage.setItem(getFolderStorageKey(name), JSON.stringify([...set]));
   } catch (e) {}
@@ -267,7 +268,11 @@ async function selectWatchFolder() {
     if (wasActive) stopFolderWatch();
     document.getElementById('folderWatchName').textContent = handle.name;
     document.getElementById('btnFolderWatch').disabled = false;
-    folderProcessedSet = await loadFolderProcessedSet(handle.name);
+    // 加载服务端成功列表作为初始去重集合
+    folderProcessedSet = await loadServerSuccessSet();
+    // 缓存到 localStorage 供离线时降级
+    saveFolderProcessedCache(handle.name, folderProcessedSet);
+    _sessionQueuedSet = new Set();
     folderNewCount = 0;
     updateFolderWatchStats();
   } catch (e) {
@@ -275,18 +280,17 @@ async function selectWatchFolder() {
   }
 }
 
-async function loadFolderProcessedSet(folderName) {
-  // 只排除已成功 OCR 的文件（有关联 battle_records），失败/未处理的允许重试
+// 从服务端加载已成功处理的文件名集合（只排除有关联 battle_records 的，失败/未处理的允许重试）
+async function loadServerSuccessSet() {
   try {
     const data = await cloudRequest('/gallery/imagenames?successOnly=true');
     if (data && data.code === 200 && Array.isArray(data.data)) {
       return new Set(data.data);
     }
   } catch (e) {
-    console.warn('[FolderWatch] 服务端查询已处理文件失败，回退localStorage:', e.message);
+    console.warn('[FolderWatch] 服务端查询已处理文件失败:', e.message);
   }
-  // 回退：localStorage 仅作降级兜底（网络不可达时）
-  return loadFolderProcessed(folderName);
+  return new Set();
 }
 
 async function toggleFolderWatch() {
@@ -301,42 +305,88 @@ async function startFolderWatch() {
   if (!folderWatchHandle) return;
   folderWatchActive = true;
   folderNewCount = 0;
+  _sessionQueuedSet = new Set();
+  // 启动时刷新服务端成功列表
+  folderProcessedSet = await loadServerSuccessSet();
   const btn = document.getElementById('btnFolderWatch');
   const statusEl = document.getElementById('folderWatchStatus');
   if (btn) { btn.textContent = '⏹ 停止'; btn.className = 'btn btn-sm btn-danger'; }
   if (statusEl) { statusEl.textContent = '监听中...'; statusEl.style.cssText += ';background:var(--accent);color:#fff;'; }
   document.getElementById('folderWatchStats').style.display = 'block';
+
+  // 注册页面可见性检测（回到页面时自动恢复扫描和批处理）
+  _initVisibilityHandler();
+
   await scanWatchFolder();
-  folderWatchTimer = setInterval(() => { if (folderWatchActive) scanWatchFolder(); }, 5000);
+  // 使用 setTimeout 链代替 setInterval，后台标签页也相对稳定
+  const poll = async () => {
+    if (!folderWatchActive) return;
+    await scanWatchFolder();
+    if (folderWatchActive) folderWatchTimer = setTimeout(poll, 5000);
+  };
+  folderWatchTimer = setTimeout(poll, 5000);
 }
 
 function stopFolderWatch() {
   folderWatchActive = false;
-  if (folderWatchTimer) { clearInterval(folderWatchTimer); folderWatchTimer = null; }
+  if (folderWatchTimer) { clearTimeout(folderWatchTimer); folderWatchTimer = null; }
   const btn = document.getElementById('btnFolderWatch');
   const statusEl = document.getElementById('folderWatchStatus');
   if (btn) { btn.textContent = '▶ 启动'; btn.className = 'btn btn-sm btn-primary'; }
   if (statusEl) { statusEl.textContent = '已停止'; statusEl.style.cssText += ';background:var(--bg3);color:var(--text3);'; }
 }
 
+// ========== 页面可见性检测：后台标签页恢复 ==========
+let _visibilityHandlerInstalled = false;
+
+function _initVisibilityHandler() {
+  if (_visibilityHandlerInstalled) return;
+  _visibilityHandlerInstalled = true;
+
+  document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden && folderWatchActive) {
+      // ── 标签页恢复可见：立即扫描 + 恢复批处理 ──
+      try { await scanWatchFolder(); } catch (e) { /* 静默 */ }
+      if (!ocrRunning && !ocrPausedByUser) {
+        startBatchProcess();
+      }
+    }
+  });
+}
+
 async function scanWatchFolder() {
   if (!folderWatchHandle) return;
   try {
+    // ① 每次扫描前刷新服务端成功列表，确保跳过已成功处理的图片
+    const serverSuccess = await loadServerSuccessSet();
+    // 如果服务端有返回就用服务端结果，否则保持上一次的缓存
+    if (serverSuccess.size > 0) {
+      folderProcessedSet = serverSuccess;
+      // 同步缓存到 localStorage 作为离线降级
+      saveFolderProcessedCache(folderWatchHandle.name, serverSuccess);
+    }
+
+    // ② 扫描文件夹，跳过已成功处理的和当前会话已加入队列的
     const newFiles = [];
     for await (const [name, handle] of folderWatchHandle.entries()) {
       if (handle.kind !== 'file') continue;
       if (!/\.(png|jpg|jpeg)$/i.test(name)) continue;
+      // 跳过服务端已成功处理的
       if (folderProcessedSet.has(name)) continue;
+      // 跳过当前会话已加入队列的（避免重复添加）
+      if (_sessionQueuedSet.has(name)) continue;
       const file = await handle.getFile();
       newFiles.push({ name, file });
     }
+
     if (newFiles.length === 0) return;
+
+    // ③ 加入 OCR 队列
     for (const { name, file } of newFiles) {
-      folderProcessedSet.add(name);
+      _sessionQueuedSet.add(name);
       ocrQueue.push({ file, name, status: 'pending', error: null, projectId: window.currentProjectId || null });
       folderNewCount++;
     }
-    saveFolderProcessed(folderWatchHandle.name, folderProcessedSet);
     updateFolderWatchStats();
     document.getElementById('queueArea').style.display = 'block';
     renderOCRQueue();
@@ -563,15 +613,27 @@ async function startBatchProcess() {
             imageName: item.name,
           };
           if (labelCfg) reqBody.labelConfig = labelCfg;
-          const resp = await fetch(getOcrUploadEndpoint(), {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
-            },
-            body: JSON.stringify(reqBody),
-            signal: abortSig,
-          });
+
+          // 单次请求超时控制：后台标签页 fetch 可能永不 resolve，强制超时中断重试
+          const fetchTimeoutMs = OCR_CONFIG.timeout || 120000;
+          const timeoutCtrl = new AbortController();
+          const timeoutId = setTimeout(() => timeoutCtrl.abort(new Error('OCR 请求超时')), fetchTimeoutMs);
+          const fetchSignal = abortSig ? AbortSignal.any([timeoutCtrl.signal, abortSig]) : timeoutCtrl.signal;
+
+          let resp;
+          try {
+            resp = await fetch(getOcrUploadEndpoint(), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+              },
+              body: JSON.stringify(reqBody),
+              signal: fetchSignal,
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
           updateOCRStatus('ok', 'OCR 就绪');
 
           // 401 账号异常 → 不重试，直接退出
@@ -669,9 +731,9 @@ async function startBatchProcess() {
             updateOCRStatus('ok', '已暂停，点击"继续"恢复');
             return;
           }
-          // 网络错误 / 服务不可达 → 自动重试
+          // 网络错误 / 服务不可达 / 请求超时 → 自动重试
           const msg = e.message || '';
-          if (msg.includes('503') || msg.includes('服务不可用') || msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION')) {
+          if (msg.includes('503') || msg.includes('服务不可用') || msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION') || msg.includes('OCR 请求超时') || msg.includes('TimeoutError') || e.name === 'TimeoutError') {
             const canRetry = await retryTransient(item, msg);
             if (!canRetry) { success = true; break; }
             continue;
@@ -819,9 +881,14 @@ function closePointsInsufficientModal() {
 let _svrWatchPollTimer = null;
 
 function svrWatchInit() {
-  if (!currentUser || currentUser.role !== 'super_admin') return;
   const panel = document.getElementById('svrWatchPanel');
-  if (panel) panel.style.display = '';
+  if (!panel) return;
+  // 仅超管可见服务端监听面板
+  if (!currentUser || currentUser.role !== 'super_admin') {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
   svrWatchRefresh();
   if (_svrWatchPollTimer) clearInterval(_svrWatchPollTimer);
   _svrWatchPollTimer = setInterval(svrWatchRefresh, 8000);
@@ -906,4 +973,32 @@ async function svrWatchStop() {
     await fetch(base + '/folder-watch/stop', { method: 'POST', headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
     svrWatchRefresh();
   } catch (e) {}
+}
+
+// 调用后端弹出 Windows 原生文件夹选择对话框
+async function svrPickFolder() {
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'http://localhost:3000/api';
+    const pathEl = document.getElementById('svrWatchPath');
+    if (pathEl) pathEl.placeholder = '正在打开文件夹选择对话框...';
+    const resp = await fetch(base + '/folder-watch/pick-folder', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    });
+    const data = await resp.json();
+    if (pathEl) pathEl.placeholder = '如 C:\\AutoScreenshotTool\\screenshots\\6';
+    if (data.code === 200 && data.data && data.data.path) {
+      if (pathEl) pathEl.value = data.data.path;
+      updateOCRStatus('ok', '已选择文件夹: ' + data.data.path);
+    } else if (data.code === 400) {
+      // 用户取消选择，静默
+    } else {
+      alert('无法打开文件夹选择器: ' + (data.message || '未知错误'));
+    }
+  } catch (e) {
+    const pathEl = document.getElementById('svrWatchPath');
+    if (pathEl) pathEl.placeholder = '如 C:\\AutoScreenshotTool\\screenshots\\6';
+    alert('无法打开文件夹选择器: ' + e.message);
+  }
 }

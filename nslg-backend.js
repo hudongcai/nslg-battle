@@ -1110,18 +1110,24 @@ async function _scanFolderOnce() {
 
   const pending = [];
   for (const name of files) {
-    // 只有 battle_gallery 关联到真实 battle_records 才算"已OCR"，否则重新处理
+    // 只有已成功 OCR 的才跳过（有有效武将数据的 battle_records 才算成功）
+    // 未成功的、没处理过的都重新处理
     const [ex] = await pool.query(
       `SELECT bg.id FROM battle_gallery bg
        INNER JOIN battle_records br ON bg.battle_id = br.id
-       WHERE bg.original_name = ?
+       WHERE bg.original_name = ? AND bg.status = 1
+       AND br.left_general_1 IS NOT NULL AND br.left_general_1 != ''
        LIMIT 1`,
       [name]
     );
     if (!ex.length) pending.push(name);
   }
+  const skipped = files.length - pending.length;
   folderWatchState.lastScanAt = new Date().toISOString();
   folderWatchState.pendingFiles = pending.length;
+  if (skipped > 0 || pending.length > 0) {
+    console.log(`[FolderWatch] 扫描完成: ${files.length} 文件, 跳过 ${skipped} 已处理, ${pending.length} 待处理`);
+  }
 
   for (const name of pending) {
     if (!folderWatchState.running) break;
@@ -1145,15 +1151,25 @@ function startFolderWatch() {
   if (!cfg.folderPath) return;
   folderWatchState.running = true;
   const iv = Math.max(5, cfg.intervalSec || 10) * 1000;
-  const tick = async () => { if (!folderWatchState.running) return; try { await _scanFolderOnce(); } catch (e) { console.error('[FolderWatch]', e.message); } };
-  tick();
-  folderWatchState.timer = setInterval(tick, iv);
+  // 使用 setTimeout 链代替 setInterval，确保上一次扫描完成后才开始下一次
+  // 避免长时间扫描导致的重叠执行和资源竞争
+  const tick = async () => {
+    if (!folderWatchState.running) return;
+    const startTime = Date.now();
+    try { await _scanFolderOnce(); } catch (e) { console.error('[FolderWatch]', e.message); }
+    if (!folderWatchState.running) return;
+    // 计算下次扫描间隔：保证两次扫描开始时间间隔至少为 iv
+    const elapsed = Date.now() - startTime;
+    const delay = Math.max(1000, iv - elapsed);
+    folderWatchState.timer = setTimeout(tick, delay);
+  };
+  folderWatchState.timer = setTimeout(tick, 0);
   console.log(`[FolderWatch] 启动 路径=${cfg.folderPath} 间隔=${iv / 1000}s`);
 }
 
 function stopFolderWatch() {
   folderWatchState.running = false;
-  if (folderWatchState.timer) { clearInterval(folderWatchState.timer); folderWatchState.timer = null; }
+  if (folderWatchState.timer) { clearTimeout(folderWatchState.timer); folderWatchState.timer = null; }
   console.log('[FolderWatch] 已停止');
 }
 
@@ -1188,6 +1204,46 @@ app.post('/api/folder-watch/stop', requireSuperAdmin, (req, res) => {
   cfg.enabled = false; saveFolderWatchConfig(cfg);
   stopFolderWatch();
   res.json({ code: 200, message: '已停止' });
+});
+
+// 调用 Windows 原生文件夹选择对话框，返回用户选择的路径
+app.post('/api/folder-watch/pick-folder', requireSuperAdmin, (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { execSync } = require('child_process');
+  const tmpFile = path.join(os.tmpdir(), 'nslg_pick_folder.ps1');
+
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "选择截图文件夹"
+$dialog.ShowNewFolderButton = $false
+$dialog.RootFolder = "MyComputer"
+if ($dialog.ShowDialog() -eq 'OK') {
+    Write-Output $dialog.SelectedPath
+}
+`.trim();
+
+  try {
+    fs.writeFileSync(tmpFile, script, 'utf-8');
+    const result = execSync(`powershell -STA -NoProfile -NonInteractive -File "${tmpFile}"`, {
+      encoding: 'utf-8',
+      timeout: 120000,
+      windowsHide: true
+    }).trim();
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+
+    if (result) {
+      res.json({ code: 200, data: { path: result } });
+    } else {
+      res.json({ code: 400, message: '未选择文件夹或操作取消' });
+    }
+  } catch (e) {
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+    console.error('[FolderWatch] 文件夹选择器失败:', e.message);
+    res.json({ code: 500, message: '无法打开文件夹选择对话框: ' + e.message });
+  }
 });
 
 app.listen(PORT, async () => {
