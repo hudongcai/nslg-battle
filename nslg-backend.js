@@ -8,7 +8,12 @@ const { mapPaddleResult } = require('./ocr-parser');
 const app = express();
 const PORT = 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: true,                      // 反射请求的 origin，支持任意来源
+  credentials: false,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(__dirname, { maxAge: 0 }));
@@ -1219,7 +1224,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = "选择截图文件夹"
 $dialog.ShowNewFolderButton = $false
-$dialog.RootFolder = "MyComputer"
+$dialog.RootFolder = [Environment+SpecialFolder]::Desktop
 if ($dialog.ShowDialog() -eq 'OK') {
     Write-Output $dialog.SelectedPath
 }
