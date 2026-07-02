@@ -242,6 +242,7 @@ let folderProcessedSet = new Set();   // 服务端已成功处理的文件名集
 let _sessionQueuedSet = new Set();    // 当前会话已加入队列的文件名（避免重复添加）
 let folderNewCount = 0;
 let _keepAliveCtx = null;             // 静默音频 AudioContext，防止后台标签页被 Chrome 节流
+let _keepAliveTimer = null;           // 1 秒心跳计时器
 
 function getFolderStorageKey(name) {
   return `folder-watch-processed::${name}`;
@@ -333,6 +334,7 @@ async function startFolderWatch() {
 function stopFolderWatch() {
   folderWatchActive = false;
   if (folderWatchTimer) { clearTimeout(folderWatchTimer); folderWatchTimer = null; }
+  if (_keepAliveTimer) { clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
   _stopKeepAlive();
   const btn = document.getElementById('btnFolderWatch');
   const statusEl = document.getElementById('folderWatchStatus');
@@ -340,29 +342,47 @@ function stopFolderWatch() {
   if (statusEl) { statusEl.textContent = '已停止'; statusEl.style.cssText += ';background:var(--bg3);color:var(--text3);'; }
 }
 
-// 静默音频防止 Chrome 后台标签页节流（播放无声循环音频，Chrome 认为标签页"正在播放音频"而不节流）
+// ========== 后台保活：音频 + 心跳，三重机制防止 Chrome 节流 ==========
+
 function _startKeepAlive() {
-  if (_keepAliveCtx) {
-    // 如果已存在但被挂起（异步 await 后可能失去用户手势上下文），恢复播放
-    if (_keepAliveCtx.state === 'suspended') { _keepAliveCtx.resume(); }
-    return;
+  // ① 静默音频 —— Chrome 不对"正在播放音频"的标签页做深度节流
+  if (!_keepAliveCtx) {
+    try {
+      _keepAliveCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // 用极轻的白噪声而非纯静音，Chrome 更大概率识别为"有音频输出"
+      const len = _keepAliveCtx.sampleRate; // 1 秒
+      const buffer = _keepAliveCtx.createBuffer(1, len, _keepAliveCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() - 0.5) * 0.0001; // 极轻噪声
+      const source = _keepAliveCtx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      const gain = _keepAliveCtx.createGain();
+      gain.gain.value = 0.001; // 接近无声但不为零
+      source.connect(gain);
+      gain.connect(_keepAliveCtx.destination);
+      source.start();
+      if (_keepAliveCtx.state === 'suspended') _keepAliveCtx.resume();
+    } catch (e) { _keepAliveCtx = null; }
+  } else if (_keepAliveCtx.state === 'suspended') {
+    _keepAliveCtx.resume();
   }
-  try {
-    _keepAliveCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // 创建 1 秒静默 buffer
-    const buffer = _keepAliveCtx.createBuffer(1, _keepAliveCtx.sampleRate, _keepAliveCtx.sampleRate);
-    const source = _keepAliveCtx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    const gain = _keepAliveCtx.createGain();
-    gain.gain.value = 0; // 完全静音，不打扰用户
-    source.connect(gain);
-    gain.connect(_keepAliveCtx.destination);
-    source.start();
-    // 如果因为用户手势丢失而被挂起，尝试恢复
-    if (_keepAliveCtx.state === 'suspended') { _keepAliveCtx.resume(); }
-  } catch (e) {
-    // AudioContext 创建失败不影响主流程
+
+  // ② 1 秒心跳 —— 高频短 timer 让 Chrome 保持该标签页的 timer budget
+  if (!_keepAliveTimer) {
+    _keepAliveTimer = setInterval(() => {
+      // 如果 AudioContext 被挂起，尝试恢复
+      if (_keepAliveCtx && _keepAliveCtx.state === 'suspended') {
+        try { _keepAliveCtx.resume(); } catch (e) {}
+      }
+    }, 1000);
+  }
+}
+
+function _stopKeepAlive() {
+  if (_keepAliveTimer) { clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
+  if (_keepAliveCtx) {
+    try { _keepAliveCtx.close(); } catch (e) {}
     _keepAliveCtx = null;
   }
 }
