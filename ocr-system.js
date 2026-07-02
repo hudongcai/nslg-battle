@@ -347,7 +347,7 @@ function _openPopupWorker() {
   if (_popupWindow && !_popupWindow.closed) return;
   try {
     // 在屏幕右下角开一个小窗口
-    const w = 280, h = 120;
+    const w = 280, h = 150;
     const left = screen.width - w - 20;
     const top = screen.height - h - 80;
     _popupWindow = window.open('about:blank', 'ocr_folder_watch',
@@ -368,25 +368,28 @@ function _openPopupWorker() {
   .stat{color:#aaa;margin-bottom:2px}
   .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
   .dot.on{background:#48c78e;animation:pulse 1.5s infinite}
+  .dot.warn{background:#f0ad4e;animation:pulse 1.5s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 </style></head><body>
-  <div class="title"><span class="dot on"></span>OCR 文件夹监听运行中</div>
+  <div class="title"><span class="dot on" id="pwDot"></span>OCR 文件夹监听运行中</div>
   <div class="stat" id="pwStatus">等待文件夹...</div>
-  <div class="stat" style="font-size:10px;color:#666;margin-top:6px">请勿关闭此窗口</div>
+  <div class="stat" style="font-size:10px;color:#666;margin-top:6px">请勿关闭此窗口 · 自动置顶</div>
   <script>
     var dirHandle = null;
     var active = false;
     var timer = null;
+    var focusTimer = null;
     var sessionQueued = new Set();
     var processedSet = new Set();
     var newCount = 0;
+    var mainPending = 0;
     var API_BASE = '${apiBase.replace(/'/g, "\\'")}';
     var AUTH_TOKEN = '${token.replace(/'/g, "\\'")}';
     var PROJECT_ID = ${projectId ? ('\'' + projectId + '\'') : 'null'};
 
     window.addEventListener('message', async function(e) {
-      if (e.data === 'stop') { active = false; if(timer) clearTimeout(timer); return; }
-      if (e.data === 'start') { active = true; poll(); }
+      if (e.data === 'stop') { active = false; if(timer) clearTimeout(timer); if(focusTimer) clearInterval(focusTimer); return; }
+      if (e.data === 'start') { active = true; poll(); startFocusKeep(); }
       if (e.data && e.data.type === 'handle') {
         dirHandle = e.data.handle;
         document.getElementById('pwStatus').textContent = '已就绪';
@@ -394,7 +397,21 @@ function _openPopupWorker() {
       if (e.data && e.data.type === 'processed') {
         processedSet = new Set(e.data.list);
       }
+      if (e.data && e.data.type === 'queueStatus') {
+        mainPending = e.data.pending || 0;
+        var dot = document.getElementById('pwDot');
+        if (dot) dot.className = 'dot ' + (mainPending > 3 ? 'warn' : 'on');
+      }
     });
+
+    // 每30秒聚焦一次保持窗口在前
+    function startFocusKeep() {
+      if (focusTimer) clearInterval(focusTimer);
+      focusTimer = setInterval(function() {
+        try { window.focus(); } catch(e) {}
+      }, 30000);
+      try { window.focus(); } catch(e) {}
+    }
 
     async function loadServerSuccessSet() {
       try {
@@ -410,6 +427,12 @@ function _openPopupWorker() {
 
     async function scan() {
       if (!dirHandle || !active) return;
+      // 背压：主窗口待处理队列 > 5 时暂停扫描
+      if (mainPending > 5) {
+        document.getElementById('pwStatus').textContent =
+          new Date().toLocaleTimeString() + ' | 等待处理中(' + mainPending + '个排队)';
+        return;
+      }
       try {
         await loadServerSuccessSet();
         var newFiles = [];
@@ -423,10 +446,11 @@ function _openPopupWorker() {
           newFiles.push({ name: name, file: file });
         }
         if (newFiles.length > 0) {
-          for (var i = 0; i < newFiles.length; i++) {
+          // 每次最多发送3张
+          var sendCount = Math.min(newFiles.length, 3);
+          for (var i = 0; i < sendCount; i++) {
             var f = newFiles[i];
             sessionQueued.add(f.name);
-            // 读取文件内容并通过 postMessage 发送回主窗口
             var buf = await f.file.arrayBuffer();
             if (window.opener && !window.opener.closed) {
               window.opener.postMessage({
@@ -439,7 +463,8 @@ function _openPopupWorker() {
             newCount++;
           }
           document.getElementById('pwStatus').textContent =
-            new Date().toLocaleTimeString() + ' | +' + newFiles.length + '张 | 累计' + newCount;
+            new Date().toLocaleTimeString() + ' | +' + sendCount + '张 | 累计' + newCount +
+            (newFiles.length > sendCount ? ' (余' + (newFiles.length - sendCount) + ')' : '');
         }
       } catch(e) { console.warn('[Popup] 扫描出错:', e.message); }
     }
@@ -447,7 +472,8 @@ function _openPopupWorker() {
     async function poll() {
       if (!active) return;
       try { await scan(); } catch(e) {}
-      if (active) timer = setTimeout(poll, 5000);
+      var delay = mainPending > 3 ? 3000 : 5000;
+      if (active) timer = setTimeout(poll, delay);
     }
 
     window.addEventListener('beforeunload', function() {
@@ -455,7 +481,7 @@ function _openPopupWorker() {
         window.opener.postMessage({type:'popupClosed'}, '*');
       }
     });
-  </script>
+  <\/script>
 </body></html>`);
     _popupWindow.document.close();
 
@@ -481,9 +507,16 @@ function _closePopupWorker() {
   _popupWindow = null;
 }
 
+function _notifyPopupQueueStatus() {
+  if (!_popupWindow || _popupWindow.closed) return;
+  const pending = ocrQueue.filter(function(q) { return q.status === 'pending' || q.status === 'processing'; }).length;
+  try { _popupWindow.postMessage({ type: 'queueStatus', pending: pending }, '*'); } catch(e) {}
+}
+
 // 接收弹窗发来的文件、状态等消息
 window.addEventListener('message', async (e) => {
   if (e.data && e.data.type === 'popupFile' && folderWatchActive) {
+    _notifyPopupQueueStatus();
     // 弹窗扫描到的新文件，加入 OCR 队列
     const { name, buffer } = e.data;
     const file = new File([buffer], name, { type: 'image/png' });
@@ -839,6 +872,12 @@ async function startBatchProcess() {
           }
 
           // 图片本身处理失败(422) → 不重试，直接跳过继续下一张
+          if (result.code === 429) {
+            const canRetry429 = await retryTransient(item, "服务端OCR队列已满(429)");
+            if (!canRetry429) { success = true; break; }
+            continue;
+          }
+
           if (result.code === 422) {
             item.status = 'error';
             item.error = result.message || '图片处理失败';
@@ -930,6 +969,7 @@ async function startBatchProcess() {
       renderOCRQueue();
       updateOCRProgress();
       saveBatchProgress();
+      if (typeof _notifyPopupQueueStatus === 'function') _notifyPopupQueueStatus();
 
       if (_renderCount % OCR_CONFIG.renderThrottleCount === 0) {
         throttledRenderAll();
