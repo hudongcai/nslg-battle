@@ -5,15 +5,15 @@
 
 // ========== 套餐配置 ==========
 const POINTS_PACKAGES = [
-  { id: 'p1',  price: 1,   points: 40,    label: '尝鲜',     tag: '' },
-  { id: 'p2',  price: 6,   points: 250,   label: '小杯',     tag: '' },
-  { id: 'p3',  price: 18,  points: 800,   label: '中杯',     tag: '推荐' },
-  { id: 'p4',  price: 30,  points: 1400,  label: '大杯',     tag: '' },
-  { id: 'p5',  price: 68,  points: 3300,  label: '超实惠',   tag: '划算' },
-  { id: 'p6',  price: 118, points: 6000,  label: '年度会员', tag: '超值' },
-  { id: 'p7',  price: 198, points: 10500, label: '超级套餐', tag: '' },
-  { id: 'p8',  price: 348, points: 20000, label: '年度畅享', tag: 'VIP' },
-  { id: 'p9',  price: 648, points: 38800, label: '至尊豪华', tag: '' },
+  { id: 'p1',  price: 2,     points: 40,    label: '尝鲜',     tag: '' },
+  { id: 'p2',  price: 9.6,   points: 250,   label: '小杯',     tag: '' },
+  { id: 'p3',  price: 28,    points: 800,   label: '中杯',     tag: '推荐' },
+  { id: 'p4',  price: 48,    points: 1400,  label: '大杯',     tag: '' },
+  { id: 'p5',  price: 108,   points: 3300,  label: '超实惠',   tag: '划算' },
+  { id: 'p6',  price: 188,   points: 6000,  label: '年度会员', tag: '超值' },
+  { id: 'p7',  price: 318,   points: 10500, label: '超级套餐', tag: '' },
+  { id: 'p8',  price: 580,   points: 20000, label: '年度畅享', tag: 'VIP' },
+  { id: 'p9',  price: 1080,  points: 38800, label: '至尊豪华', tag: '' },
 ];
 
 // 管理员联系方式
@@ -24,7 +24,7 @@ const ADMIN_CONTACT = {
 
 // 截图工具包月套餐
 const TOOL_PACKAGE = {
-  price: 18,
+  price: 38,
   label: '截图工具',
   sub: '包月授权',
   note: '请联系管理员，支付月费后获取授权序列号',
