@@ -196,6 +196,16 @@ function updateHelperActionModalStatus(text) {
   if (statusEl) statusEl.textContent = text;
 }
 
+// 更新弹窗主标题（更醒目），同时更新副标题
+function updateHelperActionModalTitle(title, subtitle) {
+  const titleEl = document.getElementById('helperActionModalTitle');
+  if (titleEl) titleEl.textContent = title;
+  if (subtitle) {
+    const statusEl = document.getElementById('helperActionModalStatus');
+    if (statusEl) statusEl.textContent = subtitle;
+  }
+}
+
 function showHelperActionModal(message, loading) {
   closeHelperActionModal();
   const mask = document.createElement('div');
@@ -204,8 +214,8 @@ function showHelperActionModal(message, loading) {
   mask.innerHTML = `
     <div style="width:min(360px,100%);background:linear-gradient(135deg,var(--bg2),rgba(26,32,56,.98));border:1px solid rgba(240,180,41,.26);border-radius:18px;box-shadow:0 18px 60px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);padding:24px 22px;text-align:center;">
       ${loading ? '<div style="width:34px;height:34px;border:3px solid rgba(240,180,41,.22);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:helperSpin .8s linear infinite;"></div>' : ''}
-      <div style="font-size:16px;font-weight:800;color:var(--text1);">${escHtml(message)}</div>
-      ${loading ? '<div id="helperActionModalStatus" style="font-size:12px;color:var(--text3);margin-top:8px;">请稍等，正在自动完成关联</div>' : '<button type="button" class="btn btn-sm btn-primary" style="margin:18px auto 0;min-width:112px;height:36px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 22px rgba(240,180,41,.18);" onclick="closeHelperActionModal()">确认</button>'}
+      <div id="helperActionModalTitle" style="font-size:16px;font-weight:800;color:var(--text1);">${escHtml(message)}</div>
+      ${loading ? '<div id="helperActionModalStatus" style="font-size:13px;color:var(--accent);margin-top:10px;font-weight:600;">请稍等，正在自动完成关联</div>' : '<button type="button" class="btn btn-sm btn-primary" style="margin:18px auto 0;min-width:112px;height:36px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 22px rgba(240,180,41,.18);" onclick="closeHelperActionModal()">确认</button>'}
     </div>
   `;
   if (!document.getElementById('helperActionModalStyle')) {
@@ -273,7 +283,7 @@ function applyHelperLinkBootstrap(linkState) {
 async function hydrateHelperStateAfterLink(projectId) {
   const normalizedProjectId = Number(projectId || getCurrentHelperProjectId() || 0) || null;
   for (let i = 1; i <= 5; i++) {
-    updateHelperActionModalStatus('同步任务状态中… (' + i + '/5)');
+    updateHelperActionModalTitle('步骤 4/4：同步任务状态 (' + i + '/5)', '正在刷新本地助手任务列表…');
     await refreshHelperTasks(true);
     const matchedTask = Array.isArray(helperTaskList)
       ? helperTaskList.find(item => Number(item.projectId || 0) === Number(normalizedProjectId || 0))
@@ -284,11 +294,11 @@ async function hydrateHelperStateAfterLink(projectId) {
       return true;
     }
     if (i < 5) {
-      updateHelperActionModalStatus('等待助手任务就绪… (' + i + '/5)');
+      updateHelperActionModalTitle('步骤 4/4：等待就绪 (' + i + '/5)', '800ms 后重试…');
       await sleepHelper(800);
     }
   }
-  updateHelperActionModalStatus('任务数据已同步，正在刷新面板…');
+  updateHelperActionModalTitle('步骤 4/4：同步完成', '正在刷新面板…');
   renderHelperTaskPanel();
   renderOCRQueue();
   return false;
@@ -725,6 +735,10 @@ async function connectLocalHelperWithMode(mode, existingCode) {
   if (!token) { showToast('请先登录', 'warn'); return; }
   const modeLabel = mode === 'refresh' ? '刷新链接助手' : '首次链接助手';
   const readyCode = String(existingCode || '').trim();
+
+  // 立即显示弹窗，确保用户点击后第一时间看到反馈
+  showHelperActionModal(modeLabel + '中', true);
+
   if (readyCode) {
     // 有预置码：openLocalHelperWithCode 在 linkLocalHelperWithFeedback 内同步执行，
     // 在遇到第一个 await 之前完成 location.href 赋值，保留用户手势
@@ -741,6 +755,7 @@ async function connectLocalHelperWithMode(mode, existingCode) {
     return;
   }
   // 兜底：实时生成链接码并打开本地助手
+  updateHelperActionModalTitle('正在生成连接码…', '请稍等');
   try {
     const resp = await fetch(getLocalHelperApiBase() + '/link-token', {
       method: 'POST',
@@ -752,26 +767,28 @@ async function connectLocalHelperWithMode(mode, existingCode) {
       // 实时生成链接码并触发本地助手（此时用户手势可能已丢失，但 <a>.click() 仍会尽力触发）
       await linkLocalHelperWithFeedback(data.data.linkToken, modeLabel);
     } else {
+      closeHelperActionModal();
       showToast(modeLabel + '失败: ' + (data.message || '未知错误'), 'error');
     }
   } catch (e) {
+    closeHelperActionModal();
     showToast(modeLabel + '失败: ' + e.message, 'error');
   }
 }
 
 async function linkLocalHelperWithFeedback(code, modeLabel) {
-  showHelperActionModal(modeLabel + '中', true);
+  // 弹窗已由调用方提前显示，这里直接更新状态
   openLocalHelperWithCode(code);
-  updateHelperActionModalStatus('已发送连接请求，等待本地助手响应…');
+  updateHelperActionModalTitle('步骤 1/4：已发送连接请求', '等待本地助手响应…');
 
   // 20 秒轮询链接码消费状态
   const linkState = await waitForLinkTokenConsumed(code, 20000);
   if (!linkState || !linkState.used) {
-    updateHelperActionModalStatus('未收到助手响应，尝试检测在线状态…');
+    updateHelperActionModalTitle('步骤 2/4：未收到响应', '尝试检测在线状态…');
   }
   const connected = !!(linkState && linkState.used) || await waitForHelperConnected(5000);
   if (connected) {
-    updateHelperActionModalStatus('已连接，正在同步数据…');
+    updateHelperActionModalTitle('步骤 3/4：已连接', '正在同步数据…');
     if (linkState && linkState.used) {
       applyHelperLinkBootstrap(linkState);
       renderHelperTaskPanel();
