@@ -38,6 +38,9 @@ let helperTaskList = [];
 let helperClientStatus = null;
 let _helperTaskPollTimer = null;
 let _helperTaskEnsuring = false;
+let _preGeneratedLinkCode = '';
+let _preGeneratedLinkCodeAt = 0;
+const LINK_CODE_PREGEN_TTL = 9 * 60 * 1000;  // 9 分钟，后端 10 分钟过期留有余量
 let _helperWakeAttemptAt = 0;
 let _helperWakeProjectId = null;
 let _helperAutoRecordSyncing = false;
@@ -168,18 +171,18 @@ function buildLocalHelperProtocolUrl(action, params = {}) {
 
 function openLocalHelperProtocol(action, params = {}, successText) {
   const protocolUrl = buildLocalHelperProtocolUrl(action, params);
-  // 使用 location.href 触发自定义协议，不依赖用户手势上下文
-  // <a>.click() 和 <iframe> 在异步调用后都会因用户手势丢失而被浏览器拦截
-  const prevHref = window.location.href;
-  window.location.href = protocolUrl;
-  // 如果页面被导航离开（极端情况），恢复机制会在短时间内生效；
-  // 正常情况浏览器检测到自定义协议后不会离开当前页面
+  // 使用隐藏 <a> 元素 + click() 触发自定义协议（需要用户手势上下文）。
+  // location.href 赋值在现代 Chrome 中即使有用户手势也可能被静默阻止；
+  // <a>.click() 模拟用户点击链接，浏览器将其视为用户发起的导航。
+  const a = document.createElement('a');
+  a.href = protocolUrl;
+  a.target = '_blank';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
   setTimeout(() => {
-    if (window.location.href !== prevHref && window.location.href === protocolUrl) {
-      // 浏览器未能识别自定义协议，尝试恢复（极少见）
-      window.location.href = prevHref;
-    }
-  }, 800);
+    try { document.body.removeChild(a); } catch (e) {}
+  }, 500);
   if (successText) showToast(successText, 'success');
 }
 
@@ -347,6 +350,7 @@ function startHelperTaskPolling() {
   if (_helperTaskPollTimer) clearInterval(_helperTaskPollTimer);
   if (!currentUser) return;
   refreshHelperTasks();
+  preGenerateHelperLinkCode();  // 后台预生成链接码
   _helperTaskPollTimer = setInterval(() => {
     if (!currentUser) return;
     refreshHelperTasks(true);
@@ -386,6 +390,7 @@ async function refreshHelperTasks(silent) {
     }
     renderHelperTaskPanel();
     renderOCRQueue();
+    preGenerateHelperLinkCode();  // 后台刷新预生成链接码缓存
   } catch (e) {
     if (!silent) updateOCRStatus('ok', '助手任务刷新失败: ' + e.message);
   }
@@ -613,6 +618,30 @@ async function generateHelperLinkToken() {
   }
 }
 
+async function preGenerateHelperLinkCode() {
+  if (_preGeneratedLinkCode && (Date.now() - _preGeneratedLinkCodeAt) < LINK_CODE_PREGEN_TTL) {
+    return _preGeneratedLinkCode;  // 缓存有效，直接返回
+  }
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) return '';
+  try {
+    const resp = await fetch(getLocalHelperApiBase() + '/link-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (data.code === 200 && data.data && data.data.linkToken) {
+      _preGeneratedLinkCode = data.data.linkToken;
+      _preGeneratedLinkCodeAt = Date.now();
+      return _preGeneratedLinkCode;
+    }
+  } catch (e) {
+    // 静默失败，点击时再实时生成
+  }
+  return '';
+}
+
 async function controlHelperTask(id, action, silentWake) {
   const token = typeof getToken === 'function' ? getToken() : '';
   if (!token) { showToast('请先登录', 'warn'); return; }
@@ -687,10 +716,21 @@ async function connectLocalHelperWithMode(mode, existingCode) {
   const modeLabel = mode === 'refresh' ? '刷新链接助手' : '首次链接助手';
   const readyCode = String(existingCode || '').trim();
   if (readyCode) {
+    // 有预置码：openLocalHelperWithCode 在 linkLocalHelperWithFeedback 内同步执行，
+    // 在遇到第一个 await 之前完成 location.href 赋值，保留用户手势
     await linkLocalHelperWithFeedback(readyCode, modeLabel);
     return;
   }
-  // 直接生成链接码并打开本地助手，避免多余的异步操作延迟协议触发
+  // 无预置码：尝试使用后台预生成的链接码（首次链接场景），同步读取避免 await
+  const preCode = (mode === 'first' && _preGeneratedLinkCode && (Date.now() - _preGeneratedLinkCodeAt) < LINK_CODE_PREGEN_TTL) ? _preGeneratedLinkCode : '';
+  if (preCode) {
+    // 消耗后立即清除，防止复用
+    _preGeneratedLinkCode = '';
+    _preGeneratedLinkCodeAt = 0;
+    await linkLocalHelperWithFeedback(preCode, modeLabel);
+    return;
+  }
+  // 兜底：实时生成链接码并打开本地助手
   try {
     const resp = await fetch(getLocalHelperApiBase() + '/link-token', {
       method: 'POST',
@@ -699,7 +739,7 @@ async function connectLocalHelperWithMode(mode, existingCode) {
     });
     const data = await resp.json();
     if (data.code === 200 && data.data && data.data.linkToken) {
-      // 立即打开协议URL触发本地助手（使用 location.href，不依赖用户手势）
+      // 实时生成链接码并触发本地助手（此时用户手势可能已丢失，但 <a>.click() 仍会尽力触发）
       await linkLocalHelperWithFeedback(data.data.linkToken, modeLabel);
     } else {
       showToast(modeLabel + '失败: ' + (data.message || '未知错误'), 'error');
