@@ -171,17 +171,16 @@ function buildLocalHelperProtocolUrl(action, params = {}) {
 
 function openLocalHelperProtocol(action, params = {}, successText) {
   const protocolUrl = buildLocalHelperProtocolUrl(action, params);
-  // 使用隐藏 <a> 元素 + click() 触发自定义协议。
-  // 不加 target="_blank" — 避免被 Edge/Chrome 弹窗拦截器静默阻止；
-  // 已注册的协议处理器被触发后，浏览器不会离开当前页面。
-  const a = document.createElement('a');
-  a.href = protocolUrl;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
+  // 使用隐藏 iframe 触发自定义协议。
+  // <a>.click() 在 HTTPS 页面可能触发页面导航离开，导致弹窗/JS 状态丢失；
+  // iframe 在独立 browsing context 中加载协议 URL，不影响当前页面。
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = protocolUrl;
+  document.body.appendChild(iframe);
   setTimeout(() => {
-    try { document.body.removeChild(a); } catch (e) {}
-  }, 500);
+    try { document.body.removeChild(iframe); } catch (e) {}
+  }, 2000);
   if (successText) showToast(successText, 'success');
 }
 
@@ -778,32 +777,42 @@ async function connectLocalHelperWithMode(mode, existingCode) {
 
 async function linkLocalHelperWithFeedback(code, modeLabel) {
   // 弹窗已由调用方提前显示，这里直接更新状态
-  openLocalHelperWithCode(code);
+  const linkCode = String(code || '').trim();
+  if (!linkCode) {
+    showHelperActionModal('连接码异常，请重试', false);
+    return;
+  }
+  openLocalHelperWithCode(linkCode);
   updateHelperActionModalTitle('步骤 1/4：已发送连接请求', '等待本地助手响应…');
 
-  // 20 秒轮询链接码消费状态
-  const linkState = await waitForLinkTokenConsumed(code, 20000);
-  if (!linkState || !linkState.used) {
-    updateHelperActionModalTitle('步骤 2/4：未收到响应', '尝试检测在线状态…');
-  }
-  const connected = !!(linkState && linkState.used) || await waitForHelperConnected(5000);
-  if (connected) {
-    updateHelperActionModalTitle('步骤 3/4：已连接', '正在同步数据…');
-    if (linkState && linkState.used) {
-      applyHelperLinkBootstrap(linkState);
-      renderHelperTaskPanel();
-      renderOCRQueue();
+  try {
+    // 20 秒轮询链接码消费状态
+    const linkState = await waitForLinkTokenConsumed(linkCode, 20000);
+    if (!linkState || !linkState.used) {
+      updateHelperActionModalTitle('步骤 2/4：未收到响应', '尝试检测在线状态…');
     }
-    try {
-      await hydrateHelperStateAfterLink(getCurrentHelperProjectId());
-      setTimeout(() => refreshHelperTasks(true), 1500);
-    } catch (e) {
-      console.warn('[LocalHelper] 链接成功后刷新状态失败:', e.message || e);
+    const connected = !!(linkState && linkState.used) || await waitForHelperConnected(5000);
+    if (connected) {
+      updateHelperActionModalTitle('步骤 3/4：已连接', '正在同步数据…');
+      if (linkState && linkState.used) {
+        applyHelperLinkBootstrap(linkState);
+        renderHelperTaskPanel();
+        renderOCRQueue();
+      }
+      try {
+        await hydrateHelperStateAfterLink(getCurrentHelperProjectId());
+        setTimeout(() => refreshHelperTasks(true), 1500);
+      } catch (e) {
+        console.warn('[LocalHelper] 链接成功后刷新状态失败:', e.message || e);
+      }
+      closeHelperLinkDialog();
+      showHelperActionModal('已完成链接', false);
+    } else {
+      showHelperActionModal('还没有完成链接，请确认本地助手已安装后再试一次', false);
     }
-    closeHelperLinkDialog();
-    showHelperActionModal('已完成链接', false);
-  } else {
-    showHelperActionModal('还没有完成链接，请确认本地助手已安装后再试一次', false);
+  } catch (e) {
+    console.error('[LocalHelper] 链接流程异常:', e.message || e);
+    showHelperActionModal('链接流程出错: ' + (e.message || '未知错误'), false);
   }
 }
 
