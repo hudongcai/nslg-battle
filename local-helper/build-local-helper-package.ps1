@@ -1,9 +1,14 @@
 ﻿$packageDir = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper'
 $zipPath = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper.zip'
-$installerPath = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper-setup.exe'
+$publicDownloadDir = Join-Path $PSScriptRoot '..\downloads'
+$installerPath = Join-Path $publicDownloadDir 'zhenwu-local-helper-setup.exe'
 $nodePath = (Get-Command node -ErrorAction Stop).Source
 $cscPath = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $installerSourcePath = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper-installer.cs'
+
+if (-not (Test-Path $publicDownloadDir)) {
+    New-Item -ItemType Directory -Path $publicDownloadDir | Out-Null
+}
 
 if (Test-Path $packageDir) {
     Remove-Item -LiteralPath $packageDir -Recurse -Force

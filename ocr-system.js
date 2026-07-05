@@ -43,8 +43,8 @@ let _helperWakeProjectId = null;
 let _helperAutoRecordSyncing = false;
 let _helperAutoRecordSyncMarker = '';
 const LOCAL_HELPER_DOWNLOAD_URL = (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE && /zhenwu\.fun/i.test(location.host))
-  ? (location.origin.replace(/\/$/, '') + '/release/zhenwu-local-helper-setup.exe')
-  : './release/zhenwu-local-helper-setup.exe';
+  ? (location.origin.replace(/\/$/, '') + '/downloads/zhenwu-local-helper-setup.exe')
+  : './downloads/zhenwu-local-helper-setup.exe';
 
 function getHelperTaskById(list, id) {
   if (!Array.isArray(list) || !id) return null;
