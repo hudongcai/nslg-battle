@@ -1539,9 +1539,16 @@ app.post('/api/local-helper/tasks/:id/progress', requireHelperClient, async (req
   try {
     const taskId = Number(req.params.id);
     const { status, lastError, stats, lastUploadAt, folderPath } = req.body || {};
-    const [rows] = await pool.query('SELECT id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1', [taskId, req.helperClient.user_id]);
+    const [rows] = await pool.query('SELECT id, status FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1', [taskId, req.helperClient.user_id]);
     if (!rows.length) return res.json({ code: 404, message: '任务不存在' });
-    const nextStatus = status && ['pending_bind', 'ready', 'running', 'paused', 'offline', 'completed', 'stopped', 'error'].includes(status) ? status : null;
+    const currentStatus = String(rows[0].status || '').trim();
+    let nextStatus = status && ['pending_bind', 'ready', 'running', 'paused', 'offline', 'completed', 'stopped', 'error'].includes(status) ? status : null;
+    if (currentStatus === 'running' && nextStatus === 'ready') {
+      nextStatus = null;
+    }
+    if (['paused', 'stopped'].includes(currentStatus) && ['pending_bind', 'ready', 'running', 'error'].includes(nextStatus)) {
+      nextStatus = null;
+    }
     const normalizedLastUploadAt = normalizeMySqlDateTime(lastUploadAt);
     await pool.query(`UPDATE local_helper_clients SET status = 'online', last_seen_at = NOW(), last_ip = ?, updated_at = NOW() WHERE id = ?`, [req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || '', req.helperClient.id]);
     await pool.query(`UPDATE ocr_watch_tasks SET helper_client_id = ?, folder_path = COALESCE(?, folder_path), status = COALESCE(?, status), last_error = ?, stats_json = ?, last_heartbeat_at = NOW(), last_upload_at = COALESCE(?, last_upload_at), updated_at = NOW() WHERE id = ?`, [req.helperClient.id, folderPath ? String(folderPath).trim().slice(0, 512) : null, nextStatus, lastError ? String(lastError).slice(0, 2000) : null, JSON.stringify(parseTaskStats(stats)), normalizedLastUploadAt, taskId]);

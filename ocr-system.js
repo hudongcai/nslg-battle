@@ -982,7 +982,10 @@ function renderOCRQueue() {
       }
     });
   }
-  if (queueCount) queueCount.textContent = visibleItems.length + helperQueueItems.length;
+  const helperPendingTotal = helperTask
+    ? Number(helperTask.stats?.pending || helperQueueItems.length || 0)
+    : 0;
+  if (queueCount) queueCount.textContent = visibleItems.length + helperPendingTotal;
   if (queueArea) queueArea.style.display = 'block';
 
   if (queueList) {
@@ -1873,6 +1876,5 @@ async function svrPickFolder() {
     alert('无法打开文件夹选择器: ' + e.message);
   }
 }
-
 
 

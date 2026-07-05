@@ -580,7 +580,6 @@ function Report-TaskPreview([int]$taskId, [string]$folderPath) {
     }
 
     $resp = Invoke-HelperApi -Path "/local-helper/tasks/$taskId/progress" -Method 'POST' -Body @{
-        status = 'ready'
         folderPath = $folderPath
         stats = $stats
     }
