@@ -208,25 +208,40 @@ function sleepHelper(ms) {
 async function waitForHelperConnected(timeoutMs) {
   const token = typeof getToken === 'function' ? getToken() : '';
   if (!token) return false;
+  const projectId = getCurrentHelperProjectId();
+  const taskUrl = new URL(getLocalHelperApiBase() + '/tasks', window.location.origin);
+  if (projectId) taskUrl.searchParams.set('projectId', String(projectId));
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const resp = await fetch(getLocalHelperApiBase() + '/status', { headers: { 'Authorization': 'Bearer ' + token } });
-      const data = await resp.json();
-      if (data.code === 200) {
-        helperClientStatus = data.data || null;
+      const [statusResp, taskResp] = await Promise.all([
+        fetch(getLocalHelperApiBase() + '/status', { headers: { 'Authorization': 'Bearer ' + token } }),
+        fetch(taskUrl.toString(), { headers: { 'Authorization': 'Bearer ' + token } })
+      ]);
+      const statusData = await statusResp.json();
+      const taskData = await taskResp.json();
+      if (statusData.code === 200) {
+        helperClientStatus = statusData.data || null;
         let active = helperClientStatus && helperClientStatus.activeClient;
         if (!active && helperClientStatus && Array.isArray(helperClientStatus.clients)) {
           active = helperClientStatus.clients.find(client => isHelperSeenRecently(client.lastSeenAt, 120000)) || null;
           if (active) helperClientStatus.activeClient = active;
         }
-        renderHelperTaskPanel();
-        if ((helperClientStatus && helperClientStatus.connected && active) || (active && isHelperSeenRecently(active.lastSeenAt, 120000))) {
-          await refreshHelperTasks(true);
-          const taskLinked = helperTaskList.some(task => task.helperClientId || isHelperSeenRecently(task.lastHeartbeatAt, 120000));
-          if (taskLinked || active) return true;
-          return true;
-        }
+      }
+      if (taskData.code === 200) {
+        helperTaskList = Array.isArray(taskData.data) ? taskData.data : [];
+      }
+      renderHelperTaskPanel();
+      const active = helperClientStatus && helperClientStatus.activeClient;
+      const taskLinked = helperTaskList.some(task =>
+        Number(task.projectId || 0) === Number(projectId || 0) &&
+        (task.helperClientId || isHelperSeenRecently(task.lastHeartbeatAt, 120000))
+      );
+      if ((helperClientStatus && helperClientStatus.connected && active) ||
+          (active && isHelperSeenRecently(active.lastSeenAt, 120000)) ||
+          taskLinked) {
+        await refreshHelperTasks(true);
+        return true;
       }
     } catch (e) {}
     await sleepHelper(1000);
