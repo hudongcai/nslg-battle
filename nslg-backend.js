@@ -1300,6 +1300,36 @@ app.post('/api/local-helper/link-token', requireActiveUser, async (req, res) => 
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
+app.get('/api/local-helper/link-token/status', requireActiveUser, async (req, res) => {
+  try {
+    const linkToken = String(req.query.token || '').trim();
+    if (!linkToken) return res.json({ code: 400, message: '缺少连接码' });
+    const [rows] = await pool.query(
+      `SELECT t.client_id, t.expires_at, t.used_at, c.device_name
+       FROM local_helper_link_tokens t
+       LEFT JOIN local_helper_clients c ON c.id = t.client_id
+       WHERE t.user_id = ? AND t.link_token = ?
+       LIMIT 1`,
+      [req.authUserId, linkToken]
+    );
+    if (!rows.length) return res.json({ code: 404, message: '连接码不存在' });
+    const row = rows[0];
+    const expiresAt = row.expires_at || null;
+    const usedAt = row.used_at || null;
+    const expired = !!expiresAt && new Date(expiresAt).getTime() <= Date.now();
+    res.json({
+      code: 200,
+      data: {
+        used: !!usedAt,
+        usedAt,
+        expired,
+        clientId: row.client_id || null,
+        deviceName: row.device_name || ''
+      }
+    });
+  } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
 app.post('/api/local-helper/link/consume', async (req, res) => {
   try {
     const { linkToken, deviceId, deviceName, helperVersion, meta } = req.body || {};

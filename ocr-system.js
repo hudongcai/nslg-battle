@@ -205,6 +205,27 @@ function sleepHelper(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function waitForLinkTokenConsumed(linkToken, timeoutMs) {
+  const token = typeof getToken === 'function' ? getToken() : '';
+  const code = String(linkToken || '').trim();
+  if (!token || !code) return false;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const resp = await fetch(getLocalHelperApiBase() + '/link-token/status?token=' + encodeURIComponent(code), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const data = await resp.json();
+      if (data.code === 200 && data.data) {
+        if (data.data.used) return true;
+        if (data.data.expired) return false;
+      }
+    } catch (e) {}
+    await sleepHelper(1000);
+  }
+  return false;
+}
+
 async function waitForHelperConnected(timeoutMs) {
   const token = typeof getToken === 'function' ? getToken() : '';
   if (!token) return false;
@@ -647,10 +668,14 @@ async function connectLocalHelperWithMode(mode, existingCode) {
 async function linkLocalHelperWithFeedback(code, modeLabel) {
   showHelperActionModal(modeLabel + '中', true);
   openLocalHelperWithCode(code);
-  const connected = await waitForHelperConnected(20000);
+  const connected = await waitForLinkTokenConsumed(code, 20000) || await waitForHelperConnected(5000);
   if (connected) {
-    await refreshHelperTasks(true);
-    setTimeout(() => refreshHelperTasks(true), 1500);
+    try {
+      await refreshHelperTasks(true);
+      setTimeout(() => refreshHelperTasks(true), 1500);
+    } catch (e) {
+      console.warn('[LocalHelper] 链接成功后刷新状态失败:', e.message || e);
+    }
     closeHelperLinkDialog();
     showHelperActionModal('已完成链接', false);
   } else {
