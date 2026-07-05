@@ -844,7 +844,7 @@ function _renderTestResult(title, result, logs) {
 }
 
 function escHtml(s) {
-  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ── 方案管理（localStorage）──────────────────────────────────────────
