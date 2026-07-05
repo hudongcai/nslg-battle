@@ -171,12 +171,11 @@ function buildLocalHelperProtocolUrl(action, params = {}) {
 
 function openLocalHelperProtocol(action, params = {}, successText) {
   const protocolUrl = buildLocalHelperProtocolUrl(action, params);
-  // 使用隐藏 <a> 元素 + click() 触发自定义协议（需要用户手势上下文）。
-  // location.href 赋值在现代 Chrome 中即使有用户手势也可能被静默阻止；
-  // <a>.click() 模拟用户点击链接，浏览器将其视为用户发起的导航。
+  // 使用隐藏 <a> 元素 + click() 触发自定义协议。
+  // 不加 target="_blank" — 避免被 Edge/Chrome 弹窗拦截器静默阻止；
+  // 已注册的协议处理器被触发后，浏览器不会离开当前页面。
   const a = document.createElement('a');
   a.href = protocolUrl;
-  a.target = '_blank';
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
@@ -189,6 +188,12 @@ function openLocalHelperProtocol(action, params = {}, successText) {
 function closeHelperActionModal() {
   const mask = document.getElementById('helperActionModal');
   if (mask) mask.remove();
+  if (window._helperModalTimer) { clearTimeout(window._helperModalTimer); window._helperModalTimer = null; }
+}
+
+function updateHelperActionModalStatus(text) {
+  const statusEl = document.getElementById('helperActionModalStatus');
+  if (statusEl) statusEl.textContent = text;
 }
 
 function showHelperActionModal(message, loading) {
@@ -200,7 +205,7 @@ function showHelperActionModal(message, loading) {
     <div style="width:min(360px,100%);background:linear-gradient(135deg,var(--bg2),rgba(26,32,56,.98));border:1px solid rgba(240,180,41,.26);border-radius:18px;box-shadow:0 18px 60px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);padding:24px 22px;text-align:center;">
       ${loading ? '<div style="width:34px;height:34px;border:3px solid rgba(240,180,41,.22);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:helperSpin .8s linear infinite;"></div>' : ''}
       <div style="font-size:16px;font-weight:800;color:var(--text1);">${escHtml(message)}</div>
-      ${loading ? '<div style="font-size:12px;color:var(--text3);margin-top:8px;">请稍等，正在自动完成关联</div>' : '<button type="button" class="btn btn-sm btn-primary" style="margin:18px auto 0;min-width:112px;height:36px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 22px rgba(240,180,41,.18);" onclick="closeHelperActionModal()">确认</button>'}
+      ${loading ? '<div id="helperActionModalStatus" style="font-size:12px;color:var(--text3);margin-top:8px;">请稍等，正在自动完成关联</div>' : '<button type="button" class="btn btn-sm btn-primary" style="margin:18px auto 0;min-width:112px;height:36px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 22px rgba(240,180,41,.18);" onclick="closeHelperActionModal()">确认</button>'}
     </div>
   `;
   if (!document.getElementById('helperActionModalStyle')) {
@@ -752,9 +757,16 @@ async function connectLocalHelperWithMode(mode, existingCode) {
 async function linkLocalHelperWithFeedback(code, modeLabel) {
   showHelperActionModal(modeLabel + '中', true);
   openLocalHelperWithCode(code);
+  updateHelperActionModalStatus('已发送连接请求，等待本地助手响应…');
+
+  // 20 秒轮询链接码消费状态
   const linkState = await waitForLinkTokenConsumed(code, 20000);
+  if (!linkState || !linkState.used) {
+    updateHelperActionModalStatus('未收到助手响应，尝试检测在线状态…');
+  }
   const connected = !!(linkState && linkState.used) || await waitForHelperConnected(5000);
   if (connected) {
+    updateHelperActionModalStatus('已连接，正在同步数据…');
     if (linkState && linkState.used) {
       applyHelperLinkBootstrap(linkState);
       renderHelperTaskPanel();
