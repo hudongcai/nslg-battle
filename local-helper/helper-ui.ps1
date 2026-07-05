@@ -19,6 +19,9 @@ $script:NotifyIcon = $null
 $script:NotifyMenu = $null
 $script:HelperWorkerProc = $null
 $script:TrayStatusLabel = $null
+$script:LoadingForm = $null
+$script:LoadingLabel = $null
+$script:LoadingProgress = $null
 $script:AppIconPath = Join-Path $PSScriptRoot 'helper-app.ico'
 $script:LaunchAction = 'open'
 $script:LaunchProjectId = 0
@@ -527,10 +530,9 @@ function Get-ImageFileNames([string]$folderPath) {
 
     try {
         return @(
-            Get-ChildItem -LiteralPath $folderPath -File -ErrorAction Stop |
-                Where-Object { $_.Name -match '\.(png|jpg|jpeg)$' } |
-                Sort-Object Name |
-                ForEach-Object { $_.Name }
+            [System.IO.Directory]::EnumerateFiles($folderPath) |
+                Where-Object { [System.IO.Path]::GetExtension($_) -match '^\.(png|jpg|jpeg)$' } |
+                ForEach-Object { [System.IO.Path]::GetFileName($_) }
         )
     } catch {
         return @()
@@ -627,6 +629,51 @@ function Set-TrayStatus([string]$text, [System.Drawing.Color]$color) {
     }
 }
 
+function Show-LoadingPrompt([string]$text) {
+    Close-LoadingPrompt
+
+    $script:LoadingForm = New-Object System.Windows.Forms.Form
+    $script:LoadingForm.Text = '真武本地助手'
+    $script:LoadingForm.Size = New-Object System.Drawing.Size(390, 130)
+    $script:LoadingForm.StartPosition = 'CenterScreen'
+    $script:LoadingForm.FormBorderStyle = 'FixedDialog'
+    $script:LoadingForm.MaximizeBox = $false
+    $script:LoadingForm.MinimizeBox = $false
+    $script:LoadingForm.ControlBox = $false
+    $script:LoadingForm.TopMost = $true
+
+    $script:LoadingLabel = New-Object System.Windows.Forms.Label
+    $script:LoadingLabel.Text = $text
+    $script:LoadingLabel.Location = New-Object System.Drawing.Point(22, 18)
+    $script:LoadingLabel.Size = New-Object System.Drawing.Size(340, 28)
+    $script:LoadingLabel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+    $script:LoadingForm.Controls.Add($script:LoadingLabel)
+
+    $script:LoadingProgress = New-Object System.Windows.Forms.ProgressBar
+    $script:LoadingProgress.Location = New-Object System.Drawing.Point(22, 58)
+    $script:LoadingProgress.Size = New-Object System.Drawing.Size(340, 18)
+    $script:LoadingProgress.Style = 'Marquee'
+    $script:LoadingProgress.MarqueeAnimationSpeed = 25
+    $script:LoadingForm.Controls.Add($script:LoadingProgress)
+
+    $script:LoadingForm.Show()
+    $script:LoadingForm.Refresh()
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Close-LoadingPrompt {
+    if ($script:LoadingForm) {
+        try {
+            $script:LoadingForm.Close()
+            $script:LoadingForm.Dispose()
+        } catch {}
+    }
+    $script:LoadingForm = $null
+    $script:LoadingLabel = $null
+    $script:LoadingProgress = $null
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
 function Get-TaskStatusLabel([string]$status) {
     switch ($status) {
         'pending_bind' { return '待选择文件夹' }
@@ -654,11 +701,14 @@ function Prompt-BindSelectedTaskFolder {
 
     if ($folderDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
+            Show-LoadingPrompt '正在加载同步目录，请稍候...'
             Bind-TaskFolder -taskId ([int]$task.id) -folderPath $folderDialog.SelectedPath
             Start-HelperWorker
+            Close-LoadingPrompt
             Set-Status '监听文件夹已保存。' ([System.Drawing.Color]::FromArgb(55, 125, 34))
             Refresh-UiTasks
         } catch {
+            Close-LoadingPrompt
             Set-Status $_.Exception.Message ([System.Drawing.Color]::Firebrick)
         }
     }
@@ -713,9 +763,12 @@ function Invoke-DirectFolderBind([int]$taskId) {
     }
 
     try {
+        Show-LoadingPrompt '正在加载同步目录，请稍候...'
         Bind-TaskFolder -taskId ([int]$task.id) -folderPath $dialog.SelectedPath
         Start-HelperWorker -ForceRestart
+        Close-LoadingPrompt
     } catch {
+        Close-LoadingPrompt
         [System.Windows.Forms.MessageBox]::Show(
             $_.Exception.Message,
             '真武本地助手',

@@ -1381,7 +1381,10 @@ app.post('/api/local-helper/link/consume', async (req, res) => {
       if (Number.isInteger(projectId) && projectId > 0) {
         await pool.query(
           `UPDATE ocr_watch_tasks
-           SET helper_client_id = ?, last_heartbeat_at = NOW(), updated_at = NOW()
+           SET helper_client_id = ?,
+               status = CASE WHEN status = 'running' THEN 'paused' ELSE status END,
+               last_heartbeat_at = NOW(),
+               updated_at = NOW()
            WHERE user_id = ? AND project_id = ? AND status IN ('pending_bind', 'ready', 'running', 'paused', 'error', 'stopped')`,
           [clientId, row.user_id, projectId]
         );
