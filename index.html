@@ -10,13 +10,28 @@
 :root{--bg:#0c0f1a;--bg2:#121729;--bg3:#1a2038;--bg4:#232a45;--accent:#f0b429;--accent2:#ffd166;--accent-dim:rgba(240,180,41,.12);--red:#ff6b6b;--green:#51cf66;--blue:#74c0fc;--orange:#ff922b;--cyan:#66d9e8;--purple:#d4a5ff;--text:#e8eaed;--text2:#8b95a8;--text3:#505b6e;--border:#252d44;--card:#151a2e;--radius:10px;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;background-image:radial-gradient(ellipse at 20% 0%,rgba(240,180,41,.04) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(116,192,252,.03) 0%,transparent 60%);background-attachment:fixed;}
-.header{background:linear-gradient(135deg,#0e1225,#161d35,#1a1530);padding:16px 28px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:relative;}
+.header{background:linear-gradient(135deg,#0e1225,#161d35,#1a1530);padding:16px 28px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:18px;position:relative;flex-wrap:nowrap;overflow:hidden;}
 .header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),var(--blue),var(--accent),transparent);opacity:.6;}
-.header h1{font-size:20px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:1px;white-space:nowrap;}
+.header-main{min-width:0;flex:1 1 auto;}
+.header h1{font-size:20px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .header h1 .sub{font-size:11px;font-weight:normal;margin-left:10px;-webkit-text-fill-color:var(--text2);letter-spacing:0;}
+.header-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:8px 12px;min-width:0;flex:0 1 auto;margin-left:auto;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}
+.header-actions::-webkit-scrollbar{display:none;}
+#navPoints,#pointsMallBtn,#userBar{min-width:0;flex:0 1 auto;}
+#navPoints{font-size:clamp(11px,1vw,14px)!important;margin-right:0!important;white-space:nowrap;}
+#pointsMallBtn{margin-right:0!important;padding:clamp(4px,.7vw,5px) clamp(9px,1vw,12px)!important;font-size:clamp(11px,.95vw,12px)!important;white-space:nowrap;}
+#ocrStatus,#headerStats{flex:0 0 auto;}
+#ocrText{white-space:nowrap;}
+#userBar{display:flex;align-items:center;gap:8px;min-width:0;flex-shrink:1;flex-wrap:nowrap;white-space:nowrap;}
+.header-username{min-width:0;display:flex;flex-direction:column;line-height:1.25;}
+.header-username span{display:block;max-width:13ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+@media(max-width:1180px){.header{padding:14px 18px;}.header h1{font-size:18px;}.header-actions{justify-content:flex-end;}}
+@media(max-width:980px){#headerStats{display:none!important;}.header-role{display:none!important;}}
 @media(max-width:960px){.header{padding:12px 16px;}.header h1{font-size:17px;}#ocrStatus{display:none!important;}}
-@media(max-width:720px){.header{padding:10px 14px;}.header h1{font-size:15px;}.header h1 .sub{display:none!important;}#headerStats{display:none!important;}}
-@media(max-width:520px){.header{padding:8px 12px;}#pointsMallBtn{display:none!important;}#navPoints{font-size:12px!important;margin-right:0!important;}.header-username{display:none!important;}}
+@media(max-width:720px){.header{padding:10px 14px;}.header h1{font-size:15px;}.header h1 .sub{display:none!important;}.header-actions{gap:8px;}}
+@media(max-width:640px){.header-main{flex:0 1 150px;}.header h1{font-size:14px;}.header-name{display:none!important;}#userBar{gap:6px;}}
+@media(max-width:560px){.header{padding:8px 12px;}.header-username{display:none!important;}#userBar{gap:6px;}}
+@media(max-width:420px){#pointsMallBtn{display:none!important;}}
 .ocr-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);padding:5px 12px;border-radius:20px;background:rgba(255,255,255,.03);border:1px solid var(--border);}
 .ocr-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);transition:all .3s;}
 .ocr-dot.ok{background:var(--green);box-shadow:0 0 8px rgba(81,207,102,.5);}
@@ -42,6 +57,37 @@ body{font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;background:var
 .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border);}
 .btn-secondary:hover{border-color:rgba(240,180,41,.3);color:var(--accent);}
 .btn-sm{padding:4px 10px;font-size:11px;}
+.helper-panel-section{margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:linear-gradient(180deg,rgba(10,14,25,.72),rgba(15,20,34,.88));box-shadow:0 10px 24px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.03);}
+.helper-panel-section:last-child{margin-bottom:0;}
+.helper-action-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:0;}
+.helper-action-grid .btn{width:100%;height:32px;justify-content:center;}
+.helper-action-grid .btn-primary{background:var(--bg3);color:var(--text);border:1px solid var(--border);}
+.helper-action-grid .btn-primary:hover{border-color:rgba(240,180,41,.3);color:var(--accent);}
+.helper-status-grid,.helper-stats-grid,.helper-control-grid{display:grid;gap:8px;}
+.helper-status-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);margin-bottom:0;}
+.helper-conn-card,.helper-task-card{min-width:0;padding:10px 11px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(16,22,38,.98),rgba(14,19,33,.9));box-shadow:0 8px 18px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.035);}
+.helper-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;}
+.helper-card-title{font-size:12px;color:var(--text2);font-weight:800;letter-spacing:.02em;}
+.helper-pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.07);white-space:nowrap;border:1px solid rgba(255,255,255,.05);}
+.helper-meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;}
+.helper-meta-item{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 7px;border-radius:8px;background:rgba(10,14,24,.82);border:1px solid rgba(255,255,255,.055);}
+.helper-meta-label{font-size:10px;color:var(--text3);white-space:nowrap;}
+.helper-meta-value{font-size:11px;color:var(--text);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;}
+.helper-task-card .helper-meta-grid{grid-template-columns:1fr;}
+.helper-task-shell{padding:10px 11px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:linear-gradient(180deg,rgba(12,16,27,.96),rgba(10,13,22,.88));box-shadow:0 8px 18px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.03);}
+.helper-stats-grid{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:0;}
+.helper-stat{display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 5px;border-radius:8px;background:rgba(13,17,29,.9);border:1px solid rgba(255,255,255,.055);}
+.helper-stat-num{font-size:14px;font-weight:900;color:var(--text);line-height:1;}
+.helper-stat-label{font-size:10px;color:var(--text3);line-height:1;}
+.helper-control-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:7px;}
+.helper-control-grid .btn{width:100%;justify-content:center;}
+.helper-folder-line{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.05);font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.helperTaskPanelWrap{position:relative;isolation:isolate;overflow:hidden;}
+.helperTaskPanelWrap::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(240,180,41,.045),rgba(116,192,252,.02));pointer-events:none;z-index:0;}
+.helperTaskPanelWrap > *{position:relative;z-index:1;}
+.browser-watch-card{margin-top:8px;padding:12px 14px;background:linear-gradient(180deg,rgba(11,15,26,.92),rgba(10,14,24,.84));border-radius:10px;border:1px solid rgba(255,255,255,.07);box-shadow:0 8px 18px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.03);}
+@media(max-width:720px){.helper-action-grid,.helper-status-grid,.helper-stats-grid,.helper-control-grid{grid-template-columns:1fr 1fr;}.helper-meta-grid{grid-template-columns:1fr;}}
+@media(max-width:460px){.helper-action-grid,.helper-status-grid,.helper-stats-grid,.helper-control-grid{grid-template-columns:1fr;}}
 input,select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px 10px;font-size:12px;outline:none;transition:all .2s;}
 input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(240,180,41,.08);}input[type="checkbox"]{width:16px!important;height:16px!important;min-width:16px!important;padding:0!important;margin:0!important;border:none!important;border-radius:2px!important;background:transparent!important;cursor:pointer!important;accent-color:var(--accent);appearance:auto!important;-webkit-appearance:checkbox!important;vertical-align:middle!important;box-shadow:none!important;transition:none!important;}
 .form-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
@@ -571,8 +617,8 @@ document.addEventListener('click', function(e) {
 </head>
 <body>
 <div class="header">
-  <div><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 2026.5.14</span></h1></div>
-  <div style="display:flex;gap:16px;align-items:center;margin-left:auto;">
+  <div class="header-main"><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 最近更新 2026.7.5</span></h1></div>
+  <div class="header-actions">
     <div class="ocr-status" id="ocrStatus"><span class="ocr-dot" id="ocrDot"></span><span id="ocrText">OCR 待检测</span></div>
     <div id="headerStats" style="display:flex;gap:14px;">
       <div style="text-align:center;"><div style="font-size:18px;font-weight:bold;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="statTotal">0</div><div style="font-size:9px;color:var(--text2);">总战报</div></div>
@@ -624,13 +670,73 @@ document.addEventListener('click', function(e) {
   <!-- Tab 1: 战报导入 -->
   <div id="tab-data" class="tab-content">
     <div class="card">
-      <h3>📤 批量上传战报图片</h3>
+      <h3>📤 手动批量上传</h3>
       <div class="upload-zone" id="uploadZone" onclick="checkCreditsBeforeUpload()">
         <div class="icon">📁</div><div>点击或拖拽上传战报图片（支持批量）</div><div style="font-size:10px;color:var(--text3);margin-top:6px;">PNG / JPG / JPEG</div>
       </div>
       <input type="file" id="batchInput" multiple accept="image/*" style="display:none;" onchange="handleBatchUpload(this.files)">
+    </div>
+    <div class="card">
+      <div id="helperTaskPanel" class="helperTaskPanelWrap" style="margin-top:10px;padding:12px 14px;background:linear-gradient(135deg,rgba(240,180,41,.08),rgba(116,192,252,.04));border-radius:8px;border:1.5px solid rgba(240,180,41,.25);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:700;color:var(--accent);">战报自动解析</span>
+          <span id="helperConnectStatus" style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--text3);">助手未连接</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto;">每个项目独立一个自动解析任务 · 助手在本机执行</span>
+        </div>
+        <div class="helper-panel-section">
+          <div class="helper-action-grid">
+            <button class="btn btn-sm btn-secondary" onclick="downloadLocalHelperPackage()">下载本地助手</button>
+            <button class="btn btn-sm btn-primary" onclick="connectLocalHelperWithMode('first')">首次链接助手</button>
+            <button class="btn btn-sm btn-secondary" onclick="connectLocalHelperWithMode('refresh')">刷新链接助手</button>
+            <button class="btn btn-sm btn-secondary" onclick="manualRefreshHelperStatus(this)">刷新状态</button>
+          </div>
+        </div>
+        <div id="helperSetupStatus" class="helper-panel-section">
+          <div class="helper-status-grid">
+            <div class="helper-conn-card">
+              <div class="helper-card-top">
+                <span class="helper-card-title">本地助手连接</span>
+                <span class="helper-pill" style="color:var(--text3);">未连接</span>
+              </div>
+              <div class="helper-meta-grid">
+                <div class="helper-meta-item"><div class="helper-meta-label">项目ID</div><div class="helper-meta-value">-</div></div>
+                <div class="helper-meta-item"><div class="helper-meta-label">助手</div><div class="helper-meta-value">未连接 · -</div></div>
+                <div class="helper-meta-item"><div class="helper-meta-label">最近心跳</div><div class="helper-meta-value">暂无</div></div>
+                <div class="helper-meta-item"><div class="helper-meta-label">连接说明</div><div class="helper-meta-value">正在读取本地助手状态</div></div>
+              </div>
+            </div>
+            <div class="helper-task-card">
+              <div class="helper-card-top">
+                <span class="helper-card-title">解析任务状态</span>
+                <span class="helper-pill" style="color:var(--text3);">初始化中</span>
+              </div>
+              <div class="helper-meta-grid">
+                <div class="helper-meta-item"><div class="helper-meta-label">当前目录</div><div class="helper-meta-value">待选择同步目录</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="helperTaskHint" class="helper-panel-section" style="font-size:11px;color:var(--text3);margin-bottom:10px;">当前项目会自动维护 1 个自动解析任务。你只需要在这里选择同步目录，然后开始同步解析即可。</div>
+        <div id="helperTaskList" class="helper-panel-section" style="display:flex;flex-direction:column;gap:8px;">
+            <div class="helper-task-shell">
+              <div class="helper-stats-grid">
+                <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">发现</div></div>
+                <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">上传</div></div>
+                <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">解析成功</div></div>
+              <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">失败</div></div>
+              <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">待处理</div></div>
+            </div>
+              <div class="helper-control-grid">
+                <button class="btn btn-sm btn-secondary" disabled style="opacity:.45;cursor:not-allowed;">选择同步目录</button>
+                <button class="btn btn-sm btn-primary" disabled style="opacity:.45;cursor:not-allowed;">开始同步解析</button>
+                <button class="btn btn-sm btn-secondary" disabled style="opacity:.45;cursor:not-allowed;">暂停</button>
+                <button class="btn btn-sm btn-danger" disabled style="opacity:.45;cursor:not-allowed;">停止</button>
+              </div>
+            </div>
+          </div>
+        </div>
       <!-- 服务端自动处理（推荐：不依赖浏览器，永不停顿） -->
-      <div id="svrWatchPanel" style="margin-top:10px;padding:12px 14px;background:linear-gradient(135deg,rgba(99,179,237,.06),rgba(99,179,237,.02));border-radius:8px;border:1.5px solid rgba(99,179,237,0.35);">
+      <div id="svrWatchPanel" style="display:none;margin-top:10px;padding:12px 14px;background:linear-gradient(135deg,rgba(99,179,237,.06),rgba(99,179,237,.02));border-radius:8px;border:1.5px solid rgba(99,179,237,0.35);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
           <span style="font-size:13px;font-weight:700;color:var(--accent);">🖥️ 服务端自动处理</span>
           <span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(72,199,142,.2);color:#48c78e;font-weight:700;">推荐</span>
@@ -661,23 +767,11 @@ document.addEventListener('click', function(e) {
         <div id="svrWatchLastScan" style="font-size:10px;color:var(--text3);"></div>
         <div id="svrWatchLastError" style="font-size:10px;color:var(--red);margin-top:2px;"></div>
       </div>
-      <!-- 浏览器端文件夹监听（依赖浏览器标签页保持活跃） -->
-      <div style="margin-top:8px;padding:12px 14px;background:var(--bg2);border-radius:8px;border:1px dashed var(--border);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <span style="font-size:13px;font-weight:700;color:var(--text);">📂 浏览器端监听文件夹</span>
-          <span id="folderWatchStatus" style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--text3);">未启动</span>
-          <span style="font-size:10px;color:var(--text3);margin-left:auto;">依赖浏览器标签页 · 后台可能中断</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button class="btn btn-sm btn-secondary" onclick="selectWatchFolder()">选择文件夹</button>
-          <span id="folderWatchName" style="font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">未选择</span>
-          <button class="btn btn-sm btn-primary" id="btnFolderWatch" onclick="toggleFolderWatch()" disabled>▶ 启动</button>
-        </div>
-        <div id="folderWatchStats" style="display:none;margin-top:6px;font-size:11px;color:var(--text3);">本次新增 <span id="folderNewCount">0</span> 张 · 服务端已成功 <span id="folderProcessedCount">0</span> 张（自动跳过）</div>
-      </div>
-      <div id="queueArea" style="display:none;margin-top:12px;">
+    </div>
+    <div class="card">
+      <div id="queueArea" style="display:block;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span style="font-size:12px;font-weight:bold;color:var(--accent);">处理队列 (<span id="queueCount">0</span>)</span>
+          <span style="font-size:12px;font-weight:bold;color:var(--accent);">战报解析列表 (<span id="queueCount">0</span>)</span>
           <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch" onclick="toggleBatchPause()" disabled>⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="batchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
@@ -1467,28 +1561,6 @@ function exportCounterAnalysisPDF(){
 }
 function exportWinRateCSV(){try{let data=computeWinRateData();if(!data||data.length===0){alert('当前没有克制关系数据，请先导入战报');return;}const search=(document.getElementById('wrSearch')?.value||'').toLowerCase();const fL=document.getElementById('wrFilterLeft').value,fR=document.getElementById('wrFilterRight').value;if(search)data=data.filter(d=>d.leftTeam.toLowerCase().includes(search)||d.rightTeam.toLowerCase().includes(search));if(fL)data=data.filter(d=>d.leftTeam===fL);if(fR)data=data.filter(d=>d.rightTeam===fR);data.sort((a,b)=>(b.winRate||0)-(a.winRate||0));if(data.length===0){alert('当前筛选条件下没有数据');return;}const headers=['克制队伍','被克制队伍','左阵型','右阵型','左战法配置','右战法配置','胜率%','战损比%','左战损(兵)','右战损(兵)','对战次数'];const rows=data.map(d=>{const lTac=d.leftTactics?(d.leftGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.leftTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';const rTac=d.rightTactics?(d.rightGenerals||[]).map((g,i)=>{const base=i*3;return[g,...(d.rightTactics||[]).slice(base+1,base+3)].filter(t=>t&&t!=='未知').join('+');}).join(' | '):'';return[(d.leftTeam||''),(d.rightTeam||''),(d.leftFormation||''),(d.rightFormation||''),lTac,rTac,(typeof d.winRate==='number'?d.winRate.toFixed(1):'0'),(d.lossRateVal||'0')+'%',Math.round(d.avgLLoss||0),Math.round(d.avgRLoss||0),(d.total||0)];});if(typeof addSysLog==='function')addSysLog('operation','导出克制关系CSV: '+data.length+' 条');downloadCSV(headers,rows,'队伍克制关系.csv');}catch(e){console.error('exportWinRateCSV error:',e);alert('导出失败: '+e.message);try{openCSVWindowFallbackWR();}catch(e2){alert('导出完全失败: '+e2.message);}}}function openCSVWindowFallbackWR(){let data=computeWinRateData();if(!data||data.length===0){alert('没有数据');return;}let csv='\uFEFF';csv+='克制队伍,被克制队伍,左阵型,右阵型,左战法配置,右战法配置,胜率%,战损比%,左战损(兵),右战损(兵),对战次数\n';data.forEach(d=>{function ts(g,t){if(!g||!g.length)return'-';return g.slice(0,3).map((gn,gi)=>{const b=gi*3;const tc=[t?.[b+1]||'',t?.[b+2]||''].filter(x=>x&&x!=='未知');return gn+(tc.length?'['+tc.join('/')+']':'');}).join('|');}const lT=ts(d.leftGenerals,d.leftTactics);const rT=ts(d.rightGenerals,d.rightTactics);csv+=`"${d.leftTeam||''}","${d.rightTeam||''}","${d.leftFormation||''}","${d.rightFormation||''}","${lT}","${rT}",${(typeof d.winRate==='number'?d.winRate.toFixed(1):'0')},"${d.lossRateVal||0}%",${Math.round(d.avgLLoss||0)},${Math.round(d.avgRLoss||0)},${d.total||0}\n`;});const w=window.open('','_blank');if(w){w.document.write('<html><head><meta charset="utf-8"><title>队伍克制关系</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{background:#f5f5f5;padding:15px;border-radius:5px;overflow-x:auto;}</style></head><body><h3>队伍克制关系 - 按 Ctrl+S 保存，文件名改为 .csv</h3><pre>'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre></body></html>');w.document.close();}else{alert('弹窗被阻止，请允许弹窗后重试');}}
 
-// ========== DOUBAO API ==========
-// OCR 请求地址：优先使用云端 API，fallback 到本地 /api/ocr
-function getOcrUrl(){if(typeof CLOUD_API_BASE!=='undefined'&&CLOUD_API_BASE){return CLOUD_API_BASE+'/ocr';}return '/api/ocr';}
-async function callDoubaoAPI(base64Data){updateOcrStatus('work','OCR 识别中...');const model='ep-m-20260426183050-krmx7';const workerUrl=getOcrUrl();const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),60000);const promptText='请识别这张三国谋定天下游戏的战报截图。格式要求：\n【左侧】\n玩家：xxx\n同盟：xxx\n阵型：xxx\n战损兵力：数字\n总兵力：数字\n武将1：武将名\n战法1：战法A,战法B,战法C\n武将2：武将名\n战法2：战法D,战法E,战法F\n武将3：武将名\n战法3：战法G,战法H,战法I\n【右侧】\n（同上格式）\n【结果】\n胜负：胜/败/平\n注意：每个武将对应3个战法（自带+2个配置），用英文逗号分隔。无法识别用\"未知\"。';try{console.log('[OCR] 发送请求, url='+workerUrl+', base64长度:',base64Data.length,'超时:60s');const reqBody={model,messages:[{role:'user',content:[{type:'image_url',image_url:{url:base64Data}},{type:'text',text:promptText}]}],max_tokens:2000};const resp=await fetch(workerUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqBody),signal:controller.signal});clearTimeout(timeout);console.log('[OCR] 响应状态:',resp.status,resp.statusText);if(!resp.ok){const errBody=await resp.text();console.error('[OCR] 错误响应:',errBody.substring(0,500));throw new Error('HTTP '+resp.status+': '+errBody.substring(0,200));}const json=await resp.json();console.log('[OCR] API返回, usage:',JSON.stringify(json.usage));const content=json.choices?.[0]?.message?.content||'';if(!content)throw new Error('API返回空内容');updateOcrStatus('ok','OCR 就绪');return content;}catch(e){clearTimeout(timeout);console.error('[OCR] 异常:',e.name,e.message);if(e.name==='AbortError')e.message='OCR 请求超时(60秒)，图片可能太大';else if(e.name==='TypeError'&&e.message.includes('Failed to fetch'))e.message='网络请求失败，请检查网络连接';updateOcrStatus('err','OCR 错误: '+e.message);throw e;}}
-function parseDoubaoResponse(text){const record={time:new Date().toLocaleString('zh-CN'),result:'',leftPlayer:'',leftAlliance:'',leftGenerals:[],leftTactics:[],leftFormation:'',leftLoss:null,leftTotal:null,rightPlayer:'',rightAlliance:'',rightGenerals:[],rightTactics:[],rightFormation:'',rightLoss:null,rightTotal:null};const lines=text.split('\n').map(l=>l.trim()).filter(l=>l);let side='';let generalMap={},tacticsMap={};function flush(sideKey){const indices=Object.keys(generalMap).map(Number).sort((a,b)=>a-b);const gens=[],tacs=[];indices.forEach(i=>{const g=generalMap[i];if(g&&g!=='未知')gens.push(g);const t=tacticsMap[i]||[];tacs.push(...t);});if(sideKey==='left'){record.leftGenerals=gens;record.leftTactics=tacs;}else if(sideKey==='right'){record.rightGenerals=gens;record.rightTactics=tacs;}generalMap={};tacticsMap={};}for(const line of lines){if(line.includes('【左侧】')){if(side==='left')flush('left');else if(side==='right')flush('right');side='left';continue;}if(line.includes('【右侧】')){if(side==='left')flush('left');side='right';continue;}if(line.includes('【结果】')||line.includes('【胜负】')){if(side==='left')flush('left');else if(side==='right')flush('right');side='result';continue;}const ci=line.indexOf('：');if(ci===-1)continue;const key=line.substring(0,ci).trim();const val=line.substring(ci+1).trim();const gm=key.match(/武将\s*(\d+)/);if(gm){generalMap[parseInt(gm[1])]=val;continue;}const tm=key.match(/战法\s*(\d+)/);if(tm&&!key.includes('战损')){tacticsMap[parseInt(tm[1])]=val.split(/[,，、]+/).map(t=>t.trim()).filter(t=>t&&t!=='未知');continue;}if(key==='武将'){const names=val.split(/[,，、\s]+/).filter(n=>n&&n!=='未知');if(side==='left')record.leftGenerals=names;else if(side==='right')record.rightGenerals=names;continue;}if(key==='战法'){const tacts=val.split(/[,，、]+/).map(t=>t.trim()).filter(t=>t&&t!=='未知');if(side==='left')record.leftTactics=tacts;else if(side==='right')record.rightTactics=tacts;continue;}if(key.includes('玩家')){if(side==='left')record.leftPlayer=val;else if(side==='right')record.rightPlayer=val;}else if(key.includes('同盟')){if(side==='left')record.leftAlliance=val;else if(side==='right')record.rightAlliance=val;}else if(key.includes('阵型')){if(side==='left')record.leftFormation=val;else if(side==='right')record.rightFormation=val;}else if(key.includes('战损兵力')||key==='战损'){const wanM=val.match(/([\d.]+)\s*万/);if(wanM){if(side==='left')record.leftLoss=parseFloat(wanM[1])*10000;else if(side==='right')record.rightLoss=parseFloat(wanM[1])*10000;}else{const n=val.match(/([\d.]+)/);if(n){if(side==='left')record.leftLoss=parseFloat(n[1]);else if(side==='right')record.rightLoss=parseFloat(n[1]);}}}else if(key.includes('总兵力')||key==='总兵'){const wanM=val.match(/([\d.]+)\s*万/);if(wanM){if(side==='left')record.leftTotal=parseFloat(wanM[1])*10000;else if(side==='right')record.rightTotal=parseFloat(wanM[1])*10000;}else{const n=val.match(/([\d.]+)/);if(n){if(side==='left')record.leftTotal=parseFloat(n[1]);else if(side==='right')record.rightTotal=parseFloat(n[1]);}}}else if((key.includes('胜负')||key.includes('结果'))&&side==='result'){if(val.includes('胜'))record.result='胜';else if(val.includes('败'))record.result='败';else record.result='平';}}if(side==='left')flush('left');else if(side==='right')flush('right');if(record.leftLoss!=null&&record.leftTotal!=null&&record.leftTotal>0)record.leftLossRate=(record.leftLoss/record.leftTotal)*100;if(record.rightLoss!=null&&record.rightTotal!=null&&record.rightTotal>0)record.rightLossRate=(record.rightLoss/record.rightTotal)*100;setFlat(record,'left',record.leftGenerals||[],record.leftTactics||[]);setFlat(record,'right',record.rightGenerals||[],record.rightTactics||[]);delete record.leftGenerals;delete record.rightGenerals;delete record.leftTactics;delete record.rightTactics;return record;}
-
-// ========== BATCH UPLOAD ==========
-const uploadZone=document.getElementById('uploadZone');
-uploadZone.addEventListener('dragover',e=>{e.preventDefault();uploadZone.classList.add('dragover');});
-uploadZone.addEventListener('dragleave',()=>uploadZone.classList.remove('dragover'));
-uploadZone.addEventListener('drop',e=>{e.preventDefault();uploadZone.classList.remove('dragover');handleBatchUpload(e.dataTransfer.files);});
-function handleBatchUpload(files){if(!files||files.length===0)return;for(const file of files)batchQueue.push({file,name:file.name,status:'pending',error:null});renderQueue();document.getElementById('queueArea').style.display='block';}
-function renderQueue(){document.getElementById('queueCount').textContent=batchQueue.length;document.getElementById('queueList').innerHTML=batchQueue.map((item,idx)=>{const icon=item.status==='pending'?'💤':item.status==='processing'?'⚙️':item.status==='done'?'✅':'❌';const txt=item.status==='pending'?'等待中':item.status==='processing'?'处理中...':item.status==='done'?'完成':(item.error||'失败');const canDel=item.status==='pending'||item.status==='error';const delBtn=canDel?`<span class="qi-del" title="删除" onclick="removeQueueItem(${idx})">✕</span>`:'';return `<div class="queue-item"><span class="qi-icon">${icon}</span><span class="qi-name">${escHtml(item.name)}</span><span class="${item.status==='pending'?'qi-pending':item.status==='processing'?'qi-processing':item.status==='done'?'qi-done':'qi-error'}">${txt}</span>${delBtn}</div>`;}).join('');}
-function removeQueueItem(idx){const item=batchQueue[idx];if(!item)return;if(item.status==='processing'){alert('正在处理中的文件无法删除');return;}batchQueue.splice(idx,1);renderQueue();document.getElementById('queueCount').textContent=batchQueue.length;if(batchQueue.length===0&&!batchRunning)document.getElementById('queueArea').style.display='none';}
-function clearQueue(){batchQueue=batchQueue.filter(q=>q.status==='processing');if(!batchRunning)document.getElementById('queueArea').style.display='none';renderQueue();}
-function readFileAsBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}
-function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-const BATCH_CONCURRENCY=2,BATCH_INTERVAL=1500;
-async function startBatchProcess(){if(batchRunning)return;batchRunning=true;batchPaused=false;document.getElementById('btnStartBatch').disabled=true;document.getElementById('btnPauseBatch').disabled=false;let processing=0,idx=0;async function processNext(){while(idx<batchQueue.length){if(!batchRunning)break;while(batchPaused&&batchRunning)await sleep(500);if(!batchRunning)break;while(processing>=BATCH_CONCURRENCY&&idx<batchQueue.length)await sleep(500);if(!batchRunning)break;const item=batchQueue[idx];if(item.status!=='pending'){idx++;continue;}item.status='processing';processing++;renderQueue();let base64=null;try{base64=await readFileAsBase64(item.file);const rawResult=await callDoubaoAPI(base64);const record=parseDoubaoResponse(rawResult);record.imageBase64=base64;record.imageName=item.name;record.imageTime=new Date().toLocaleString('zh-CN');if(record.leftGeneral1||record.rightGeneral1){await dbAdd(record);}else{record._parseError=true;await dbAdd(record);}item.status='done';}catch(e){try{if(!base64)base64=await readFileAsBase64(item.file);await dbAdd({imageBase64:base64,imageName:item.name,imageTime:new Date().toLocaleString('zh-CN'),_parseError:true,_errorMsg:e.message});}catch(e2){console.error('保存失败图片出错:',e2);}item.status='error';item.error=e.message;}processing--;idx++;renderQueue();updateProgress();await loadAllRecords();if(idx<batchQueue.length)await sleep(BATCH_INTERVAL);}batchRunning=false;document.getElementById('btnStartBatch').disabled=false;document.getElementById('btnPauseBatch').disabled=true;renderDataTable();renderGallery();updateProgress();updateOcrStatus('ok','OCR 就绪');}processNext();}
-function toggleBatchPause(){batchPaused=!batchPaused;document.getElementById('btnPauseBatch').textContent=batchPaused?'▶ 继续':'⏸ 暂停';}
-function updateProgress(){const done=batchQueue.filter(q=>q.status==='done').length;const total=batchQueue.length;const pct=total>0?(done/total*100):0;const bar=document.getElementById('batchProgress');bar.style.width=pct+'%';bar.querySelector('.progress-text').textContent=`处理中 (${done}/${total})`;}
-
 // ========== TAB 3: HEROES ==========
 function renderHeroes(){const search=(document.getElementById('heroSearch').value||'').toLowerCase();const fac=document.getElementById('heroFaction').value;const color=document.getElementById('heroColor').value;const season=document.getElementById('heroSeason').value;const type=document.getElementById('heroType').value;const tag=document.getElementById('heroTag').value;let data=ALL_HEROES.filter(h=>{if(search&&!h.name.toLowerCase().includes(search)&&!h.skill.toLowerCase().includes(search))return false;if(fac&&h.faction!==fac)return false;if(color&&h.color!==color)return false;if(season&&h.season!==season)return false;if(type&&h.type!==type)return false;if(tag&&!h.tags.includes(tag))return false;return true;});document.getElementById('heroCount').textContent=data.length;const grid=document.getElementById('heroGrid');if(data.length===0){grid.innerHTML='<div class="empty-state"><div class="icon">📭</div><div>没有找到匹配的武将</div></div>';return;}const fcls={'魏':'tag-wei','蜀':'tag-shu','吴':'tag-wu','群':'tag-qun'};grid.innerHTML=data.map(h=>`<div class="hero-card"><div class="hc-top"><span><span class="tag ${fcls[h.faction]||''}" style="margin-right:4px;">${h.faction}</span><span class="hc-name">${escHtml(h.name)}</span></span><span style="font-size:10px;color:var(--text3);">${h.season?.toUpperCase()}</span></div><div class="hc-skill">⚔️ ${escHtml(h.skill)}</div><div class="hc-stats"><span class="hc-stat">武力<b>${h.stats.wl}</b></span><span class="hc-stat">智力<b>${h.stats.zl}</b></span><span class="hc-stat">统率<b>${h.stats.ts}</b></span><span class="hc-stat">先攻<b>${h.stats.xg}</b></span><span class="hc-stat">${h.type}</span></div><div style="display:flex;gap:3px;flex-wrap:wrap;">${h.tags.filter(t=>t).map(t=>`<span class="tag tag-type">${escHtml(t)}</span>`).join('')}</div>${h.bonds&&h.bonds.length>0?`<div class="hc-bond">${h.bonds.map(b=>`<div>🔗 ${escHtml(b.name)}: ${escHtml(b.desc)}</div>`).join('')}</div>`:''}</div>`).join('');}
 
@@ -2097,10 +2169,10 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="data-system.js?v=20260621004"></script>
   <script src="counter-analysis.js?v=20260621019"></script>
   <script src="counter-analysis-enhanced.js?v=202605190002"></script>
-  <script src="user-system.js?v=202605111900"></script>
+  <script src="user-system.js?v=202607041930"></script>
   <script src="project-system.js?v=20260619001"></script>
   <script src="role-system.js?v=202605110001"></script>
-  <script src="ocr-system.js?v=202606157"></script>
+  <script src="ocr-system.js?v=202607041945"></script>
   <script src="data-perm.js?v=202605111120"></script>
   <script src="points-mall.js?v=202607021"></script>
   <script src="ocr-dict-system.js?v=20260619002"></script>

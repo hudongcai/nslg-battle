@@ -1250,7 +1250,14 @@ async function deleteRecord(id) {
     }
   }
 
-  // 删除战报记录
+  // 删除战报记录（云端同步删除，会级联清理 battle_gallery）
+  try {
+    if (typeof cloudDeleteRecord === 'function') {
+      await cloudDeleteRecord(id);
+    }
+  } catch (e) {
+    console.warn('[deleteRecord] 云端删除失败（继续删本地）:', e.message);
+  }
   await dbDelete(id);
   // 记录系统日志
   if (typeof addSysLog === 'function') {

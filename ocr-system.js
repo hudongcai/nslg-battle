@@ -1,25 +1,25 @@
-// ============================================================
-//  OCR 子系统（可选加载，不影响线上环境）
-//  本地 localhost 自动启用，线上自动关闭
-//  调用 Cloudflare Worker 代理，不暴露 API Key
+﻿// ============================================================
+//  OCR 瀛愮郴缁燂紙鍙€夊姞杞斤紝涓嶅奖鍝嶇嚎涓婄幆澧冿級
+//  鏈湴 localhost 鑷姩鍚敤锛岀嚎涓婅嚜鍔ㄥ叧闂?
+//  璋冪敤 Cloudflare Worker 浠ｇ悊锛屼笉鏆撮湶 API Key
 // =============================================================
 
 const OCR_CONFIG = {
-  // 本地自动启用，线上也启用（依赖云端 Worker 处理 OCR）
+  // 鏈湴鑷姩鍚敤锛岀嚎涓婁篃鍚敤锛堜緷璧栦簯绔?Worker 澶勭悊 OCR锛?
   enabled: true,
   model: 'ep-m-20260426183050-krmx7',
   maxTokens: 3000,
-  temperature: 0,     // 确定性输出，避免每次结果不一致
-  timeout: 120000,    // 视觉模型识别大图可能较久，从60s提升到120s
+  temperature: 0,     // 纭畾鎬ц緭鍑猴紝閬垮厤姣忔缁撴灉涓嶄竴鑷?
+  timeout: 120000,    // 瑙嗚妯″瀷璇嗗埆澶у浘鍙兘杈冧箙锛屼粠60s鎻愬崌鍒?20s
   batchConcurrency: 1,
-  batchInterval: 0,           // 稳定性优先：去除强制间隔
-  maxRetries: 3,              // 瞬时错误最大重试次数（503/网络抖动）
-  retryBaseDelay: 3000,       // 重试基础延迟 ms（指数退避 3s→6s→12s）
-  renderThrottleCount: 10,    // 每 N 张刷新一次数据表/图库
-  renderThrottleMs: 5000,     // 或每 M 毫秒刷新一次
+  batchInterval: 0,           // 绋冲畾鎬т紭鍏堬細鍘婚櫎寮哄埗闂撮殧
+  maxRetries: 3,              // 鐬椂閿欒鏈€澶ч噸璇曟鏁帮紙503/缃戠粶鎶栧姩锛?
+  retryBaseDelay: 3000,       // 閲嶈瘯鍩虹寤惰繜 ms锛堟寚鏁伴€€閬?3s鈫?s鈫?2s锛?
+  renderThrottleCount: 10,    // 姣?N 寮犲埛鏂颁竴娆℃暟鎹〃/鍥惧簱
+  renderThrottleMs: 5000,     // 鎴栨瘡 M 姣鍒锋柊涓€娆?
 };
 
-// 一站式 OCR 上传端点（后端处理识别→解析→存库）
+// 涓€绔欏紡 OCR 涓婁紶绔偣锛堝悗绔鐞嗚瘑鍒啋瑙ｆ瀽鈫掑瓨搴擄級
 function getOcrUploadEndpoint() {
   if (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) {
     return CLOUD_API_BASE + '/battles/ocr-upload';
@@ -27,26 +27,90 @@ function getOcrUploadEndpoint() {
   return 'http://localhost:3000/api/battles/ocr-upload';
 }
 
-// ========== 状态 ==========
+// ========== 鐘舵€?==========
 let ocrQueue = [];
 let ocrRunning = false;
 let ocrPaused = false;
-let batchAbortController = null;  // 用于中止正在进行的 OCR 请求（暂停时使用）
-let ocrPausedByUser = false;      // 标记是否为用户主动暂停导致的中止
-let _labelConfigCache = null;      // 标注配置缓存（按 projectId）
-let _labelConfigProjectId = null;  // 缓存对应的 projectId
+let batchAbortController = null;  // 鐢ㄤ簬涓姝ｅ湪杩涜鐨?OCR 璇锋眰锛堟殏鍋滄椂浣跨敤锛?
+let ocrPausedByUser = false;      // 鏍囪鏄惁涓虹敤鎴蜂富鍔ㄦ殏鍋滃鑷寸殑涓
+let _labelConfigCache = null;      // 鏍囨敞閰嶇疆缂撳瓨锛堟寜 projectId锛?let _labelConfigProjectId = null;  // 缂撳瓨瀵瑰簲鐨?projectId
+let helperTaskList = [];
+let helperClientStatus = null;
+let _helperTaskPollTimer = null;
+let _helperTaskEnsuring = false;
+let _helperWakeAttemptAt = 0;
+let _helperWakeProjectId = null;
+let _helperAutoRecordSyncing = false;
+let _helperAutoRecordSyncMarker = '';
+const LOCAL_HELPER_DOWNLOAD_URL = (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE && /zhenwu\.fun/i.test(location.host))
+  ? (location.origin.replace(/\/$/, '') + '/release/zhenwu-local-helper-setup.exe')
+  : './release/zhenwu-local-helper-setup.exe';
 
-// 保存模板后调用，使缓存失效（下次 OCR 会重新从 DB 拉取最新配置）
+function getHelperTaskById(list, id) {
+  if (!Array.isArray(list) || !id) return null;
+  return list.find(item => Number(item.id) === Number(id)) || null;
+}
+
+function getHelperTaskRecordMarker(task) {
+  if (!task) return '';
+  return [
+    task.id || '',
+    task.projectId || '',
+    task.lastUploadAt || '',
+    Number(task.stats?.parsed || 0),
+    Number(task.stats?.uploaded || 0)
+  ].join('|');
+}
+
+async function syncAutoParsedRecordsIfNeeded(previousTasks, nextTasks) {
+  const currentTask = Array.isArray(nextTasks) && nextTasks.length ? nextTasks[0] : null;
+  if (!currentTask || !currentTask.projectId) return;
+
+  const previousTask = getHelperTaskById(previousTasks, currentTask.id);
+  const currentParsed = Number(currentTask.stats?.parsed || 0);
+  const previousParsed = Number(previousTask?.stats?.parsed || 0);
+  const currentUploaded = Number(currentTask.stats?.uploaded || 0);
+  const previousUploaded = Number(previousTask?.stats?.uploaded || 0);
+  const hasFreshUpload = !!currentTask.lastUploadAt && currentTask.lastUploadAt !== previousTask?.lastUploadAt;
+  const hasFreshSuccess = currentParsed > previousParsed || currentUploaded > previousUploaded;
+  if (!hasFreshUpload && !hasFreshSuccess) return;
+
+  const marker = getHelperTaskRecordMarker(currentTask);
+  if (!marker || marker === _helperAutoRecordSyncMarker || _helperAutoRecordSyncing) return;
+
+  _helperAutoRecordSyncing = true;
+  try {
+    if (window.cloudSync && typeof window.cloudSync.syncProjectRecords === 'function') {
+      await window.cloudSync.syncProjectRecords(currentTask.projectId);
+    }
+    if (typeof loadAllRecords === 'function') {
+      await loadAllRecords();
+    }
+    if (typeof renderDataTable === 'function') {
+      renderDataTable();
+    }
+    if (typeof renderGallery === 'function') {
+      renderGallery();
+    }
+    _helperAutoRecordSyncMarker = marker;
+  } catch (e) {
+    console.warn('[AutoParse] 战报数据自动刷新失败:', e.message || e);
+  } finally {
+    _helperAutoRecordSyncing = false;
+  }
+}
+
+// 淇濆瓨妯℃澘鍚庤皟鐢紝浣跨紦瀛樺け鏁堬紙涓嬫 OCR 浼氶噸鏂颁粠 DB 鎷夊彇鏈€鏂伴厤缃級
 function invalidateLabelConfigCache() {
   _labelConfigCache = null;
   _labelConfigProjectId = null;
 }
 
-// 获取标注配置（带缓存）
-// 优先取项目专属配置，无则后端自动回退全局配置（project_id=0）
-// projectId 为 null 时也拉全局配置，保证所有上传都走 extract_with_config
+// 鑾峰彇鏍囨敞閰嶇疆锛堝甫缂撳瓨锛?
+// 浼樺厛鍙栭」鐩笓灞為厤缃紝鏃犲垯鍚庣鑷姩鍥為€€鍏ㄥ眬閰嶇疆锛坧roject_id=0锛?
+// projectId 涓?null 鏃朵篃鎷夊叏灞€閰嶇疆锛屼繚璇佹墍鏈変笂浼犻兘璧?extract_with_config
 async function getLabelConfig(projectId) {
-  const pid = projectId || 0;  // null → 0 → 拉全局配置
+  const pid = projectId || 0;  // null 鈫?0 鈫?鎷夊叏灞€閰嶇疆
   if (_labelConfigCache && _labelConfigProjectId === pid) return _labelConfigCache;
   try {
     const token = typeof getToken === 'function' ? getToken() : '';
@@ -60,11 +124,11 @@ async function getLabelConfig(projectId) {
       _labelConfigProjectId = pid;
       return _labelConfigCache;
     }
-  } catch (e) { /* 无配置时使用自动检测 */ }
+  } catch (e) { /* 鏃犻厤缃椂浣跨敤鑷姩妫€娴?*/ }
   return null;
 }
 
-// ========== 初始化 ==========
+// ========== 鍒濆鍖?==========
 function initOCR() {
   if (!OCR_CONFIG.enabled) {
     return;
@@ -72,14 +136,553 @@ function initOCR() {
   showOCRSection();
   setupOCRListeners();
   updateOCRStatus('ok', 'OCR 就绪');
+  startHelperTaskPolling();
 }
 
 function showOCRSection() {
-  // 显示 header 中的 OCR 状态指示器
+  // 鏄剧ず header 涓殑 OCR 鐘舵€佹寚绀哄櫒
   const status = document.getElementById('ocrStatus');
   if (status) status.style.display = 'flex';
 }
 
+function getLocalHelperApiBase() {
+  return (typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'http://localhost:3000/api') + '/local-helper';
+}
+
+function getCurrentHelperProjectId() {
+  const pid = Number(window.currentProjectId || 0);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+function buildLocalHelperProtocolUrl(action, params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value) !== '') {
+      query.set(key, String(value));
+    }
+  });
+  const queryText = query.toString();
+  return 'zhenwu-helper://' + action + (queryText ? ('?' + queryText) : '');
+}
+
+function openLocalHelperProtocol(action, params = {}, successText) {
+  const protocolUrl = buildLocalHelperProtocolUrl(action, params);
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = protocolUrl;
+  document.body.appendChild(iframe);
+  setTimeout(() => iframe.remove(), 3000);
+  if (successText) showToast(successText, 'success');
+}
+
+function closeHelperActionModal() {
+  const mask = document.getElementById('helperActionModal');
+  if (mask) mask.remove();
+}
+
+function showHelperActionModal(message, loading) {
+  closeHelperActionModal();
+  const mask = document.createElement('div');
+  mask.id = 'helperActionModal';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.48);backdrop-filter:blur(3px);z-index:10030;display:flex;align-items:center;justify-content:center;padding:16px;';
+  mask.innerHTML = `
+    <div style="width:min(360px,100%);background:linear-gradient(135deg,var(--bg2),rgba(26,32,56,.98));border:1px solid rgba(240,180,41,.26);border-radius:18px;box-shadow:0 18px 60px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);padding:24px 22px;text-align:center;">
+      ${loading ? '<div style="width:34px;height:34px;border:3px solid rgba(240,180,41,.22);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:helperSpin .8s linear infinite;"></div>' : ''}
+      <div style="font-size:16px;font-weight:800;color:var(--text1);">${escHtml(message)}</div>
+      ${loading ? '<div style="font-size:12px;color:var(--text3);margin-top:8px;">请稍等，正在自动完成关联</div>' : '<button type="button" class="btn btn-sm btn-primary" style="margin:18px auto 0;min-width:112px;height:36px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 22px rgba(240,180,41,.18);" onclick="closeHelperActionModal()">确认</button>'}
+    </div>
+  `;
+  if (!document.getElementById('helperActionModalStyle')) {
+    const style = document.createElement('style');
+    style.id = 'helperActionModalStyle';
+    style.textContent = '@keyframes helperSpin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(style);
+  }
+  document.body.appendChild(mask);
+}
+
+function sleepHelper(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForHelperConnected(timeoutMs) {
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) return false;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const resp = await fetch(getLocalHelperApiBase() + '/status', { headers: { 'Authorization': 'Bearer ' + token } });
+      const data = await resp.json();
+      if (data.code === 200) {
+        helperClientStatus = data.data || null;
+        let active = helperClientStatus && helperClientStatus.activeClient;
+        if (!active && helperClientStatus && Array.isArray(helperClientStatus.clients)) {
+          active = helperClientStatus.clients.find(client => isHelperSeenRecently(client.lastSeenAt, 120000)) || null;
+          if (active) helperClientStatus.activeClient = active;
+        }
+        renderHelperTaskPanel();
+        if ((helperClientStatus && helperClientStatus.connected && active) || (active && isHelperSeenRecently(active.lastSeenAt, 120000))) {
+          await refreshHelperTasks(true);
+          const taskLinked = helperTaskList.some(task => task.helperClientId || isHelperSeenRecently(task.lastHeartbeatAt, 120000));
+          if (taskLinked || active) return true;
+          return true;
+        }
+      }
+    } catch (e) {}
+    await sleepHelper(1000);
+  }
+  return false;
+}
+
+function maybeWakeLocalHelper(projectId) {
+  const now = Date.now();
+  const hasKnownClient = !!(helperClientStatus && Array.isArray(helperClientStatus.clients) && helperClientStatus.clients.length);
+  const active = helperClientStatus && helperClientStatus.activeClient;
+  if (!projectId || !hasKnownClient || active) return;
+  if (_helperWakeProjectId === projectId && (now - _helperWakeAttemptAt) < 30000) return;
+  _helperWakeAttemptAt = now;
+  _helperWakeProjectId = projectId;
+  openLocalHelperProtocol('open', { projectId }, '正在尝试唤起本地助手并恢复当前项目连接');
+}
+
+function normalizeQueueProjectId(projectId) {
+  if (projectId === undefined || projectId === null || projectId === '') return null;
+  const trimmed = String(projectId).trim();
+  const num = Number(trimmed);
+  return Number.isFinite(num) && String(num) === trimmed ? num : trimmed;
+}
+
+function startHelperTaskPolling() {
+  if (_helperTaskPollTimer) clearInterval(_helperTaskPollTimer);
+  if (!currentUser) return;
+  refreshHelperTasks();
+  _helperTaskPollTimer = setInterval(() => {
+    if (!currentUser) return;
+    refreshHelperTasks(true);
+  }, 10000);
+}
+
+async function refreshHelperTasks(silent) {
+  if (!currentUser) return;
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) {
+    if (!silent) {
+      const setupEl = document.getElementById('helperSetupStatus');
+      if (setupEl) {
+        setupEl.innerHTML = '<div style="font-size:12px;color:var(--orange);padding:10px 12px;border:1px dashed var(--border);border-radius:8px;">登录状态没有恢复完整，正在重新获取本地助手状态，请稍后再点一次刷新状态。</div>';
+      }
+    }
+    return;
+  }
+  const projectId = getCurrentHelperProjectId();
+  if (projectId) {
+    await ensureProjectHelperTask(projectId, silent);
+  }
+  const taskUrl = new URL(getLocalHelperApiBase() + '/tasks', window.location.origin);
+  if (projectId) taskUrl.searchParams.set('projectId', String(projectId));
+  try {
+    const previousTasks = Array.isArray(helperTaskList) ? helperTaskList.slice() : [];
+    const [statusResp, taskResp] = await Promise.all([
+      fetch(getLocalHelperApiBase() + '/status', { headers: { 'Authorization': 'Bearer ' + token } }),
+      fetch(taskUrl.toString(), { headers: { 'Authorization': 'Bearer ' + token } })
+    ]);
+    const statusData = await statusResp.json();
+    const taskData = await taskResp.json();
+    if (statusData.code === 200) helperClientStatus = statusData.data || null;
+    if (taskData.code === 200) {
+      helperTaskList = Array.isArray(taskData.data) ? taskData.data : [];
+      await syncAutoParsedRecordsIfNeeded(previousTasks, helperTaskList);
+    }
+    renderHelperTaskPanel();
+    renderOCRQueue();
+  } catch (e) {
+    if (!silent) updateOCRStatus('ok', '助手任务刷新失败: ' + e.message);
+  }
+}
+
+async function manualRefreshHelperStatus(btn) {
+  const button = btn || null;
+  const setupEl = document.getElementById('helperSetupStatus');
+  const originalText = button ? button.textContent : '';
+  const originalSetupHTML = setupEl ? setupEl.innerHTML : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '刷新中...';
+    button.style.opacity = '0.7';
+  }
+  if (setupEl) {
+    setupEl.innerHTML = '<div style="font-size:12px;color:var(--text2);padding:10px 12px;border:1px dashed var(--border);border-radius:8px;">正在刷新本地助手状态...</div>';
+  }
+  try {
+    await refreshHelperTasks(false);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText || '刷新状态';
+      button.style.opacity = '';
+    }
+    // 如果 refreshHelperTasks 提前返回或失败导致 setupEl 未更新，恢复原始状态
+    if (setupEl && setupEl.innerHTML.indexOf('正在刷新本地助手状态') !== -1) {
+      setupEl.innerHTML = originalSetupHTML;
+    }
+  }
+}
+
+async function ensureProjectHelperTask(projectId, silent) {
+  if (_helperTaskEnsuring || !projectId) return;
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) return;
+  _helperTaskEnsuring = true;
+  try {
+    const resp = await fetch(getLocalHelperApiBase() + '/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ projectId })
+    });
+    const data = await resp.json();
+    if (data.code !== 200 && !silent) {
+      updateOCRStatus('ok', '自动解析任务初始化失败: ' + (data.message || '未知错误'));
+    }
+  } catch (e) {
+    if (!silent) updateOCRStatus('ok', '自动解析任务初始化失败: ' + e.message);
+  } finally {
+    _helperTaskEnsuring = false;
+  }
+}
+
+function formatHelperRelativeTime(value) {
+  if (!value) return '暂无心跳';
+  const parsed = new Date(String(value).includes('T') ? String(value) : String(value).replace(' ', 'T'));
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  const diffSec = Math.max(0, Math.round((Date.now() - parsed.getTime()) / 1000));
+  if (diffSec < 60) return diffSec + ' 秒前';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return diffMin + ' 分钟前';
+  return String(value);
+}
+
+function isRecentHelperHeartbeat(value) {
+  return isHelperSeenRecently(value, 18000);
+}
+
+function isHelperSeenRecently(value, maxAgeMs) {
+  if (!value) return false;
+  const parsed = new Date(String(value).includes('T') ? String(value) : String(value).replace(' ', 'T'));
+  if (Number.isNaN(parsed.getTime())) return false;
+  const ageMs = Date.now() - parsed.getTime();
+  return ageMs >= -5000 && ageMs <= (maxAgeMs || 18000);
+}
+
+function renderHelperTaskPanel() {
+  const statusEl = document.getElementById('helperConnectStatus');
+  const setupEl = document.getElementById('helperSetupStatus');
+  const listEl = document.getElementById('helperTaskList');
+  const hintEl = document.getElementById('helperTaskHint');
+  const projectId = getCurrentHelperProjectId();
+  const rawActive = helperClientStatus && helperClientStatus.activeClient;
+  const active = rawActive && ((helperClientStatus && helperClientStatus.connected) || rawActive.status === 'online' || isRecentHelperHeartbeat(rawActive.lastSeenAt)) ? rawActive : null;
+  const currentTask = helperTaskList.length ? helperTaskList[0] : null;
+  const helperStatusText = active ? '已连接' : '未连接';
+  const helperStatusTone = active ? '#48c78e' : 'var(--text3)';
+  const helperMetaText = active
+    ? ((active.deviceName || '本地助手') + ' · 心跳 ' + formatHelperRelativeTime(active.lastSeenAt))
+    : (rawActive && rawActive.lastSeenAt ? ('上次心跳 ' + formatHelperRelativeTime(rawActive.lastSeenAt) + '，已判定离线') : '没有收到本地助手心跳');
+  const taskProjectText = currentTask ? (currentTask.projectId || projectId || '-') : (projectId || '-');
+  const taskDeviceText = currentTask && currentTask.helperDeviceName ? currentTask.helperDeviceName : (active && active.deviceName ? active.deviceName : '-');
+  const taskHelperStateText = helperStatusText;
+  const helperHeartbeatText = active && active.lastSeenAt ? active.lastSeenAt : (rawActive && rawActive.lastSeenAt ? rawActive.lastSeenAt : '暂无');
+  let taskStatusText = currentTask ? (currentTask.statusLabel || currentTask.status || '未开始') : '未创建';
+  let taskTone = 'var(--text3)';
+  if (currentTask && currentTask.status === 'running') {
+    taskStatusText = '解析中';
+    taskTone = '#48c78e';
+  } else if (currentTask && currentTask.status === 'paused') {
+    taskStatusText = '暂停中';
+    taskTone = 'var(--orange)';
+  } else if (currentTask && currentTask.status === 'error') {
+    taskTone = 'var(--red)';
+  } else if (currentTask) {
+    taskTone = 'var(--accent)';
+  }
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.style.display = 'none';
+  }
+  if (!listEl) return;
+  if (hintEl) {
+    hintEl.textContent = '';
+    hintEl.style.display = 'none';
+  }
+  if (setupEl) {
+    setupEl.innerHTML = `
+      <div class="helper-status-grid">
+        <div class="helper-conn-card">
+          <div class="helper-card-top">
+            <span class="helper-card-title">本地助手连接</span>
+            <span class="helper-pill" style="color:${helperStatusTone};">${helperStatusText}</span>
+          </div>
+          <div class="helper-meta-grid">
+            <div class="helper-meta-item"><div class="helper-meta-label">项目ID</div><div class="helper-meta-value">${escHtml(taskProjectText)}</div></div>
+            <div class="helper-meta-item"><div class="helper-meta-label">助手</div><div class="helper-meta-value">${escHtml(taskHelperStateText)} · ${escHtml(taskDeviceText)}</div></div>
+            <div class="helper-meta-item"><div class="helper-meta-label">最近心跳</div><div class="helper-meta-value">${escHtml(helperHeartbeatText)}</div></div>
+            <div class="helper-meta-item"><div class="helper-meta-label">连接说明</div><div class="helper-meta-value">${escHtml(helperMetaText)}</div></div>
+          </div>
+        </div>
+        <div class="helper-task-card">
+          <div class="helper-card-top">
+            <span class="helper-card-title">解析任务状态</span>
+            <span class="helper-pill" style="color:${taskTone};">${escHtml(taskStatusText)}</span>
+          </div>
+          <div class="helper-meta-grid">
+            <div class="helper-meta-item"><div class="helper-meta-label">当前目录</div><div class="helper-meta-value">${escHtml(currentTask && currentTask.folderPath ? currentTask.folderPath : '待选择同步目录')}</div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    setupEl.style.cssText = '';
+  }
+  if (!projectId) {
+    listEl.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:10px 12px;border:1px dashed var(--border);border-radius:8px;">当前未进入项目，暂不显示自动解析任务。</div>';
+    return;
+  }
+  const renderTask = currentTask || {
+    id: null,
+    projectId,
+    status: 'initializing',
+    folderPath: '',
+    stats: {},
+    lastError: ''
+  };
+  listEl.innerHTML = [renderTask].map(task => {
+    const stats = task.stats || {};
+    const disabledAttr = task.id ? '' : ' disabled style="opacity:.45;cursor:not-allowed;"';
+    return `<div class="helper-task-shell">
+      <div class="helper-stats-grid">
+        <div class="helper-stat"><div class="helper-stat-num">${stats.discovered || 0}</div><div class="helper-stat-label">发现</div></div>
+        <div class="helper-stat"><div class="helper-stat-num">${stats.uploaded || 0}</div><div class="helper-stat-label">上传</div></div>
+        <div class="helper-stat"><div class="helper-stat-num">${stats.parsed || 0}</div><div class="helper-stat-label">解析成功</div></div>
+        <div class="helper-stat"><div class="helper-stat-num">${stats.failed || 0}</div><div class="helper-stat-label">失败</div></div>
+        <div class="helper-stat"><div class="helper-stat-num">${stats.pending || 0}</div><div class="helper-stat-label">待处理</div></div>
+      </div>
+      <div class="helper-control-grid">
+        <button class="btn btn-sm btn-secondary" onclick="selectHelperTaskFolder(${task.id || 0}, ${task.projectId || projectId || 0})"${disabledAttr}>选择同步目录</button>
+        <button class="btn btn-sm btn-primary" onclick="startProjectAutoParse(${task.id || 0}, ${task.projectId || projectId || 0})"${disabledAttr}>开始同步解析</button>
+        <button class="btn btn-sm btn-secondary" onclick="controlHelperTask(${task.id || 0}, 'pause')"${disabledAttr}>\u6682\u505c</button>
+        <button class="btn btn-sm btn-danger" onclick="controlHelperTask(${task.id || 0}, 'stop')"${disabledAttr}>\u505c\u6b62</button>
+      </div>
+      ${task.lastError ? '<div style="margin-top:8px;font-size:11px;color:var(--red);">' + escHtml(task.lastError) + '</div>' : ''}
+    </div>`;
+  }).join('');
+}
+
+async function startProjectAutoParse(id, projectId) {
+  if (!id) return;
+  maybeWakeLocalHelper(projectId || getCurrentHelperProjectId());
+  await controlHelperTask(id, 'start', true);
+}
+
+function selectHelperTaskFolder(taskId, projectId) {
+  const task = helperTaskList.find(item => Number(item.id) === Number(taskId));
+  const active = helperClientStatus && helperClientStatus.activeClient;
+  const hasKnownClient = !!(helperClientStatus && Array.isArray(helperClientStatus.clients) && helperClientStatus.clients.length);
+  if (!active && !hasKnownClient) {
+    generateHelperLinkToken();
+    return;
+  }
+  openLocalHelperProtocol('bind-folder', {
+    taskId,
+    projectId: projectId || task?.projectId || getCurrentHelperProjectId() || '',
+    taskName: task?.name || ''
+  }, '正在打开本地助手，为当前项目选择同步目录');
+  setTimeout(() => refreshHelperTasks(true), 2000);
+}
+
+async function generateHelperLinkToken() {
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) { showToast('请先登录', 'warn'); return; }
+  try {
+    const resp = await fetch(getLocalHelperApiBase() + '/link-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (data.code === 200 && data.data && data.data.linkToken) {
+      showHelperLinkDialog(data.data.linkToken);
+    } else {
+      showToast('生成连接码失败: ' + (data.message || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast('生成连接码失败: ' + e.message, 'error');
+  }
+}
+
+async function controlHelperTask(id, action, silentWake) {
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) { showToast('请先登录', 'warn'); return; }
+  const actionLabels = { start: '开始解析', pause: '暂停', stop: '停止' };
+  if (action === 'start' && !silentWake) {
+    const currentTask = helperTaskList.find(item => Number(item.id) === Number(id));
+    maybeWakeLocalHelper(currentTask?.projectId || getCurrentHelperProjectId());
+  }
+  try {
+    const resp = await fetch(getLocalHelperApiBase() + '/tasks/' + id + '/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ action })
+    });
+    const data = await resp.json();
+    if (data.code === 200) {
+      showToast((actionLabels[action] || action) + ' 已执行', 'success');
+      refreshHelperTasks();
+    } else {
+      showToast('操作失败: ' + (data.message || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast('操作失败: ' + e.message, 'error');
+  }
+}
+
+function closeHelperLinkDialog() {
+  const mask = document.getElementById('helperLinkDialog');
+  if (mask) mask.remove();
+}
+
+async function copyHelperLinkCode() {
+  const input = document.getElementById('helperLinkCodeInput');
+  if (!input) return false;
+  const code = input.value || '';
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(code);
+    copied = true;
+  } catch (e) {
+    input.focus();
+    input.select();
+    try {
+      copied = document.execCommand('copy');
+    } catch (err) {
+      copied = false;
+    }
+  }
+  if (copied) {
+    showToast('\u5df2\u590d\u5236\u8fde\u63a5\u7801', 'success');
+  } else {
+    input.focus();
+    input.select();
+    showToast('\u81ea\u52a8\u590d\u5236\u5931\u8d25\uff0c\u8bf7\u624b\u52a8\u590d\u5236\u8f93\u5165\u6846\u4e2d\u7684\u8fde\u63a5\u7801', 'warn');
+  }
+  return copied;
+}
+
+function downloadLocalHelperPackage() {
+  const link = document.createElement('a');
+  link.href = LOCAL_HELPER_DOWNLOAD_URL;
+  link.download = 'zhenwu-local-helper-setup.exe';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast('已开始下载本地助手安装包，请下载完成后双击安装', 'success');
+}
+
+async function connectLocalHelperWithMode(mode, existingCode) {
+  const token = typeof getToken === 'function' ? getToken() : '';
+  if (!token) { showToast('请先登录', 'warn'); return; }
+  const modeLabel = mode === 'refresh' ? '刷新链接助手' : '首次链接助手';
+  const readyCode = String(existingCode || '').trim();
+  if (readyCode) {
+    await linkLocalHelperWithFeedback(readyCode, modeLabel);
+    return;
+  }
+  // 先快速检测是否已经连接，避免不必要的重新链接流程
+  try {
+    const statusResp = await fetch(getLocalHelperApiBase() + '/status', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const statusData = await statusResp.json();
+    if (statusData.code === 200 && statusData.data) {
+      helperClientStatus = statusData.data;
+      const active = helperClientStatus && helperClientStatus.activeClient;
+      if (helperClientStatus && helperClientStatus.connected && active) {
+        await refreshHelperTasks(true);
+        setTimeout(() => refreshHelperTasks(true), 1500);
+        renderHelperTaskPanel();
+        showHelperActionModal('本地助手已连接，无需重新链接', false);
+        return;
+      }
+    }
+  } catch (e) { /* 快速检测失败，继续走正常链接流程 */ }
+  try {
+    const resp = await fetch(getLocalHelperApiBase() + '/link-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (data.code === 200 && data.data && data.data.linkToken) {
+      await linkLocalHelperWithFeedback(data.data.linkToken, modeLabel);
+    } else {
+      showToast(modeLabel + '失败: ' + (data.message || '未知错误'), 'error');
+    }
+  } catch (e) {
+    showToast(modeLabel + '失败: ' + e.message, 'error');
+  }
+}
+
+async function linkLocalHelperWithFeedback(code, modeLabel) {
+  showHelperActionModal(modeLabel + '中', true);
+  openLocalHelperWithCode(code);
+  const connected = await waitForHelperConnected(20000);
+  if (connected) {
+    await refreshHelperTasks(true);
+    setTimeout(() => refreshHelperTasks(true), 1500);
+    closeHelperLinkDialog();
+    showHelperActionModal('已完成链接', false);
+  } else {
+    showHelperActionModal('还没有完成链接，请确认本地助手已安装后再试一次', false);
+  }
+}
+
+function openLocalHelperWithCode(code, successText) {
+  const linkCode = String(code || '').trim();
+  if (!linkCode) {
+    showToast('连接码为空，无法连接本地助手', 'warn');
+    return;
+  }
+  const helperApiBase = getLocalHelperApiBase().replace(/\/local-helper$/, '');
+  openLocalHelperProtocol('link', { code: linkCode, apiBase: helperApiBase, projectId: getCurrentHelperProjectId() || '' }, successText || '正在尝试连接本地助手');
+}
+
+function showHelperLinkDialog(code) {
+  closeHelperLinkDialog();
+  const linkCode = String(code || '').trim();
+  const mask = document.createElement('div');
+  mask.id = 'helperLinkDialog';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);z-index:10020;display:flex;align-items:center;justify-content:center;padding:16px;';
+  mask.innerHTML = `
+    <div style="width:min(520px,100%);background:var(--bg1);border:1px solid rgba(240,180,41,.25);border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.25);padding:18px 18px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text1);">连接本地助手</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;">下载只保存安装包；安装完成后，可首次链接或刷新链接助手。</div>
+        </div>
+        <button type="button" onclick="closeHelperLinkDialog()" style="border:none;background:transparent;color:var(--text3);font-size:20px;line-height:1;cursor:pointer;padding:0 4px;">×</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button type="button" class="btn btn-sm btn-secondary" onclick="downloadLocalHelperPackage()">下载本地助手</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="connectLocalHelperWithMode('first','${escHtml(linkCode)}')">首次链接助手</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="connectLocalHelperWithMode('refresh','${escHtml(linkCode)}')">刷新链接助手</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.7;">
+        ${linkCode ? '连接码已准备好；点击“首次链接助手”或“刷新链接助手”会自动关联本地助手。' : '点击“首次链接助手”或“刷新链接助手”时，系统会自动生成连接码并关联本地助手。'}
+      </div>
+    </div>
+  `;
+  mask.addEventListener('click', e => {
+    if (e.target === mask) closeHelperLinkDialog();
+  });
+  document.body.appendChild(mask);
+}
 function setupOCRListeners() {
   const uploadZone = document.getElementById('uploadZone');
   if (uploadZone) {
@@ -91,27 +694,27 @@ function setupOCRListeners() {
       uploadZone.classList.remove('dragover');
       handleBatchUpload(e.dataTransfer.files);
     });
-    // 点击上传（HTML 中 uploadZone 的 onclick 会触发 batchInput.click()，这里无需重复绑定）
+    // 鐐瑰嚮涓婁紶锛圚TML 涓?uploadZone 鐨?onclick 浼氳Е鍙?batchInput.click()锛岃繖閲屾棤闇€閲嶅缁戝畾锛?
   }
-  // batchInput 的 onchange 在 HTML 中直接绑定 handleBatchUpload(this.files)
+  // batchInput 鐨?onchange 鍦?HTML 涓洿鎺ョ粦瀹?handleBatchUpload(this.files)
 }
 
-// ========== 批量上传 ==========
+// ========== 鎵归噺涓婁紶 ==========
 
-// 点击上传区前先检查积分（从云端获取最新值）
+// 鐐瑰嚮涓婁紶鍖哄墠鍏堟鏌ョН鍒嗭紙浠庝簯绔幏鍙栨渶鏂板€硷級
 async function checkCreditsBeforeUpload() {
-  if (!currentUser) return;
+  if (!currentUser) { alert('请先登录'); return; }
   try {
     const pts = await getUserPoints(currentUser.phone);
     if (pts <= 0) {
       showPointsInsufficientModal(pts, 1);
       return;
     }
-    // 积分充足，打开文件选择对话框
+    // 绉垎鍏呰冻锛屾墦寮€鏂囦欢閫夋嫨瀵硅瘽妗?
     const input = document.getElementById('batchInput');
     if (input) input.click();
   } catch (e) {
-    // 网络问题获取不到积分，放行让后续步骤再次检查
+    // 缃戠粶闂鑾峰彇涓嶅埌绉垎锛屾斁琛岃鍚庣画姝ラ鍐嶆妫€鏌?
     const input = document.getElementById('batchInput');
     if (input) input.click();
   }
@@ -120,20 +723,21 @@ async function checkCreditsBeforeUpload() {
 async function handleBatchUpload(files) {
   if (!files || files.length === 0) return;
 
-  // 查询已成功识别的文件名，跳过这些文件（失败的允许重新处理）
+  // 鏌ヨ宸叉垚鍔熻瘑鍒殑鏂囦欢鍚嶏紝璺宠繃杩欎簺鏂囦欢锛堝け璐ョ殑鍏佽閲嶆柊澶勭悊锛?
   let successNames = new Set();
   try {
     updateOCRStatus('work', '检查已处理文件...');
-    const data = await cloudRequest('/gallery/imagenames?successOnly=true');
+    const pid = window.currentProjectId || '';
+    const data = await cloudRequest(`/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(pid)}`);
     if (data && data.code === 200 && Array.isArray(data.data)) {
       successNames = new Set(data.data);
     }
   } catch (e) {
-    console.warn('[BatchUpload] 获取已成功列表失败，不跳过任何文件:', e.message);
+    console.warn('[BatchUpload] 鑾峰彇宸叉垚鍔熷垪琛ㄥけ璐ワ紝涓嶈烦杩囦换浣曟枃浠?', e.message);
   }
   updateOCRStatus('ok', 'OCR 就绪');
 
-  // 过滤掉已成功识别的文件
+  // 杩囨护鎺夊凡鎴愬姛璇嗗埆鐨勬枃浠?
   const filesToProcess = Array.from(files).filter(f => !successNames.has(f.name));
   const skippedCount = files.length - filesToProcess.length;
 
@@ -143,15 +747,15 @@ async function handleBatchUpload(files) {
     return;
   }
 
-  // 从云端获取最新积分（管理员可能已调整）
+  // 浠庝簯绔幏鍙栨渶鏂扮Н鍒嗭紙绠＄悊鍛樺彲鑳藉凡璋冩暣锛?
   let userPoints = (currentUser && currentUser.points) || 0;
   try {
     if (currentUser && typeof getUserPoints === 'function') {
       userPoints = await getUserPoints(currentUser.phone);
     }
-  } catch (e) { /* 网络问题，回退到本地缓存值 */ }
+  } catch (e) { /* 缃戠粶闂锛屽洖閫€鍒版湰鍦扮紦瀛樺€?*/ }
 
-  // 积分校验基于实际待处理数量（已跳过的不扣积分）
+  // 绉垎鏍￠獙鍩轰簬瀹為檯寰呭鐞嗘暟閲忥紙宸茶烦杩囩殑涓嶆墸绉垎锛?
   if (filesToProcess.length > userPoints) {
     showPointsInsufficientModal(userPoints, filesToProcess.length);
     return;
@@ -162,7 +766,7 @@ async function handleBatchUpload(files) {
   for (const file of filesToProcess) {
     if (existingNames.has(file.name)) continue;
     existingNames.add(file.name);
-    ocrQueue.push({ file, name: file.name, status: 'pending', error: null, projectId: window.currentProjectId || null });
+    ocrQueue.push({ file, name: file.name, status: 'pending', error: null, projectId: normalizeQueueProjectId(window.currentProjectId) });
     addedCount++;
   }
 
@@ -171,7 +775,7 @@ async function handleBatchUpload(files) {
     setTimeout(() => updateOCRStatus('ok', 'OCR 就绪'), 4000);
   }
 
-  renderOCRQueue();
+renderOCRQueue();
   const queueArea = document.getElementById('queueArea');
   if (queueArea) queueArea.style.display = 'block';
 }
@@ -180,42 +784,82 @@ function renderOCRQueue() {
   const queueCount = document.getElementById('queueCount');
   const queueList = document.getElementById('queueList');
   const queueArea = document.getElementById('queueArea');
-  const curPid = window.currentProjectId || null;
-  // 只统计、显示属于当前项目的队列项
+  const curPid = normalizeQueueProjectId(window.currentProjectId);
   const visibleItems = ocrQueue.map((item, idx) => ({ item, idx }))
-    .filter(({ item }) => item.projectId === curPid);
-  if (queueCount) queueCount.textContent = visibleItems.length;
-  // 当前项目无任务时自动隐藏队列区域
-  if (queueArea) queueArea.style.display = visibleItems.length > 0 ? 'block' : 'none';
+    .filter(({ item }) => normalizeQueueProjectId(item.projectId) === curPid);
+  const helperTask = helperTaskList.length ? helperTaskList[0] : null;
+  const helperPendingFiles = Array.isArray(helperTask?.stats?.pendingFiles)
+    ? helperTask.stats.pendingFiles.filter(name => String(name || '').trim())
+    : [];
+  const helperCurrentFile = String(helperTask?.stats?.currentFile || '').trim();
+  const helperQueueItems = [];
+  if (helperTask && getCurrentHelperProjectId()) {
+    if (helperCurrentFile) {
+      helperQueueItems.push({
+        name: helperCurrentFile,
+        status: helperTask.status === 'error' ? 'error' : 'processing',
+        error: helperTask.status === 'error' ? (helperTask.lastError || '处理失败') : '',
+        source: 'auto'
+      });
+    }
+    helperPendingFiles.forEach(name => {
+      if (name !== helperCurrentFile) {
+        helperQueueItems.push({ name, status: 'pending', error: '', source: 'auto' });
+      }
+    });
+  }
+  if (queueCount) queueCount.textContent = visibleItems.length + helperQueueItems.length;
+  if (queueArea) queueArea.style.display = 'block';
 
   if (queueList) {
-    queueList.innerHTML = visibleItems.map(({ item, idx }) => {
+    if (visibleItems.length === 0 && helperQueueItems.length === 0) {
+      queueList.innerHTML = '<div style="text-align:center;padding:16px 12px;color:var(--text3);font-size:12px;">暂无解析任务，手动批量上传或战报自动解析产生的内容都会显示在这里</div>';
+    } else {
+      const helperHtml = helperQueueItems.map(item => {
+        const statusClass = item.status === 'pending' ? 'qi-pending'
+          : item.status === 'processing' ? 'qi-processing'
+          : 'qi-error';
+        const statusIcon = item.status === 'pending' ? '⏳'
+          : item.status === 'processing' ? '⚙️'
+          : '❌';
+        const statusText = item.status === 'pending' ? '等待开始同步解析'
+          : item.status === 'processing' ? '自动解析处理中...'
+          : (item.error || '自动解析失败');
+        return `<div class="queue-item">
+          <span class="qi-icon">${statusIcon}</span>
+          <span class="qi-name">${escHtml(item.name)}</span>
+          <span class="${statusClass}">${escHtml(statusText)}</span>
+        </div>`;
+      }).join('');
+      const manualHtml = visibleItems.map(({ item, idx }) => {
       const statusClass = item.status === 'pending' ? 'qi-pending'
         : item.status === 'processing' ? 'qi-processing'
         : item.status === 'done' ? 'qi-done' : 'qi-error';
-      const statusIcon = item.status === 'pending' ? '💤'
+      const statusIcon = item.status === 'pending' ? '⏳'
         : item.status === 'processing' ? '⚙️'
         : item.status === 'done' ? '✅' : '❌';
       const statusText = item.status === 'pending' ? '等待中'
         : item.status === 'processing' ? '处理中...'
-        : item.status === 'done' ? '完成'
+        : item.status === 'done' ? '已完成'
         : (item.error || '失败');
-      // 只有 pending / error 状态允许删除，按钮放在状态右侧
+      // 鍙湁 pending / error 鐘舵€佸厑璁稿垹闄わ紝鎸夐挳鏀惧湪鐘舵€佸彸渚?
       const canDelete = item.status === 'pending' || item.status === 'error';
       const delBtn = canDelete
         ? `<span class="qi-del" title="删除" onclick="removeQueueItem(${idx})">✕</span>`
         : '';
       return `<div class="queue-item">
         <span class="qi-icon">${statusIcon}</span>
-        <span class="qi-name">${escHtml(item.name)}</span>
+        <span class="qi-name">[手动批量上传] ${escHtml(item.name)}</span>
         <span class="${statusClass}">${statusText}</span>
         ${delBtn}
       </div>`;
     }).join('');
+      queueList.innerHTML = helperHtml + manualHtml;
+    }
   }
 }
 
-// 删除单个队列项
+// 鍒犻櫎鍗曚釜闃熷垪椤?
 function removeQueueItem(idx) {
   const item = ocrQueue[idx];
   if (!item) return;
@@ -224,25 +868,25 @@ function removeQueueItem(idx) {
     return;
   }
   ocrQueue.splice(idx, 1);
-  renderOCRQueue();  // 内部处理 count 和 queueArea 显隐
+  renderOCRQueue();  // 鍐呴儴澶勭悊 count 鍜?queueArea 鏄鹃殣
 }
 
 function clearQueue() {
-  const curPid = window.currentProjectId || null;
-  // 只清除当前项目的非处理中任务，保留其他项目的和正在处理的
-  ocrQueue = ocrQueue.filter(q => q.status === 'processing' || q.projectId !== curPid);
-  renderOCRQueue();  // 内部处理 queueArea 显隐
+  const curPid = normalizeQueueProjectId(window.currentProjectId);
+  // 鍙竻闄ゅ綋鍓嶉」鐩殑闈炲鐞嗕腑浠诲姟锛屼繚鐣欏叾浠栭」鐩殑鍜屾鍦ㄥ鐞嗙殑
+  ocrQueue = ocrQueue.filter(q => q.status === 'processing' || normalizeQueueProjectId(q.projectId) !== curPid);
+  renderOCRQueue();  // 鍐呴儴澶勭悊 queueArea 鏄鹃殣
 }
 
-// ========== 文件夹自动监听 ==========
+// ========== 鏂囦欢澶硅嚜鍔ㄧ洃鍚?==========
 let folderWatchHandle = null;
 let folderWatchTimer = null;
 let folderWatchActive = false;
-let folderProcessedSet = new Set();   // 服务端已成功处理的文件名集合（每次扫描前刷新）
-let _sessionQueuedSet = new Set();    // 当前会话已加入队列的文件名（避免重复添加）
+let folderProcessedSet = new Set();   // 鏈嶅姟绔凡鎴愬姛澶勭悊鐨勬枃浠跺悕闆嗗悎锛堟瘡娆℃壂鎻忓墠鍒锋柊锛?
+let _sessionQueuedSet = new Set();    // 褰撳墠浼氳瘽宸插姞鍏ラ槦鍒楃殑鏂囦欢鍚嶏紙閬垮厤閲嶅娣诲姞锛?
 let folderNewCount = 0;
-let _keepAliveCtx = null;             // 静默音频 AudioContext，防止后台标签页被 Chrome 节流
-let _keepAliveTimer = null;           // 1 秒心跳计时器
+let _keepAliveCtx = null;             // 闈欓粯闊抽 AudioContext锛岄槻姝㈠悗鍙版爣绛鹃〉琚?Chrome 鑺傛祦
+let _keepAliveTimer = null;           // 1 绉掑績璺宠鏃跺櫒
 
 function getFolderStorageKey(name) {
   return `folder-watch-processed::${name}`;
@@ -270,27 +914,28 @@ async function selectWatchFolder() {
     if (wasActive) stopFolderWatch();
     document.getElementById('folderWatchName').textContent = handle.name;
     document.getElementById('btnFolderWatch').disabled = false;
-    // 加载服务端成功列表作为初始去重集合
+    // 鍔犺浇鏈嶅姟绔垚鍔熷垪琛ㄤ綔涓哄垵濮嬪幓閲嶉泦鍚?
     folderProcessedSet = await loadServerSuccessSet();
-    // 缓存到 localStorage 供离线时降级
+    // 缂撳瓨鍒?localStorage 渚涚绾挎椂闄嶇骇
     saveFolderProcessedCache(handle.name, folderProcessedSet);
     _sessionQueuedSet = new Set();
     folderNewCount = 0;
     updateFolderWatchStats();
   } catch (e) {
-    if (e.name !== 'AbortError') alert('选择文件夹失败：' + e.message);
+    if (e.name !== 'AbortError') alert('选择文件夹失败: ' + e.message);
   }
 }
 
-// 从服务端加载已成功处理的文件名集合（只排除有关联 battle_records 的，失败/未处理的允许重试）
+// 浠庢湇鍔＄鍔犺浇宸叉垚鍔熷鐞嗙殑鏂囦欢鍚嶉泦鍚堬紙鍙帓闄ゆ湁鍏宠仈 battle_records 鐨勶紝澶辫触/鏈鐞嗙殑鍏佽閲嶈瘯锛?
 async function loadServerSuccessSet() {
   try {
-    const data = await cloudRequest('/gallery/imagenames?successOnly=true');
+    const pid = window.currentProjectId || '';
+    const data = await cloudRequest(`/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(pid)}`);
     if (data && data.code === 200 && Array.isArray(data.data)) {
       return new Set(data.data);
     }
   } catch (e) {
-    console.warn('[FolderWatch] 服务端查询已处理文件失败:', e.message);
+    console.warn('[FolderWatch] 鏈嶅姟绔煡璇㈠凡澶勭悊鏂囦欢澶辫触:', e.message);
   }
   return new Set();
 }
@@ -308,21 +953,21 @@ async function startFolderWatch() {
   folderWatchActive = true;
   folderNewCount = 0;
   _sessionQueuedSet = new Set();
-  // 静默音频保持后台活跃（必须在 await 之前创建，利用用户点击手势上下文）
+  // 闈欓粯闊抽淇濇寔鍚庡彴娲昏穬锛堝繀椤诲湪 await 涔嬪墠鍒涘缓锛屽埄鐢ㄧ敤鎴风偣鍑绘墜鍔夸笂涓嬫枃锛?
   _startKeepAlive();
-  // 启动时刷新服务端成功列表
+  // 鍚姩鏃跺埛鏂版湇鍔＄鎴愬姛鍒楄〃
   folderProcessedSet = await loadServerSuccessSet();
   const btn = document.getElementById('btnFolderWatch');
   const statusEl = document.getElementById('folderWatchStatus');
-  if (btn) { btn.textContent = '⏹ 停止'; btn.className = 'btn btn-sm btn-danger'; }
+  if (btn) { btn.textContent = '■ 停止'; btn.className = 'btn btn-sm btn-danger'; }
   if (statusEl) { statusEl.textContent = '监听中...'; statusEl.style.cssText += ';background:var(--accent);color:#fff;'; }
   document.getElementById('folderWatchStats').style.display = 'block';
 
-  // 注册页面可见性检测（回到页面时自动恢复扫描和批处理）
+  // 娉ㄥ唽椤甸潰鍙鎬ф娴嬶紙鍥炲埌椤甸潰鏃惰嚜鍔ㄦ仮澶嶆壂鎻忓拰鎵瑰鐞嗭級
   _initVisibilityHandler();
 
   await scanWatchFolder();
-  // 主窗口也保留轮询作为双保险
+  // 涓荤獥鍙ｄ篃淇濈暀杞浣滀负鍙屼繚闄?
   const poll = async () => {
     if (!folderWatchActive) return;
     await scanWatchFolder();
@@ -342,23 +987,23 @@ function stopFolderWatch() {
   if (statusEl) { statusEl.textContent = '已停止'; statusEl.style.cssText += ';background:var(--bg3);color:var(--text3);'; }
 }
 
-// ========== 后台保活：音频 + 心跳，防止 Chrome 对后台标签页深度节流 ==========
+// ========== 鍚庡彴淇濇椿锛氶煶棰?+ 蹇冭烦锛岄槻姝?Chrome 瀵瑰悗鍙版爣绛鹃〉娣卞害鑺傛祦 ==========
 
 function _startKeepAlive() {
-  // ① 静默音频 —— Chrome 不对"正在播放音频"的标签页做深度节流
+  // 鈶?闈欓粯闊抽 鈥斺€?Chrome 涓嶅"姝ｅ湪鎾斁闊抽"鐨勬爣绛鹃〉鍋氭繁搴﹁妭娴?
   if (!_keepAliveCtx) {
     try {
       _keepAliveCtx = new (window.AudioContext || window.webkitAudioContext)();
-      // 用极轻的白噪声而非纯静音，Chrome 更大概率识别为"有音频输出"
-      const len = _keepAliveCtx.sampleRate; // 1 秒
+      // 鐢ㄦ瀬杞荤殑鐧藉櫔澹拌€岄潪绾潤闊筹紝Chrome 鏇村ぇ姒傜巼璇嗗埆涓?鏈夐煶棰戣緭鍑?
+      const len = _keepAliveCtx.sampleRate; // 1 绉?
       const buffer = _keepAliveCtx.createBuffer(1, len, _keepAliveCtx.sampleRate);
       const data = buffer.getChannelData(0);
-      for (let i = 0; i < len; i++) data[i] = (Math.random() - 0.5) * 0.0001; // 极轻噪声
+      for (let i = 0; i < len; i++) data[i] = (Math.random() - 0.5) * 0.0001; // 鏋佽交鍣０
       const source = _keepAliveCtx.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
       const gain = _keepAliveCtx.createGain();
-      gain.gain.value = 0.001; // 接近无声但不为零
+      gain.gain.value = 0.001; // 鎺ヨ繎鏃犲０浣嗕笉涓洪浂
       source.connect(gain);
       gain.connect(_keepAliveCtx.destination);
       source.start();
@@ -368,10 +1013,10 @@ function _startKeepAlive() {
     _keepAliveCtx.resume();
   }
 
-  // ② 1 秒心跳 —— 高频短 timer 让 Chrome 保持该标签页的 timer budget
+  // 鈶?1 绉掑績璺?鈥斺€?楂橀鐭?timer 璁?Chrome 淇濇寔璇ユ爣绛鹃〉鐨?timer budget
   if (!_keepAliveTimer) {
     _keepAliveTimer = setInterval(() => {
-      // 如果 AudioContext 被挂起，尝试恢复
+      // 濡傛灉 AudioContext 琚寕璧凤紝灏濊瘯鎭㈠
       if (_keepAliveCtx && _keepAliveCtx.state === 'suspended') {
         try { _keepAliveCtx.resume(); } catch (e) {}
       }
@@ -395,8 +1040,8 @@ function _initVisibilityHandler() {
 
   document.addEventListener('visibilitychange', async () => {
     if (!document.hidden && folderWatchActive) {
-      // ── 标签页恢复可见：立即扫描 + 恢复批处理 ──
-      try { await scanWatchFolder(); } catch (e) { /* 静默 */ }
+      // 鈹€鈹€ 鏍囩椤垫仮澶嶅彲瑙侊細绔嬪嵆鎵弿 + 鎭㈠鎵瑰鐞?鈹€鈹€
+      try { await scanWatchFolder(); } catch (e) { /* 闈欓粯 */ }
       if (!ocrRunning && !ocrPausedByUser) {
         startBatchProcess();
       }
@@ -407,23 +1052,23 @@ function _initVisibilityHandler() {
 async function scanWatchFolder() {
   if (!folderWatchHandle) return;
   try {
-    // ① 每次扫描前刷新服务端成功列表，确保跳过已成功处理的图片
+    // 鈶?姣忔鎵弿鍓嶅埛鏂版湇鍔＄鎴愬姛鍒楄〃锛岀‘淇濊烦杩囧凡鎴愬姛澶勭悊鐨勫浘鐗?
     const serverSuccess = await loadServerSuccessSet();
-    // 如果服务端有返回就用服务端结果，否则保持上一次的缓存
+    // 濡傛灉鏈嶅姟绔湁杩斿洖灏辩敤鏈嶅姟绔粨鏋滐紝鍚﹀垯淇濇寔涓婁竴娆＄殑缂撳瓨
     if (serverSuccess.size > 0) {
       folderProcessedSet = serverSuccess;
-      // 同步缓存到 localStorage 作为离线降级
+      // 鍚屾缂撳瓨鍒?localStorage 浣滀负绂荤嚎闄嶇骇
       saveFolderProcessedCache(folderWatchHandle.name, serverSuccess);
     }
 
-    // ② 扫描文件夹，跳过已成功处理的和当前会话已加入队列的
+    // 鈶?鎵弿鏂囦欢澶癸紝璺宠繃宸叉垚鍔熷鐞嗙殑鍜屽綋鍓嶄細璇濆凡鍔犲叆闃熷垪鐨?
     const newFiles = [];
     for await (const [name, handle] of folderWatchHandle.entries()) {
       if (handle.kind !== 'file') continue;
       if (!/\.(png|jpg|jpeg)$/i.test(name)) continue;
-      // 跳过服务端已成功处理的
+      // 璺宠繃鏈嶅姟绔凡鎴愬姛澶勭悊鐨?
       if (folderProcessedSet.has(name)) continue;
-      // 跳过当前会话已加入队列的（避免重复添加）
+      // 璺宠繃褰撳墠浼氳瘽宸插姞鍏ラ槦鍒楃殑锛堥伩鍏嶉噸澶嶆坊鍔狅級
       if (_sessionQueuedSet.has(name)) continue;
       const file = await handle.getFile();
       newFiles.push({ name, file });
@@ -431,10 +1076,10 @@ async function scanWatchFolder() {
 
     if (newFiles.length === 0) return;
 
-    // ③ 加入 OCR 队列
+    // 鈶?鍔犲叆 OCR 闃熷垪
     for (const { name, file } of newFiles) {
       _sessionQueuedSet.add(name);
-      ocrQueue.push({ file, name, status: 'pending', error: null, projectId: window.currentProjectId || null });
+      ocrQueue.push({ file, name, status: 'pending', error: null, projectId: normalizeQueueProjectId(window.currentProjectId) });
       folderNewCount++;
     }
     updateFolderWatchStats();
@@ -442,7 +1087,7 @@ async function scanWatchFolder() {
     renderOCRQueue();
     if (!ocrRunning && !ocrPausedByUser) startBatchProcess();
   } catch (e) {
-    console.error('文件夹扫描出错:', e.message);
+    console.error('鏂囦欢澶规壂鎻忓嚭閿?', e.message);
   }
 }
 
@@ -453,11 +1098,11 @@ function updateFolderWatchStats() {
   if (n) n.textContent = folderNewCount;
 }
 
-// ========== 文件读取 ==========
-// 读取文件并压缩为 base64（最大宽度 1920px，质量 0.85），避免大图导致 OCR 超时
+// ========== 鏂囦欢璇诲彇 ==========
+// 璇诲彇鏂囦欢骞跺帇缂╀负 base64锛堟渶澶у搴?1920px锛岃川閲?0.85锛夛紝閬垮厤澶у浘瀵艰嚧 OCR 瓒呮椂
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
-    // 小于 800KB 的图片直接读取，不压缩
+    // 灏忎簬 800KB 鐨勫浘鐗囩洿鎺ヨ鍙栵紝涓嶅帇缂?
     if (file.size < 800 * 1024) {
       const r = new FileReader();
       r.onload = () => resolve(r.result);
@@ -465,7 +1110,7 @@ function readFileAsBase64(file) {
       r.readAsDataURL(file);
       return;
     }
-    // 大图先压缩再转 base64
+    // 澶у浘鍏堝帇缂╁啀杞?base64
     const img = new Image();
     img.onload = () => {
       const MAX_W = 1920, MAX_H = 1920;
@@ -482,8 +1127,8 @@ function readFileAsBase64(file) {
       URL.revokeObjectURL(img.src);
     };
     img.onerror = () => {
-      // 压缩失败时 fallback 到原始读取
-      console.warn('[OCR] 图片压缩失败，使用原始大小');
+      // 鍘嬬缉澶辫触鏃?fallback 鍒板師濮嬭鍙?
+      console.warn('[OCR] 图片压缩失败，改用原始大小');
       const r = new FileReader();
       r.onload = () => resolve(r.result);
       r.onerror = reject;
@@ -495,7 +1140,7 @@ function readFileAsBase64(file) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ========== 非阻塞状态提示（替代 alert，不阻断长时间运行）==========
+// ========== 闈為樆濉炵姸鎬佹彁绀猴紙鏇夸唬 alert锛屼笉闃绘柇闀挎椂闂磋繍琛岋級==========
 let _toastTimer = null;
 function showToast(msg, type) {
   // type: 'warn' | 'error' | 'info'
@@ -510,10 +1155,10 @@ function showToast(msg, type) {
     if (txt && txt.textContent === msg) {
       updateOCRStatus('ok', 'OCR 就绪');
     }
-  }, 15000);  // 15秒后自动恢复
+  }, 15000);  // 15绉掑悗鑷姩鎭㈠
 }
 
-// ========== UI 节流渲染 ==========
+// ========== UI 鑺傛祦娓叉煋 ==========
 let _lastRenderTime = 0;
 let _renderPending = false;
 
@@ -540,21 +1185,21 @@ function _doRenderAll() {
   try { if (typeof renderGallery === 'function') renderGallery(); } catch(e) { console.error('renderGallery:', e); }
 }
 
-// ========== 页面可见性检测（后台标签页限速警告）==========
+// ========== 椤甸潰鍙鎬ф娴嬶紙鍚庡彴鏍囩椤甸檺閫熻鍛婏級==========
 let _visibilityWarned = false;
 document.addEventListener('visibilitychange', function() {
   if (document.hidden) {
     _visibilityWarned = true;
-    showToast('🔇 已启用后台保活，监听持续运行中', 'info');
+    showToast('已启用后台保活，监听会继续运行', 'info');
   } else {
     if (_visibilityWarned) {
-      showToast('✅ 标签页已激活，恢复正常处理', 'info');
+      showToast('页面已恢复到前台，继续正常处理', 'info');
       _visibilityWarned = false;
     }
   }
 });
 
-// ========== 队列持久化（页面刷新后恢复进度）==========
+// ========== 闃熷垪鎸佷箙鍖栵紙椤甸潰鍒锋柊鍚庢仮澶嶈繘搴︼級==========
 function saveBatchProgress() {
   try {
     const progress = {
@@ -579,11 +1224,11 @@ function clearBatchProgress() {
   try { localStorage.removeItem('ocr-batch-progress'); } catch(e) {}
 }
 
-// ========== 批量处理 ==========
+// ========== 鎵归噺澶勭悊 ==========
 async function startBatchProcess() {
   if (ocrRunning) return;
 
-  // 检查积分：待处理张数不能超过剩余积分，实际按成功张数扣（失败不扣）
+  // 妫€鏌ョН鍒嗭細寰呭鐞嗗紶鏁颁笉鑳借秴杩囧墿浣欑Н鍒嗭紝瀹為檯鎸夋垚鍔熷紶鏁版墸锛堝け璐ヤ笉鎵ｏ級
   const fileCount = ocrQueue.filter(i => i.status === 'pending').length;
   if (fileCount > 0 && currentUser) {
     const pts = await getUserPoints(currentUser.phone);
@@ -606,25 +1251,25 @@ async function startBatchProcess() {
 
   let processing = 0;
   let idx = 0;
-  let _renderCount = 0;  // 节流计数器
+  let _renderCount = 0;  // 鑺傛祦璁℃暟鍣?
 
-  // ── 瞬时错误重试辅助（不阻断整个批处理）──
+  // 鈹€鈹€ 鐬椂閿欒閲嶈瘯杈呭姪锛堜笉闃绘柇鏁翠釜鎵瑰鐞嗭級鈹€鈹€
   async function retryTransient(itemObj, reason) {
     itemObj._retries = (itemObj._retries || 0) + 1;
     if (itemObj._retries <= OCR_CONFIG.maxRetries) {
       const delay = OCR_CONFIG.retryBaseDelay * Math.pow(2, itemObj._retries - 1);
-      showToast('⚠ ' + reason + ' — ' + delay/1000 + 's 后重试(' + itemObj._retries + '/' + OCR_CONFIG.maxRetries + ')', 'warn');
+      showToast('⚠ ' + reason + '，' + delay / 1000 + 's 后重试 (' + itemObj._retries + '/' + OCR_CONFIG.maxRetries + ')', 'warn');
       await sleep(delay);
-      // 重试等待期间也响应暂停
+      // 閲嶈瘯绛夊緟鏈熼棿涔熷搷搴旀殏鍋?
       while (ocrPaused && ocrRunning) await sleep(500);
       if (!ocrRunning) return false;
-      return true;  // 继续重试
+      return true;  // 缁х画閲嶈瘯
     }
-    // 重试耗尽：标记失败，跳过当前项，继续处理下一张
+    // 閲嶈瘯鑰楀敖锛氭爣璁板け璐ワ紝璺宠繃褰撳墠椤癸紝缁х画澶勭悊涓嬩竴寮?
     itemObj.status = 'error';
-    itemObj.error = '重试' + OCR_CONFIG.maxRetries + '次后仍失败: ' + reason;
-    showToast('❌ ' + itemObj.name + ' 重试耗尽，跳过 (' + reason + ')', 'error');
-    return false;  // 不重试了，跳过此项
+    itemObj.error = '重试 ' + OCR_CONFIG.maxRetries + ' 次后仍失败: ' + reason;
+    showToast('❌ ' + itemObj.name + ' 重试耗尽，已跳过 (' + reason + ')', 'error');
+    return false;  // 涓嶉噸璇曚簡锛岃烦杩囨椤?
   }
 
   async function processNext() {
@@ -646,7 +1291,7 @@ async function startBatchProcess() {
       let base64 = null;
       let success = false;
 
-      // ── 重试循环：瞬时错误自动恢复，不阻断整批 ──
+      // 鈹€鈹€ 閲嶈瘯寰幆锛氱灛鏃堕敊璇嚜鍔ㄦ仮澶嶏紝涓嶉樆鏂暣鎵?鈹€鈹€
       while (!success) {
         try {
           base64 = await readFileAsBase64(item.file);
@@ -654,7 +1299,7 @@ async function startBatchProcess() {
           const token = typeof getToken === 'function' ? getToken() : '';
 
           updateOCRStatus('work', 'OCR 识别中...');
-          // 用队列项记录的 projectId，避免用户中途切换项目影响归属
+          // 鐢ㄩ槦鍒楅」璁板綍鐨?projectId锛岄伩鍏嶇敤鎴蜂腑閫斿垏鎹㈤」鐩奖鍝嶅綊灞?
           const itemProjectId = item.projectId || null;
           const labelCfg = await getLabelConfig(itemProjectId);
           const reqBody = {
@@ -664,7 +1309,7 @@ async function startBatchProcess() {
           };
           if (labelCfg) reqBody.labelConfig = labelCfg;
 
-          // 单次请求超时控制：后台标签页 fetch 可能永不 resolve，强制超时中断重试
+          // 鍗曟璇锋眰瓒呮椂鎺у埗锛氬悗鍙版爣绛鹃〉 fetch 鍙兘姘镐笉 resolve锛屽己鍒惰秴鏃朵腑鏂噸璇?
           const fetchTimeoutMs = OCR_CONFIG.timeout || 120000;
           const timeoutCtrl = new AbortController();
           const timeoutId = setTimeout(() => timeoutCtrl.abort(new Error('OCR 请求超时')), fetchTimeoutMs);
@@ -686,7 +1331,7 @@ async function startBatchProcess() {
           }
           updateOCRStatus('ok', 'OCR 就绪');
 
-          // 401 账号异常 → 不重试，直接退出
+          // 401 璐﹀彿寮傚父 鈫?涓嶉噸璇曪紝鐩存帴閫€鍑?
           if (resp.status === 401) {
             let errMsg = '';
             try { errMsg = (await resp.json()).message || ''; } catch(e) {}
@@ -700,7 +1345,7 @@ async function startBatchProcess() {
                 if (typeof showLogin === 'function') showLogin(); else location.reload();
               }, 0);
             }
-            // 不重试，停止批处理
+            // 涓嶉噸璇曪紝鍋滄鎵瑰鐞?
             item.status = 'error'; item.error = 'HTTP 401: ' + errMsg;
             success = true; break;
           }
@@ -713,7 +1358,7 @@ async function startBatchProcess() {
 
           const result = await resp.json();
 
-          // 积分不足 → 不重试，停止批处理
+          // 绉垎涓嶈冻 鈫?涓嶉噸璇曪紝鍋滄鎵瑰鐞?
           if (result.code === 402) {
             processing--;
             idx++;
@@ -726,9 +1371,9 @@ async function startBatchProcess() {
             return;
           }
 
-          // 图片本身处理失败(422) → 不重试，直接跳过继续下一张
+          // 鍥剧墖鏈韩澶勭悊澶辫触(422) 鈫?涓嶉噸璇曪紝鐩存帴璺宠繃缁х画涓嬩竴寮?
           if (result.code === 429) {
-            const canRetry429 = await retryTransient(item, "服务端OCR队列已满(429)");
+            const canRetry429 = await retryTransient(item, '服务端 OCR 队列已满 (429)');
             if (!canRetry429) { success = true; break; }
             continue;
           }
@@ -741,28 +1386,28 @@ async function startBatchProcess() {
             break;
           }
 
-          // OCR 服务不可达(503) → 自动重试（服务可能重启中）
+          // OCR 鏈嶅姟涓嶅彲杈?503) 鈫?鑷姩閲嶈瘯锛堟湇鍔″彲鑳介噸鍚腑锛?
           if (result.code === 503) {
-            const canRetry = await retryTransient(item, 'OCR 服务不可用(503)');
+            const canRetry = await retryTransient(item, 'OCR 服务不可用 (503)');
             if (!canRetry) { success = true; break; }
             continue;
           }
 
           if (result.code !== 200) {
-            // 其他业务错误 → 不重试，标记失败继续下一张
+            // 鍏朵粬涓氬姟閿欒 鈫?涓嶉噸璇曪紝鏍囪澶辫触缁х画涓嬩竴寮?
             item.status = 'error';
             item.error = result.message || 'OCR 失败';
             success = true;
             break;
           }
 
-          // ✅ 识别成功
+          // 鉁?璇嗗埆鎴愬姛
           const record = result.data;
-          // 缓存到本地 IndexedDB（服务端已存入 MySQL，不重复同步云端）
+          // 缂撳瓨鍒版湰鍦?IndexedDB锛堟湇鍔＄宸插瓨鍏?MySQL锛屼笉閲嶅鍚屾浜戠锛?
           if (typeof dbAddLocal === 'function') {
             const localId = await dbAddLocal(record);
             if (typeof addSysLog === 'function') {
-              addSysLog('action', '上传战报: ' + (record.leftPlayer || record.attackerName || item.name) + (window.currentProjectId ? ' [项目ID:' + window.currentProjectId + ']' : ''));
+              addSysLog('action', '涓婁紶鎴樻姤: ' + (record.leftPlayer || record.attackerName || item.name) + (window.currentProjectId ? ' [椤圭洰ID:' + window.currentProjectId + ']' : ''));
             }
             if (window.currentProjectId && typeof addBattleToProject === 'function' && localId) {
               await addBattleToProject(window.currentProjectId, localId);
@@ -771,10 +1416,10 @@ async function startBatchProcess() {
           item.status = 'done';
           item._retries = 0;
           success = true;
-          // 积分已由服务端扣除，只需刷新 UI 显示
+          // 绉垎宸茬敱鏈嶅姟绔墸闄わ紝鍙渶鍒锋柊 UI 鏄剧ず
           if (typeof updateUserNavPoints === 'function') updateUserNavPoints();
         } catch (e) {
-          // 用户主动暂停导致的中止
+          // 鐢ㄦ埛涓诲姩鏆傚仠瀵艰嚧鐨勪腑姝?
           if (e.name === 'AbortError' && ocrPausedByUser) {
             item.status = 'pending';
             item.error = null;
@@ -784,17 +1429,17 @@ async function startBatchProcess() {
             ocrRunning = false;
             if (btnStart) btnStart.disabled = false;
             if (btnPause) { btnPause.disabled = false; }
-            updateOCRStatus('ok', '已暂停，点击"继续"恢复');
+            updateOCRStatus('ok', '已暂停，点击“继续”恢复');
             return;
           }
-          // 网络错误 / 服务不可达 / 请求超时 → 自动重试
+          // 缃戠粶閿欒 / 鏈嶅姟涓嶅彲杈?/ 璇锋眰瓒呮椂 鈫?鑷姩閲嶈瘯
           const msg = e.message || '';
           if (msg.includes('503') || msg.includes('服务不可用') || msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION') || msg.includes('OCR 请求超时') || msg.includes('TimeoutError') || e.name === 'TimeoutError') {
             const canRetry = await retryTransient(item, msg);
             if (!canRetry) { success = true; break; }
             continue;
           }
-          // 其他异常 → 保存本地错误记录，标记失败继续
+          // 鍏朵粬寮傚父 鈫?淇濆瓨鏈湴閿欒璁板綍锛屾爣璁板け璐ョ户缁?
           try {
             if (!base64) base64 = await readFileAsBase64(item.file);
             if (typeof dbAddLocal === 'function') {
@@ -809,7 +1454,7 @@ async function startBatchProcess() {
                 await addBattleToProject(window.currentProjectId, localId);
               }
             }
-          } catch (e2) { console.error('保存失败图片出错:', e2); }
+          } catch (e2) { console.error('淇濆瓨澶辫触鍥剧墖鍑洪敊:', e2); }
           item.status = 'error';
           item.error = e.message;
           success = true;
@@ -819,7 +1464,7 @@ async function startBatchProcess() {
       processing--;
       idx++;
 
-      // ── 节流 UI 刷新（每 N 张或超时刷新，避免 DOM 膨胀卡顿）──
+      // 鈹€鈹€ 鑺傛祦 UI 鍒锋柊锛堟瘡 N 寮犳垨瓒呮椂鍒锋柊锛岄伩鍏?DOM 鑶ㄨ儉鍗￠】锛夆攢鈹€
       _renderCount++;
       renderOCRQueue();
       updateOCRProgress();
@@ -828,10 +1473,10 @@ async function startBatchProcess() {
       if (_renderCount % OCR_CONFIG.renderThrottleCount === 0) {
         throttledRenderAll();
       }
-      // 不再使用 batchInterval sleep
+      // 涓嶅啀浣跨敤 batchInterval sleep
     }
 
-    // ── 批处理全部结束 ──
+    // 鈹€鈹€ 鎵瑰鐞嗗叏閮ㄧ粨鏉?鈹€鈹€
     ocrRunning = false;
     if (btnStart) btnStart.disabled = false;
     if (btnPause) { btnPause.disabled = true; btnPause.textContent = '⏸ 暂停'; }
@@ -847,13 +1492,13 @@ async function startBatchProcess() {
 function toggleBatchPause() {
   const btn = document.getElementById('btnPauseBatch');
   if (!ocrPaused) {
-    // ——暂停：立即中止正在进行的 OCR 请求——
+    // 鈥斺€旀殏鍋滐細绔嬪嵆涓姝ｅ湪杩涜鐨?OCR 璇锋眰鈥斺€?
     ocrPaused = true;
     ocrPausedByUser = true;
     if (batchAbortController) batchAbortController.abort();
     if (btn) btn.textContent = '▶ 继续';
   } else {
-    // ——继续：重新启动批处理（已处理完的项保持 done，从第一个 pending 继续）——
+    // 鈥斺€旂户缁細閲嶆柊鍚姩鎵瑰鐞嗭紙宸插鐞嗗畬鐨勯」淇濇寔 done锛屼粠绗竴涓?pending 缁х画锛夆€斺€?
     ocrPaused = false;
     ocrPausedByUser = false;
     if (btn) btn.textContent = '⏸ 暂停';
@@ -890,7 +1535,7 @@ if (document.readyState === 'loading') {
   initOCR();
 }
 
-// ========== 积分不足弹窗 ==========
+// ========== 绉垎涓嶈冻寮圭獥 ==========
 function showPointsInsufficientModal(currentPoints, neededPoints) {
   closePointsInsufficientModal();
   const shortfall = Math.max(0, neededPoints - currentPoints);
@@ -899,7 +1544,7 @@ function showPointsInsufficientModal(currentPoints, neededPoints) {
   overlay.className = 'points-insufficient-overlay';
   overlay.innerHTML = `
     <div class="points-insufficient-panel">
-      <div class="pi-icon">💰</div>
+      <div class="pi-icon">💎</div>
       <div class="pi-title">积分余额不足</div>
       <div class="pi-info">
         <div class="pi-row">
@@ -918,7 +1563,7 @@ function showPointsInsufficientModal(currentPoints, neededPoints) {
       </div>
       <div class="pi-btns">
         <button class="btn btn-secondary" onclick="closePointsInsufficientModal()">返回</button>
-        <button class="btn btn-primary" onclick="closePointsInsufficientModal(); typeof showPointsMall==='function'&&showPointsMall();">确认充值</button>
+        <button class="btn btn-primary" onclick="closePointsInsufficientModal(); typeof showPointsMall==='function'&&showPointsMall();">前往充值</button>
       </div>
     </div>
   `;
@@ -933,21 +1578,17 @@ function closePointsInsufficientModal() {
   if (overlay) overlay.remove();
 }
 
-// ========== 服务端文件夹监听 UI ==========
+// ========== 鏈嶅姟绔枃浠跺す鐩戝惉 UI ==========
 let _svrWatchPollTimer = null;
 
 function svrWatchInit() {
   const panel = document.getElementById('svrWatchPanel');
   if (!panel) return;
-  // 仅超管可见服务端监听面板
-  if (!currentUser || currentUser.role !== 'super_admin') {
-    panel.style.display = 'none';
-    return;
+  panel.style.display = 'none';
+  if (_svrWatchPollTimer) {
+    clearInterval(_svrWatchPollTimer);
+    _svrWatchPollTimer = null;
   }
-  panel.style.display = '';
-  svrWatchRefresh();
-  if (_svrWatchPollTimer) clearInterval(_svrWatchPollTimer);
-  _svrWatchPollTimer = setInterval(svrWatchRefresh, 8000);
 }
 
 async function svrWatchRefresh() {
@@ -958,12 +1599,12 @@ async function svrWatchRefresh() {
     const data = await resp.json();
     if (data.code !== 200) return;
     const { config, state } = data.data;
-    // 路径 & 间隔
+    // 璺緞 & 闂撮殧
     const pathEl = document.getElementById('svrWatchPath');
     const ivEl = document.getElementById('svrWatchInterval');
     if (pathEl && pathEl !== document.activeElement) pathEl.value = config.folderPath || '';
     if (ivEl && ivEl !== document.activeElement) ivEl.value = config.intervalSec || 10;
-    // 状态徽章
+    // 鐘舵€佸窘绔?
     const statusEl = document.getElementById('svrWatchStatus');
     if (statusEl) {
       statusEl.textContent = state.running ? '运行中' : '已停止';
@@ -971,25 +1612,25 @@ async function svrWatchRefresh() {
         ? 'font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(72,199,142,.15);color:#48c78e;'
         : 'font-size:11px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--text3);';
     }
-    // 按钮
+    // 鎸夐挳
     const startBtn = document.getElementById('btnSvrWatchStart');
     const stopBtn = document.getElementById('btnSvrWatchStop');
     if (startBtn) startBtn.style.display = state.running ? 'none' : '';
     if (stopBtn) stopBtn.style.display = state.running ? '' : 'none';
-    // 统计
+    // 缁熻
     const procEl = document.getElementById('svrWatchProcessed');
     const errEl = document.getElementById('svrWatchErrors');
     const pendEl = document.getElementById('svrWatchPending');
     if (procEl) procEl.textContent = state.processedCount || 0;
     if (errEl) errEl.textContent = state.errorCount || 0;
     if (pendEl) pendEl.textContent = state.pendingFiles || 0;
-    // 上次扫描
+    // 涓婃鎵弿
     const scanEl = document.getElementById('svrWatchLastScan');
     if (scanEl) scanEl.textContent = state.lastScanAt ? '上次扫描: ' + new Date(state.lastScanAt).toLocaleString('zh-CN') : '';
-    // 最近错误
+    // 鏈€杩戦敊璇?
     const errMsgEl = document.getElementById('svrWatchLastError');
     if (errMsgEl) errMsgEl.textContent = state.lastError ? '⚠ ' + state.lastError : '';
-  } catch (e) { /* 网络不可达时静默 */ }
+  } catch (e) { /* 缃戠粶涓嶅彲杈炬椂闈欓粯 */ }
 }
 
 async function saveSvrWatchConfig() {
@@ -1031,7 +1672,7 @@ async function svrWatchStop() {
   } catch (e) {}
 }
 
-// 调用后端弹出 Windows 原生文件夹选择对话框
+// 璋冪敤鍚庣寮瑰嚭 Windows 鍘熺敓鏂囦欢澶归€夋嫨瀵硅瘽妗?
 async function svrPickFolder() {
   try {
     const token = typeof getToken === 'function' ? getToken() : '';
@@ -1048,7 +1689,7 @@ async function svrPickFolder() {
       if (pathEl) pathEl.value = data.data.path;
       updateOCRStatus('ok', '已选择文件夹: ' + data.data.path);
     } else if (data.code === 400) {
-      // 用户取消选择，静默
+      // 鐢ㄦ埛鍙栨秷閫夋嫨锛岄潤榛?
     } else {
       alert('无法打开文件夹选择器: ' + (data.message || '未知错误'));
     }
@@ -1058,3 +1699,6 @@ async function svrPickFolder() {
     alert('无法打开文件夹选择器: ' + e.message);
   }
 }
+
+
+
