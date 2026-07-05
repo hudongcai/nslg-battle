@@ -272,7 +272,8 @@ function applyHelperLinkBootstrap(linkState) {
 
 async function hydrateHelperStateAfterLink(projectId) {
   const normalizedProjectId = Number(projectId || getCurrentHelperProjectId() || 0) || null;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 1; i <= 5; i++) {
+    updateHelperActionModalStatus('同步任务状态中… (' + i + '/5)');
     await refreshHelperTasks(true);
     const matchedTask = Array.isArray(helperTaskList)
       ? helperTaskList.find(item => Number(item.projectId || 0) === Number(normalizedProjectId || 0))
@@ -282,8 +283,12 @@ async function hydrateHelperStateAfterLink(projectId) {
       _helperLinkBootstrap = null;
       return true;
     }
-    await sleepHelper(800);
+    if (i < 5) {
+      updateHelperActionModalStatus('等待助手任务就绪… (' + i + '/5)');
+      await sleepHelper(800);
+    }
   }
+  updateHelperActionModalStatus('任务数据已同步，正在刷新面板…');
   renderHelperTaskPanel();
   renderOCRQueue();
   return false;
