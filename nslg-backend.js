@@ -1304,6 +1304,8 @@ app.get('/api/local-helper/link-token/status', requireActiveUser, async (req, re
   try {
     const linkToken = String(req.query.token || '').trim();
     if (!linkToken) return res.json({ code: 400, message: '缺少连接码' });
+    const rawProjectId = req.query.projectId;
+    const projectId = rawProjectId !== undefined && rawProjectId !== null && String(rawProjectId).trim() !== '' ? Number(rawProjectId) : 0;
     const [rows] = await pool.query(
       `SELECT t.client_id, t.expires_at, t.used_at, c.device_name
        FROM local_helper_link_tokens t
@@ -1317,6 +1319,35 @@ app.get('/api/local-helper/link-token/status', requireActiveUser, async (req, re
     const expiresAt = row.expires_at || null;
     const usedAt = row.used_at || null;
     const expired = !!expiresAt && new Date(expiresAt).getTime() <= Date.now();
+    let taskData = null;
+    if (Number.isInteger(projectId) && projectId > 0) {
+      const [taskRows] = await pool.query(
+        `SELECT t.id, t.project_id, t.task_name, t.status, t.folder_path, t.helper_client_id, t.last_heartbeat_at, t.updated_at,
+                c.device_name, c.status AS helper_status, c.last_seen_at
+         FROM ocr_watch_tasks t
+         LEFT JOIN local_helper_clients c ON c.id = t.helper_client_id
+         WHERE t.user_id = ? AND t.project_id = ?
+         ORDER BY t.updated_at DESC, t.id DESC
+         LIMIT 1`,
+        [req.authUserId, projectId]
+      );
+      if (taskRows.length) {
+        const task = taskRows[0];
+        taskData = {
+          id: task.id,
+          projectId: task.project_id,
+          name: task.task_name,
+          status: task.status,
+          statusLabel: taskStatusLabel(task.status),
+          folderPath: task.folder_path || '',
+          helperClientId: task.helper_client_id,
+          helperDeviceName: task.device_name || '',
+          helperStatus: isLocalHelperOnline(task.last_seen_at, task.helper_status) ? 'online' : 'offline',
+          lastHeartbeatAt: task.last_heartbeat_at,
+          updatedAt: task.updated_at
+        };
+      }
+    }
     res.json({
       code: 200,
       data: {
@@ -1324,7 +1355,9 @@ app.get('/api/local-helper/link-token/status', requireActiveUser, async (req, re
         usedAt,
         expired,
         clientId: row.client_id || null,
-        deviceName: row.device_name || ''
+        deviceName: row.device_name || '',
+        projectId: Number.isInteger(projectId) && projectId > 0 ? projectId : null,
+        task: taskData
       }
     });
   } catch (err) { res.json({ code: 500, message: err.message }); }

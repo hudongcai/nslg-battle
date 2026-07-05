@@ -42,6 +42,7 @@ let _helperWakeAttemptAt = 0;
 let _helperWakeProjectId = null;
 let _helperAutoRecordSyncing = false;
 let _helperAutoRecordSyncMarker = '';
+let _helperLinkBootstrap = null;
 const LOCAL_HELPER_DOWNLOAD_URL = (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE && /zhenwu\.fun/i.test(location.host))
   ? (location.origin.replace(/\/$/, '') + '/downloads/zhenwu-local-helper-setup.exe')
   : './downloads/zhenwu-local-helper-setup.exe';
@@ -209,20 +210,67 @@ async function waitForLinkTokenConsumed(linkToken, timeoutMs) {
   const token = typeof getToken === 'function' ? getToken() : '';
   const code = String(linkToken || '').trim();
   if (!token || !code) return false;
+  const projectId = getCurrentHelperProjectId();
+  const url = getLocalHelperApiBase() + '/link-token/status?token=' + encodeURIComponent(code) + (projectId ? ('&projectId=' + encodeURIComponent(projectId)) : '');
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const resp = await fetch(getLocalHelperApiBase() + '/link-token/status?token=' + encodeURIComponent(code), {
+      const resp = await fetch(url, {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       const data = await resp.json();
       if (data.code === 200 && data.data) {
-        if (data.data.used) return true;
-        if (data.data.expired) return false;
+        if (data.data.used) return data.data;
+        if (data.data.expired) return null;
       }
     } catch (e) {}
     await sleepHelper(1000);
   }
+  return null;
+}
+
+function applyHelperLinkBootstrap(linkState) {
+  if (!linkState || !linkState.used) return;
+  const projectId = Number(linkState.projectId || getCurrentHelperProjectId() || 0) || null;
+  const activeClient = {
+    id: Number(linkState.clientId || 0) || null,
+    deviceName: linkState.deviceName || '本地助手',
+    status: 'online',
+    lastSeenAt: linkState.usedAt || new Date().toISOString(),
+    updatedAt: linkState.usedAt || new Date().toISOString()
+  };
+  helperClientStatus = {
+    connected: true,
+    activeClient,
+    clients: [activeClient]
+  };
+  _helperLinkBootstrap = {
+    projectId,
+    activeClient,
+    task: linkState.task ? Object.assign({ stats: linkState.task.stats || {} }, linkState.task) : null
+  };
+  if (linkState.task && projectId) {
+    const otherTasks = Array.isArray(helperTaskList) ? helperTaskList.filter(item => Number(item.projectId || 0) !== Number(projectId)) : [];
+    helperTaskList = [Object.assign({ stats: linkState.task.stats || {} }, linkState.task), ...otherTasks];
+  }
+}
+
+async function hydrateHelperStateAfterLink(projectId) {
+  const normalizedProjectId = Number(projectId || getCurrentHelperProjectId() || 0) || null;
+  for (let i = 0; i < 5; i++) {
+    await refreshHelperTasks(true);
+    const matchedTask = Array.isArray(helperTaskList)
+      ? helperTaskList.find(item => Number(item.projectId || 0) === Number(normalizedProjectId || 0))
+      : null;
+    const active = helperClientStatus && helperClientStatus.activeClient;
+    if (matchedTask && active) {
+      _helperLinkBootstrap = null;
+      return true;
+    }
+    await sleepHelper(800);
+  }
+  renderHelperTaskPanel();
+  renderOCRQueue();
   return false;
 }
 
@@ -415,14 +463,19 @@ function renderHelperTaskPanel() {
   const listEl = document.getElementById('helperTaskList');
   const hintEl = document.getElementById('helperTaskHint');
   const projectId = getCurrentHelperProjectId();
-  const rawActive = helperClientStatus && helperClientStatus.activeClient;
+  const bootstrapForProject = _helperLinkBootstrap && Number(_helperLinkBootstrap.projectId || 0) === Number(projectId || 0) ? _helperLinkBootstrap : null;
+  const rawActive = (helperClientStatus && helperClientStatus.activeClient) || (bootstrapForProject && bootstrapForProject.activeClient) || null;
   const active = rawActive && ((helperClientStatus && helperClientStatus.connected) || rawActive.status === 'online' || isRecentHelperHeartbeat(rawActive.lastSeenAt)) ? rawActive : null;
-  const currentTask = helperTaskList.length ? helperTaskList[0] : null;
+  const currentTask = (Array.isArray(helperTaskList) && helperTaskList.find(item => Number(item.projectId || 0) === Number(projectId || 0)))
+    || (helperTaskList.length ? helperTaskList[0] : null)
+    || (bootstrapForProject ? bootstrapForProject.task : null);
   const helperStatusText = active ? '已连接' : '未连接';
   const helperStatusTone = active ? '#48c78e' : 'var(--text3)';
   const helperMetaText = active
     ? ((active.deviceName || '本地助手') + ' · 心跳 ' + formatHelperRelativeTime(active.lastSeenAt))
-    : (rawActive && rawActive.lastSeenAt ? ('上次心跳 ' + formatHelperRelativeTime(rawActive.lastSeenAt) + '，已判定离线') : '没有收到本地助手心跳');
+    : (bootstrapForProject && bootstrapForProject.activeClient
+        ? ((bootstrapForProject.activeClient.deviceName || '本地助手') + ' · 已完成首次链接，正在同步任务状态')
+        : (rawActive && rawActive.lastSeenAt ? ('上次心跳 ' + formatHelperRelativeTime(rawActive.lastSeenAt) + '，已判定离线') : '没有收到本地助手心跳'));
   const taskProjectText = currentTask ? (currentTask.projectId || projectId || '-') : (projectId || '-');
   const taskDeviceText = currentTask && currentTask.helperDeviceName ? currentTask.helperDeviceName : (active && active.deviceName ? active.deviceName : '-');
   const taskHelperStateText = helperStatusText;
@@ -668,10 +721,16 @@ async function connectLocalHelperWithMode(mode, existingCode) {
 async function linkLocalHelperWithFeedback(code, modeLabel) {
   showHelperActionModal(modeLabel + '中', true);
   openLocalHelperWithCode(code);
-  const connected = await waitForLinkTokenConsumed(code, 20000) || await waitForHelperConnected(5000);
+  const linkState = await waitForLinkTokenConsumed(code, 20000);
+  const connected = !!(linkState && linkState.used) || await waitForHelperConnected(5000);
   if (connected) {
+    if (linkState && linkState.used) {
+      applyHelperLinkBootstrap(linkState);
+      renderHelperTaskPanel();
+      renderOCRQueue();
+    }
     try {
-      await refreshHelperTasks(true);
+      await hydrateHelperStateAfterLink(getCurrentHelperProjectId());
       setTimeout(() => refreshHelperTasks(true), 1500);
     } catch (e) {
       console.warn('[LocalHelper] 链接成功后刷新状态失败:', e.message || e);
