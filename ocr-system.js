@@ -171,16 +171,17 @@ function buildLocalHelperProtocolUrl(action, params = {}) {
 
 function openLocalHelperProtocol(action, params = {}, successText) {
   const protocolUrl = buildLocalHelperProtocolUrl(action, params);
-  // 使用隐藏 iframe 触发自定义协议。
-  // <a>.click() 在 HTTPS 页面可能触发页面导航离开，导致弹窗/JS 状态丢失；
-  // iframe 在独立 browsing context 中加载协议 URL，不影响当前页面。
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  iframe.src = protocolUrl;
-  document.body.appendChild(iframe);
+  // 使用隐藏 <a> 元素 + click() 触发自定义协议。
+  // 不加 target="_blank" — 避免被 Edge/Chrome 弹窗拦截器静默阻止；
+  // 已注册的协议处理器被触发后，浏览器不会离开当前页面。
+  const a = document.createElement('a');
+  a.href = protocolUrl;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
   setTimeout(() => {
-    try { document.body.removeChild(iframe); } catch (e) {}
-  }, 2000);
+    try { document.body.removeChild(a); } catch (e) {}
+  }, 500);
   if (successText) showToast(successText, 'success');
 }
 
