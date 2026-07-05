@@ -168,11 +168,12 @@ function buildLocalHelperProtocolUrl(action, params = {}) {
 
 function openLocalHelperProtocol(action, params = {}, successText) {
   const protocolUrl = buildLocalHelperProtocolUrl(action, params);
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  iframe.src = protocolUrl;
-  document.body.appendChild(iframe);
-  setTimeout(() => iframe.remove(), 3000);
+  const link = document.createElement('a');
+  link.href = protocolUrl;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => link.remove(), 1000);
   if (successText) showToast(successText, 'success');
 }
 
