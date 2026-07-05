@@ -46,6 +46,7 @@ let _helperWakeProjectId = null;
 let _helperAutoRecordSyncing = false;
 let _helperAutoRecordSyncMarker = '';
 let _helperLinkBootstrap = null;
+const HELPER_TASK_POLL_INTERVAL_MS = 2000;
 const LOCAL_HELPER_DOWNLOAD_URL = (typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE && /zhenwu\.fun/i.test(location.host))
   ? (location.origin.replace(/\/$/, '') + '/downloads/zhenwu-local-helper-setup.exe')
   : './downloads/zhenwu-local-helper-setup.exe';
@@ -374,7 +375,7 @@ function startHelperTaskPolling() {
   _helperTaskPollTimer = setInterval(() => {
     if (!currentUser) return;
     refreshHelperTasks(true);
-  }, 10000);
+  }, HELPER_TASK_POLL_INTERVAL_MS);
 }
 
 async function refreshHelperTasks(silent) {
@@ -1876,5 +1877,4 @@ async function svrPickFolder() {
     alert('无法打开文件夹选择器: ' + e.message);
   }
 }
-
 
