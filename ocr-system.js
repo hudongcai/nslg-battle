@@ -168,12 +168,18 @@ function buildLocalHelperProtocolUrl(action, params = {}) {
 
 function openLocalHelperProtocol(action, params = {}, successText) {
   const protocolUrl = buildLocalHelperProtocolUrl(action, params);
-  const link = document.createElement('a');
-  link.href = protocolUrl;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-  setTimeout(() => link.remove(), 1000);
+  // 使用 location.href 触发自定义协议，不依赖用户手势上下文
+  // <a>.click() 和 <iframe> 在异步调用后都会因用户手势丢失而被浏览器拦截
+  const prevHref = window.location.href;
+  window.location.href = protocolUrl;
+  // 如果页面被导航离开（极端情况），恢复机制会在短时间内生效；
+  // 正常情况浏览器检测到自定义协议后不会离开当前页面
+  setTimeout(() => {
+    if (window.location.href !== prevHref && window.location.href === protocolUrl) {
+      // 浏览器未能识别自定义协议，尝试恢复（极少见）
+      window.location.href = prevHref;
+    }
+  }, 800);
   if (successText) showToast(successText, 'success');
 }
 
@@ -684,24 +690,7 @@ async function connectLocalHelperWithMode(mode, existingCode) {
     await linkLocalHelperWithFeedback(readyCode, modeLabel);
     return;
   }
-  // 先快速检测是否已经连接，避免不必要的重新链接流程
-  try {
-    const statusResp = await fetch(getLocalHelperApiBase() + '/status', {
-      headers: { 'Authorization': 'Bearer ' + token }
-    });
-    const statusData = await statusResp.json();
-    if (statusData.code === 200 && statusData.data) {
-      helperClientStatus = statusData.data;
-      const active = helperClientStatus && helperClientStatus.activeClient;
-      if (helperClientStatus && helperClientStatus.connected && active) {
-        await refreshHelperTasks(true);
-        setTimeout(() => refreshHelperTasks(true), 1500);
-        renderHelperTaskPanel();
-        showHelperActionModal('本地助手已连接，无需重新链接', false);
-        return;
-      }
-    }
-  } catch (e) { /* 快速检测失败，继续走正常链接流程 */ }
+  // 直接生成链接码并打开本地助手，避免多余的异步操作延迟协议触发
   try {
     const resp = await fetch(getLocalHelperApiBase() + '/link-token', {
       method: 'POST',
@@ -710,6 +699,7 @@ async function connectLocalHelperWithMode(mode, existingCode) {
     });
     const data = await resp.json();
     if (data.code === 200 && data.data && data.data.linkToken) {
+      // 立即打开协议URL触发本地助手（使用 location.href，不依赖用户手势）
       await linkLocalHelperWithFeedback(data.data.linkToken, modeLabel);
     } else {
       showToast(modeLabel + '失败: ' + (data.message || '未知错误'), 'error');
