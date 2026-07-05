@@ -56,6 +56,22 @@ function getHelperTaskById(list, id) {
   return list.find(item => Number(item.id) === Number(id)) || null;
 }
 
+function getActiveHelperTask(list, projectId) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const normalizedProjectId = Number(projectId || getCurrentHelperProjectId() || 0) || null;
+  const candidates = normalizedProjectId
+    ? list.filter(item => Number(item.projectId || 0) === Number(normalizedProjectId))
+    : list.slice();
+  if (candidates.length === 0) return null;
+  const statusRank = { running: 0, ready: 1, error: 2, paused: 3, pending_bind: 4, stopped: 5, completed: 6 };
+  return candidates.slice().sort((a, b) => {
+    const leftRank = statusRank[String(a.status || '')] ?? 9;
+    const rightRank = statusRank[String(b.status || '')] ?? 9;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return Number(b.id || 0) - Number(a.id || 0);
+  })[0] || null;
+}
+
 function getHelperTaskRecordMarker(task) {
   if (!task) return '';
   return [
@@ -68,7 +84,7 @@ function getHelperTaskRecordMarker(task) {
 }
 
 async function syncAutoParsedRecordsIfNeeded(previousTasks, nextTasks) {
-  const currentTask = Array.isArray(nextTasks) && nextTasks.length ? nextTasks[0] : null;
+  const currentTask = getActiveHelperTask(nextTasks, getCurrentHelperProjectId());
   if (!currentTask || !currentTask.projectId) return;
 
   const previousTask = getHelperTaskById(previousTasks, currentTask.id);
@@ -962,7 +978,7 @@ function renderOCRQueue() {
   const curPid = normalizeQueueProjectId(window.currentProjectId);
   const visibleItems = ocrQueue.map((item, idx) => ({ item, idx }))
     .filter(({ item }) => normalizeQueueProjectId(item.projectId) === curPid);
-  const helperTask = helperTaskList.length ? helperTaskList[0] : null;
+  const helperTask = getActiveHelperTask(helperTaskList, window.currentProjectId);
   const helperPendingFiles = Array.isArray(helperTask?.stats?.pendingFiles)
     ? helperTask.stats.pendingFiles.filter(name => String(name || '').trim())
     : [];
@@ -1877,4 +1893,3 @@ async function svrPickFolder() {
     alert('无法打开文件夹选择器: ' + e.message);
   }
 }
-

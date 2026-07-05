@@ -343,13 +343,13 @@ async function processTask(config, state, task) {
       task.stats = stats;
       try {
         await reportProgress(config, task, {
-          status: 'error',
+          status: 'running',
           folderPath,
           lastError: `${fileName}: ${e.message}`,
           stats
         });
       } catch (progressErr) {
-        console.error(`Failed to write error status for ${fileName}: ${progressErr.message}`);
+        console.error(`Failed to write failed-file progress for ${fileName}: ${progressErr.message}`);
       }
     }
   }
