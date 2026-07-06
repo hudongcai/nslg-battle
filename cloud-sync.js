@@ -41,6 +41,7 @@ async function cloudRequest(path, options = {}) {
   const url = `${CLOUD_API_BASE}${path}`;
   const token = getToken();
   const defaultOptions = {
+    credentials: 'omit',  // 不发送 cookies，避免 CORS 问题
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': 'Bearer ' + token } : {})
