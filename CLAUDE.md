@@ -1,4 +1,4 @@
-# 三谋战报系统 (nslg-battle) — 项目上下文
+﻿# 三谋战报系统 (nslg-battle) — 项目上下文
 
 启动：`node nslg-backend.js`（或 `./start-local.ps1` / `start-local.bat`）  
 截图工具：`C:\AutoScreenshotTool2`（与战报系统配套，截图→分析，一键用 start-local 同时启动）  
@@ -79,3 +79,5 @@ git push   # 触发 GitHub Actions 自动部署到 GitHub Pages
 **需求确认**
 - 收到功能需求后，先与用户确认理解是否正确，再动手实现
 - 有歧义或设计选择时，列出方案让用户选择，不自行决定
+- 所有改动任务，必须先得到用户确认后再执行；未确认前只做分析、排查、阅读、方案整理，不直接修改文件、脚本、配置或数据
+

@@ -98,14 +98,27 @@ while ($restartCount -lt $MaxRestarts) {
     }
 
     $exitCode = $proc.ExitCode
+    # PS5.1: Start-Process -NoNewWindow ExitCode sometimes empty; fallback to stderr log
+    if ($exitCode -eq $null -or $exitCode -eq '') {
+        $stderrPath = Join-Path $projectDir "ocr_stderr.log"
+        if (Test-Path $stderrPath) {
+            $tail = Get-Content $stderrPath -Tail 5 -ErrorAction SilentlyContinue
+            if ($tail -match '主动退出\(42\)') { $exitCode = 42 }
+            elseif ($tail -match 'FATAL|Traceback|CUDA_ERROR|out of memory|MemoryError') { $exitCode = 1 }
+        }
+        if ($exitCode -eq $null -or $exitCode -eq '') { $exitCode = -1 }
+    }
     $uptime = (Get-Date) - $lastStartTime
     $uptimeStr = "$($uptime.Hours)h$($uptime.Minutes)m$($uptime.Seconds)s"
 
     Write-WatchLog "[exit #$restartCount] PID=$($proc.Id) ExitCode=$exitCode uptime=$uptimeStr"
 
-    if ($uptime.TotalSeconds -lt 60) {
+    if ($uptime.TotalSeconds -lt 60 -and $exitCode -ne 42) {
         $rapidFailCount++
         Write-WatchLog "WARN: rapid fail ($rapidFailCount/$RapidFailLimit) - crashed within 60s"
+    } elseif ($exitCode -eq 42) {
+        # Memory watchdog initiated restart - not a failure
+        $rapidFailCount = [Math]::Max(0, $rapidFailCount - 2)
     } else {
         $rapidFailCount = [Math]::Max(0, $rapidFailCount - 2)
     }
@@ -116,7 +129,6 @@ while ($restartCount -lt $MaxRestarts) {
     }
     if ($exitCode -eq 42) {
         Write-WatchLog "INFO: planned memory-restart (code 42), restarting immediately..."
-        $rapidFailCount = [Math]::Max(0, $rapidFailCount - 1)
         continue
     }
 }

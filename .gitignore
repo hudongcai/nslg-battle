@@ -69,3 +69,7 @@ everything-claude-code/
 .claude/.agents/
 .claude/AGENTS.md
 .claude/launch.json
+
+# Local helper runtime files
+local-helper/local-helper.config.json
+local-helper/local-helper.state.json
