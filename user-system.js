@@ -284,11 +284,13 @@ async function ensureSuperAdmin(){
 
 // ========== 会话管理 ==========
 function saveSession(user){
+  const token = (typeof getToken === 'function') ? getToken() : '';
   localStorage.setItem('sm_session', JSON.stringify({
     phone: user.phone,
     name: user.name,
     role: user.role,
     points: user.points || 0,  // 同步积分到会话（用于自动登录时恢复）
+    token: token || '',
     loginAt: Date.now()
   }));
 }
@@ -739,6 +741,7 @@ async function onLoginSuccess(){
   updateNavByRole();
   // 服务端文件夹监听面板（仅超管可见）
   if(typeof svrWatchInit === 'function') svrWatchInit();
+  // auto-watch polling is now handled by ocr-watch-v2.js (replaceOcrWatchPanel + initOcrWatch)
   // 异步从云端拉最新积分（管理员可能已调整），完成后刷新右上角显示
   if(currentUser && currentUser.phone && typeof getUserPoints === 'function'){
     getUserPoints(currentUser.phone).then(() => {
@@ -783,7 +786,7 @@ async function renderUserBar(){
   if(!bar){
     bar = document.createElement('div');
     bar.id='userBar';
-    bar.style.cssText='display:flex;align-items:center;gap:10px;font-size:12px;';
+    bar.style.cssText='display:flex;align-items:center;gap:10px;font-size:12px;min-width:0;flex-wrap:nowrap;';
     const header = document.querySelector('.header');
     if(header){header.appendChild(bar);}
   }
@@ -801,12 +804,12 @@ async function renderUserBar(){
   bar.innerHTML=`
     <div style="display:flex;align-items:center;gap:8px;">
       <div style="width:30px;height:30px;border-radius:50%;background:${roleColor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;">${escHtml(avatarChar)}</div>
-      <div class="header-username" style="display:flex;flex-direction:column;line-height:1.35;">
-        <span style="font-size:13px;font-weight:500;color:var(--text);">${escHtml(currentUser.name)||escHtml(currentUser.phone)}</span>
-        <span style="font-size:10px;color:${roleColor};opacity:.85;">${escHtml(roleName)}</span>
+      <div class="header-username" style="display:flex;flex-direction:column;line-height:1.35;min-width:0;">
+        <span class="header-name" style="font-size:13px;font-weight:500;color:var(--text);">${escHtml(currentUser.name)||escHtml(currentUser.phone)}</span>
+        <span class="header-role" style="font-size:10px;color:${roleColor};opacity:.85;">${escHtml(roleName)}</span>
       </div>
     </div>
-    <button class="btn btn-sm" style="margin-left:6px;padding:3px 10px;font-size:11px;background:rgba(255,82,82,.08);color:#ff5252;border:1px solid rgba(255,82,82,.18);border-radius:4px;cursor:pointer;" onclick="doLogout()">退出</button>
+    <button class="btn btn-sm" style="margin-left:6px;padding:3px 10px;font-size:11px;background:rgba(255,82,82,.08);color:#ff5252;border:1px solid rgba(255,82,82,.18);border-radius:4px;cursor:pointer;flex-shrink:0;" onclick="doLogout()">退出</button>
   `;
   // 更新右上角积分数显示
   if(typeof updateUserNavPoints==='function') updateUserNavPoints();
@@ -1269,6 +1272,19 @@ async function checkLoginState(){
     try{
       const user = await userDBGet(session.phone);
       if(user&&user.role===session.role){
+        let restoredToken = typeof getToken === 'function' ? getToken() : '';
+        if (!restoredToken && session.token && typeof setToken === 'function') {
+          setToken(session.token);
+          restoredToken = session.token;
+        }
+        if (!restoredToken && user.password && typeof cloudLogin === 'function') {
+          try {
+            await cloudLogin(user.phone, user.password);
+            restoredToken = typeof getToken === 'function' ? getToken() : '';
+          } catch (tokenErr) {
+            console.warn('[Session] 静默恢复 token 失败:', tokenErr.message);
+          }
+        }
         // 验证云端账号是否仍然存在（防止已删账号通过本地会话复活）
         // 用原始 fetch 调 /api/auth/profile，避免 cloudRequest 把 HTTP 错误码当异常处理
         let cloudOk = true; // 默认乐观，网络不通时允许离线

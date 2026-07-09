@@ -342,8 +342,10 @@ function dbClear() {
 }
 
 async function loadAllRecords() {
+  console.log('[loadAllRecords] 开始加载...');
   try {
     let records = await dbGetAllLite();
+    console.log('[loadAllRecords] 从 IndexedDB 读取了', records.length, '条记录');
     // 旧数据迁移：为没有 projectId/uploader 的记录补全字段
     // 重要：只处理真正需要迁移的旧数据（无 cloudId），避免触发云端更新
     const migratePromises = [];
