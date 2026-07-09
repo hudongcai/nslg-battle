@@ -1310,8 +1310,9 @@ async function svrPickFolder() {
 
 async function downloadLocalHelperPackage() {
   try {
-    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'http://localhost:3000/api';
-    window.open(base.replace('/api', '') + '/downloads/local-helper.zip', '_blank');
+    // 从前端静态资源路径下载（GitHub Pages），而不是从后端 API 服务器
+    const downloadUrl = window.location.origin + '/downloads/local-helper.zip';
+    window.open(downloadUrl, '_blank');
     showToast('✅ 下载已开始，请查看浏览器下载内容', 'success');
   } catch (e) {
     showToast('❌ 下载失败: ' + e.message, 'error');
