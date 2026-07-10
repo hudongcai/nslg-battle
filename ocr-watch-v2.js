@@ -6,7 +6,11 @@ window.ocrWatchTask = null;
 window.autoCompletedFiles = [];  // 记录最近完成的自动解析文件
 let ocrWatchTimer = null;
 
-function ocrWatchApiBase() { return 'http://localhost:3000/api'; }
+// 根据当前页面域名自动确定 API 地址（与 cloud-sync.js 保持一致）
+function ocrWatchApiBase() {
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+  return isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
+}
 
 // ======= 替换旧面板 =======
 function replaceOcrWatchPanel() {
