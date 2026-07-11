@@ -1310,8 +1310,8 @@ async function svrPickFolder() {
 
 async function downloadLocalHelperPackage() {
   try {
-    // 使用 ghgo.xyz 加速下载（国内访问友好）
-    const downloadUrl = 'https://ghgo.xyz/https://github.com/hudongcai/nslg-battle/releases/download/v2.0.3/zhenwu-local-helper-setup-07112001.exe';
+    // 从本地后端下载（稳定快速，无墙问题）
+    const downloadUrl = 'https://api.zhenwu.fun/download/local-helper';
     window.open(downloadUrl, '_blank');
     showToast('✅ 下载已开始，请查看浏览器下载内容', 'success');
   } catch (e) {

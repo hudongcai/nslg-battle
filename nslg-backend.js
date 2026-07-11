@@ -4,6 +4,8 @@ const cors = require('cors');
 const XLSX = require('xlsx');
 const os = require('os');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { mapPaddleResult } = require('./ocr-parser');
 
 const app = express();
@@ -1328,7 +1330,6 @@ app.get('/api/gallery/has-image/:battleId', async (req, res) => {
 });
 
 // ========== 下载 ==========
-const path = require('path'); const fs = require('fs');
 app.get('/api/download/screenshot-tool', (req, res) => {
   const fp = path.resolve(__dirname, 'release', '三谋战报截图工具.exe');
   if (!fs.existsSync(fp)) return res.status(404).json({ code: 404, message: '文件不存在' });
@@ -1726,6 +1727,30 @@ if ($dialog.ShowDialog() -eq 'OK') {
     console.error('[FolderWatch] 文件夹选择器失败:', e.message);
     res.json({ code: 500, message: '无法打开文件夹选择对话框: ' + e.message });
   }
+});
+
+// ========== 本地助手下载接口 ==========
+app.get('/download/local-helper', (req, res) => {
+  const filePath = path.join(__dirname, 'downloads', 'zhenwu-local-helper-setup.exe');
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ code: 404, message: '安装包不存在' });
+  }
+
+  // 设置响应头，强制下载
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'attachment; filename="zhenwu-local-helper-setup-07112001.exe"');
+
+  // 流式传输文件
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+
+  fileStream.on('error', (err) => {
+    console.error('[Download] 文件传输失败:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ code: 500, message: '下载失败' });
+    }
+  });
 });
 
 app.listen(PORT, async () => {
