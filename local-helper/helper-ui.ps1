@@ -911,12 +911,21 @@ function Show-HelperStatus {
             $workerColor = 'Green'
         }
 
-        # 获取版本信息（从 local-helper.js 文件的修改时间）
-        $helperJsPath = Join-Path $PSScriptRoot 'local-helper.js'
+        # 获取版本信息（从 version.json 读取打包时间）
+        $versionJsonPath = Join-Path $PSScriptRoot 'version.json'
         $versionTime = '未知'
-        if (Test-Path $helperJsPath) {
-            $fileTime = (Get-Item $helperJsPath).LastWriteTime
-            $versionTime = $fileTime.ToString('yyyy-MM-dd HH:mm')
+        if (Test-Path $versionJsonPath) {
+            try {
+                $versionInfo = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
+                $versionTime = $versionInfo.buildTime
+            } catch {
+                # 如果读取失败，回退到使用文件修改时间
+                $helperJsPath = Join-Path $PSScriptRoot 'local-helper.js'
+                if (Test-Path $helperJsPath) {
+                    $fileTime = (Get-Item $helperJsPath).LastWriteTime
+                    $versionTime = $fileTime.ToString('yyyy-MM-dd HH:mm')
+                }
+            }
         }
 
         # 构建状态消息

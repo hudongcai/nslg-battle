@@ -44,6 +44,13 @@ foreach ($file in $files) {
 # 复制新版本的 local-helper.minimal.js 作为 local-helper.js
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\local-helper.minimal.js') -Destination (Join-Path $packageDir 'local-helper.js') -Force
 
+# 写入版本信息文件（打包时间）
+$versionInfo = @{
+    buildTime = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+    buildTimestamp = [int][double]::Parse((Get-Date -UFormat %s))
+} | ConvertTo-Json
+$versionInfo | Set-Content -Path (Join-Path $packageDir 'version.json') -Encoding UTF8
+
 # 复制 fpicker.exe（文件夹选择器）
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\fpicker.exe') -Destination (Join-Path $packageDir 'fpicker.exe') -Force
 
