@@ -37,6 +37,10 @@ function replaceOcrWatchPanel() {
       <span style="font-size:14px;font-weight:700;color:var(--accent);">⚡ 战报自动监听</span>
       <span style="font-size:11px;color:var(--text3);">每个项目独立 · 自动处理 · 统一在战报解析列表中显示</span>
     </div>
+    <div style="margin-bottom:12px;">
+      <button class="btn btn-sm btn-secondary" onclick="downloadLocalHelperPackage()" style="margin-right:8px;">📦 下载本地助手</button>
+      <span style="font-size:11px;color:var(--text3);">首次使用需要先下载并安装本地助手</span>
+    </div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
       <div style="flex:1;min-width:180px;">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">监听目录</div>
