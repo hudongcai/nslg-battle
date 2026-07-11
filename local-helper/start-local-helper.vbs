@@ -9,6 +9,7 @@ End If
 cmd = "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File """ & scriptPath & """" & launchArg & " *> """ & logPath & """"
 shell.Run cmd, 0, False
 
-' æ˜¾ç¤ºå¯åŠ¨æç¤º
-MsgBox "çœŸæ­¦æœ¬åœ°åŠ©æ‰‹å·²å¯åŠ¨" & vbCrLf & vbCrLf & "åŠ©æ‰‹å·²åœ¨åŽå°è¿è¡Œï¼Œå›¾æ ‡å·²éšè—åœ¨ç³»ç»Ÿæ‰˜ç›˜ã€‚" & vbCrLf & vbCrLf & "å³é”®ç‚¹å‡»æ‰˜ç›˜å›¾æ ‡å¯ä»¥æŸ¥çœ‹èœå•ã€‚", vbInformation + vbSystemModal, "çœŸæ­¦æœ¬åœ°åŠ©æ‰‹"
+' ÏÔÊ¾Æô¶¯ÌáÊ¾
+MsgBox "ÕæÎä±¾µØÖúÊÖÒÑÆô¶¯" & vbCrLf & vbCrLf & "ÖúÊÖÒÑÔÚºóÌ¨ÔËÐÐ£¬Í¼±êÒÑÒþ²ØÔÚÏµÍ³ÍÐÅÌ¡£" & vbCrLf & vbCrLf & "ÓÒ¼üµã»÷ÍÐÅÌÍ¼±ê¿ÉÒÔ²é¿´²Ëµ¥¡£", vbInformation + vbSystemModal, "ÕæÎä±¾µØÖúÊÖ"
+
 
