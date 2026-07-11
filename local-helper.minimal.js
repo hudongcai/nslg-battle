@@ -353,17 +353,20 @@ async function main() {
     return;
   }
 
-  // 读取配置
+  // 读取配置（可选）
   let config = readJson(CONFIG_PATH, null);
   if (!config) {
     if (NO_SETUP) {
       console.log('❌ 未找到配置文件，请先运行: node local-helper.minimal.js --setup');
       process.exit(1);
     }
-    console.log('⚠️  未找到配置文件，开始配置...');
-    await setupConfig();
-    config = readJson(CONFIG_PATH, null);
-    if (!config) process.exit(1);
+    // 无配置文件时使用默认配置
+    console.log('⚠️  未找到配置文件，使用默认配置启动（仅支持文件夹选择功能）');
+    config = {
+      apiBase: DEFAULT_API_BASE,
+      helperToken: null,
+      tasks: {}
+    };
   }
 
   const state = readJson(STATE_PATH, { processedByTask: {} });
@@ -373,11 +376,19 @@ async function main() {
 
   console.log('🚀 本地助手已启动');
   console.log(`   API: ${config.apiBase || DEFAULT_API_BASE}`);
+  console.log(`   配置状态: ${config.helperToken ? '已配置' : '未配置（仅支持文件夹选择）'}`);
 
   // 主循环
   while (true) {
     try {
       config = readJson(CONFIG_PATH, config);
+
+      // 如果没有 Token，跳过任务轮询
+      if (!config.helperToken) {
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL * 1000));
+        continue;
+      }
+
       const tasks = await listTasks(config);
 
       // 同步 processedFiles
