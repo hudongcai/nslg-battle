@@ -1,27 +1,66 @@
+/**
+ * 本地助手 - 极简版 v2.0
+ *
+ * 功能：
+ * - 轮询监听文件夹
+ * - 上传新文件到后端
+ * - 更新任务进度
+ *
+ * 使用方法：
+ * 1. 首次运行：node local-helper.minimal.js --setup
+ * 2. 后台运行：node local-helper.minimal.js
+ */
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const readline = require('readline');
+const http = require('http');
 
+// 配置文件路径
 const CONFIG_PATH = path.join(__dirname, 'local-helper.config.json');
 const STATE_PATH = path.join(__dirname, 'local-helper.state.json');
 const PID_PATH = path.join(__dirname, 'local-helper.pid');
-const POLL_MS = 8000;
-const DEFAULT_LOCAL_API = 'http://127.0.0.1:3000/api';
-const NO_PROMPT = process.argv.includes('--no-prompt');
 
+// 默认 API 地址
+const DEFAULT_API_BASE = 'https://api.zhenwu.fun/api';
+
+// 轮询间隔（秒）
+const POLL_INTERVAL = 5;
+
+// HTTP 服务器配置
+const HELPER_PORT = 9999;
+let httpServer = null;
+
+// 单进程锁
+function acquireSingleInstanceLock() {
+  const existing = readJson(PID_PATH, null);
+  if (existing && isProcessRunning(Number(existing.pid))) {
+    console.log('✅ 本地助手已在运行');
+    process.exit(0);
+  }
+
+  writeJson(PID_PATH, { pid: process.pid, startedAt: new Date().toISOString() });
+  const cleanup = () => removeFileQuietly(PID_PATH);
+  process.on('exit', cleanup);
+  process.on('SIGINT', () => { cleanup(); process.exit(0); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+}
+
+function isProcessRunning(pid) {
+  if (!pid || !Number.isInteger(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// JSON 读写
 function readJson(fp, fallback) {
   try {
-    const buffer = fs.readFileSync(fp);
-    let text;
-    if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
-      text = buffer.toString('utf16le');
-    } else if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
-      text = Buffer.from(buffer.slice(2)).swap16().toString('utf16le');
-    } else {
-      text = buffer.toString('utf8');
-    }
-    return JSON.parse(text.replace(/^\uFEFF/, ''));
+    const text = fs.readFileSync(fp, 'utf8');
+    return JSON.parse(text);
   } catch (e) {
     return fallback;
   }
@@ -37,177 +76,50 @@ function removeFileQuietly(fp) {
   } catch (e) {}
 }
 
-function formatLocalDateTime(date = new Date()) {
-  const pad = num => String(num).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+// 生成随机 Token
+function randomToken(prefix, size = 18) {
+  return `${prefix}${crypto.randomBytes(size).toString('hex')}`;
 }
 
-function isProcessRunning(pid) {
-  if (!pid || !Number.isInteger(pid)) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function acquireSingleInstanceLock() {
-  const existing = readJson(PID_PATH, null);
-  if (existing && isProcessRunning(Number(existing.pid))) {
-    console.log('Local helper is already running.');
-    process.exit(0);
-  }
-
-  writeJson(PID_PATH, { pid: process.pid, startedAt: formatLocalDateTime() });
-  const cleanup = () => removeFileQuietly(PID_PATH);
-  process.on('exit', cleanup);
-  process.on('SIGINT', () => { cleanup(); process.exit(0); });
-  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
-}
-
-function getConfig() {
-  return readJson(CONFIG_PATH, {
-    apiBase: DEFAULT_LOCAL_API,
-    helperToken: '',
-    clientId: null,
-    deviceId: '',
-    taskFolders: {}
-  });
-}
-
-function getState() {
-  return readJson(STATE_PATH, { processedByTask: {} });
-}
-
-function pruneLocalState(state, tasks) {
-  const validIds = new Set((tasks || []).map(task => String(task.id)));
-  const nextProcessed = {};
-  Object.entries(state.processedByTask || {}).forEach(([taskId, files]) => {
-    if (validIds.has(taskId)) nextProcessed[taskId] = Array.isArray(files) ? files : [];
-  });
-  state.processedByTask = nextProcessed;
-  writeJson(STATE_PATH, state);
-}
-
-function pruneTaskFolders(config, tasks) {
-  const validIds = new Set((tasks || []).map(task => String(task.id)));
-  const nextFolders = {};
-  Object.entries(config.taskFolders || {}).forEach(([taskId, folderPath]) => {
-    if (validIds.has(taskId)) nextFolders[taskId] = folderPath;
-  });
-  config.taskFolders = nextFolders;
-  writeJson(CONFIG_PATH, config);
-}
-
-function ask(question) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(resolve => rl.question(question, answer => {
-    rl.close();
-    resolve(answer.trim());
-  }));
-}
-
+// API 请求
 async function apiFetch(config, pathname, options = {}) {
   const headers = Object.assign({}, options.headers || {});
-  if (config.helperToken) headers.Authorization = 'Bearer ' + config.helperToken;
-  const resp = await fetch(config.apiBase.replace(/\/$/, '') + pathname, Object.assign({}, options, { headers }));
+  if (config.helperToken) headers['Authorization'] = 'Bearer ' + config.helperToken;
+
+  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + pathname, Object.assign({}, options, { headers }));
   const data = await resp.json();
   if (!resp.ok || data.code >= 400) throw new Error(data.message || ('HTTP ' + resp.status));
   return data;
 }
 
-async function resolveApiBase(config) {
-  const candidates = [];
-  if (config.apiBase) candidates.push(String(config.apiBase).trim().replace(/\/$/, ''));
-  if (!candidates.includes(DEFAULT_LOCAL_API)) candidates.push(DEFAULT_LOCAL_API);
-  for (const apiBase of candidates) {
-    try {
-      const resp = await fetch(apiBase + '/health');
-      if (resp.ok) return apiBase;
-    } catch (e) {}
-  }
-  return (config.apiBase || DEFAULT_LOCAL_API).replace(/\/$/, '');
-}
-
-async function bindIfNeeded(config) {
-  const apiBase = await resolveApiBase(config);
-  if (config.helperToken && config.clientId) return Object.assign(config, { apiBase });
-  if (NO_PROMPT) throw new Error('Local helper is not linked yet. Please finish linking in the desktop helper window first.');
-
-  console.log(`Local helper will connect to: ${apiBase}`);
-  const linkToken = await ask('Paste the link code from the web page: ');
-  const nextConfig = Object.assign({}, config, {
-    apiBase,
-    deviceId: config.deviceId || crypto.randomUUID()
-  });
-
-  const data = await apiFetch(nextConfig, '/local-helper/link/consume', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      linkToken,
-      deviceId: nextConfig.deviceId,
-      deviceName: process.env.COMPUTERNAME || 'Windows-PC',
-      helperVersion: '0.2.0',
-      meta: { platform: process.platform }
-    })
-  });
-
-  nextConfig.helperToken = data.data.helperToken;
-  nextConfig.clientId = data.data.clientId;
-  writeJson(CONFIG_PATH, nextConfig);
-  console.log('Link succeeded. Device:', data.data.deviceName);
-  return nextConfig;
-}
-
+// 获取任务列表
 async function listTasks(config) {
-  const data = await apiFetch(config, '/local-helper/assigned-tasks');
-  return Array.isArray(data.data) ? data.data : [];
-}
-
-async function listSuccessfulImageNames(config, projectId) {
-  if (!projectId) return [];
-  const data = await apiFetch(config, `/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(projectId)}`);
-  return Array.isArray(data.data) ? data.data.map(name => String(name || '').trim()).filter(Boolean) : [];
-}
-
-function areStringSetsEqual(left, right) {
-  if (left.size !== right.size) return false;
-  for (const item of left) {
-    if (!right.has(item)) return false;
+  try {
+    const data = await apiFetch(config, '/ocr-watch/tasks');
+    return Array.isArray(data.data) ? data.data : [];
+  } catch (e) {
+    console.warn('获取任务列表失败:', e.message);
+    return [];
   }
-  return true;
 }
 
+// 扫描文件夹
 function listImages(folderPath) {
   try {
     return fs.readdirSync(folderPath)
       .filter(name => /\.(png|jpg|jpeg)$/i.test(name))
-      .sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      .sort();
   } catch (e) {
     return [];
   }
 }
 
-function buildTaskStats(task, files, known, overrides = {}) {
-  const successfulFiles = files.filter(name => known.has(name));
-  const pendingFiles = files.filter(name => !known.has(name));
-  return Object.assign({
-    discovered: files.length,
-    uploaded: successfulFiles.length,
-    parsed: successfulFiles.length,
-    failed: Number(task.stats?.failed || 0),
-    pending: pendingFiles.length,
-    pendingFiles: pendingFiles.slice(0, 200),
-    currentFile: ''
-  }, overrides);
-}
-
-async function uploadTaskFile(config, task, filePath, fileName) {
+// 创建待处理任务（不立即执行OCR）
+async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
-  const resp = await fetch(config.apiBase.replace(/\/$/, '') + '/battles/ocr-upload', {
+
+  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + '/battles/ocr-tasks', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -220,184 +132,427 @@ async function uploadTaskFile(config, task, filePath, fileName) {
       helperTaskId: task.id
     })
   });
+
   const data = await resp.json();
   if (!resp.ok || data.code !== 200) throw new Error(data.message || ('Upload failed: HTTP ' + resp.status));
 }
 
-async function reportProgress(config, task, payload) {
-  await apiFetch(config, `/local-helper/tasks/${task.id}/progress`, {
+// 更新进度
+async function updateProgress(config, task, payload) {
+  await apiFetch(config, `/ocr-watch/tasks/${task.id}/progress`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
 }
 
-async function ensureTaskFolder(config, task) {
-  const taskKey = String(task.id);
-  const savedFolder = String(config.taskFolders?.[taskKey] || '').trim();
-
-  if (task.folderPath) {
-    if (savedFolder !== task.folderPath) {
-      config.taskFolders = Object.assign({}, config.taskFolders, { [taskKey]: task.folderPath });
-      writeJson(CONFIG_PATH, config);
-    }
-    return task.folderPath;
-  }
-
-  if (savedFolder && fs.existsSync(savedFolder)) {
-    await reportProgress(config, task, { status: 'ready', folderPath: savedFolder, stats: task.stats || {} });
-    return savedFolder;
-  }
-
-  if (NO_PROMPT) return '';
-
-  const folderPath = (await ask(`Enter a local folder for task ${task.name || task.id}: `)).trim();
-  if (!folderPath) return '';
-  if (!fs.existsSync(folderPath)) {
-    console.log('Folder does not exist. Please try again later.');
-    return '';
-  }
-
-  config.taskFolders = Object.assign({}, config.taskFolders, { [taskKey]: folderPath });
-  writeJson(CONFIG_PATH, config);
-  await reportProgress(config, task, { status: 'ready', folderPath, stats: task.stats || {} });
-  console.log(`Task ${task.id} is now bound to ${folderPath}`);
-  return folderPath;
-}
-
+// 处理单个任务
 async function processTask(config, state, task) {
   const taskKey = String(task.id);
-  const localKnown = new Set((state.processedByTask[taskKey] || []).map(name => String(name || '').trim()).filter(Boolean));
-  let known = localKnown;
-  try {
-    known = new Set(await listSuccessfulImageNames(config, task.projectId));
-    if (!areStringSetsEqual(known, localKnown)) {
-      state.processedByTask[taskKey] = [...known];
-      writeJson(STATE_PATH, state);
-    }
-  } catch (e) {
-    console.warn(`Failed to refresh successful image list for task ${task.id}: ${e.message}`);
-  }
-  const folderPath = await ensureTaskFolder(config, task);
-  if (!folderPath) {
-    await reportProgress(config, task, { status: 'pending_bind', stats: task.stats || {} });
+
+  // 检查目录是否设置
+  if (!task.folderPath || task.folderPath.trim() === '') {
     return;
   }
 
-  task.folderPath = folderPath;
-  const files = listImages(folderPath);
-  const taskStatus = String(task.status || '').trim().toLowerCase();
-  let stats = buildTaskStats(task, files, known);
+  // 检查目录是否存在
+  if (!fs.existsSync(task.folderPath)) {
+    console.warn(`[${taskKey}] 目录不存在: ${task.folderPath}`);
+    await updateProgress(config, task, {
+      lastError: `目录不存在: ${task.folderPath}`,
+      lastHeartbeat: new Date().toISOString()
+    });
+    return;
+  }
 
-  await reportProgress(config, task, {
-    status: taskStatus === 'paused' ? 'paused' : (taskStatus === 'stopped' ? 'stopped' : (taskStatus === 'running' ? 'running' : 'ready')),
-    folderPath,
-    stats
+  // 获取本地已处理文件
+  let processedFiles = new Set(state.processedByTask[taskKey] || []);
+
+  // 从后端获取已成功解析的文件列表（防止重复提交）
+  try {
+    const data = await apiFetch(config, `/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(task.projectId || '')}`);
+    if (Array.isArray(data.data)) {
+      data.data.forEach(name => processedFiles.add(name));
+    }
+  } catch (e) {
+    console.warn(`[${taskKey}] 查询已解析文件失败，仅使用本地缓存:`, e.message);
+  }
+
+  // 获取所有文件
+  const files = listImages(task.folderPath);
+
+  // 找出新文件
+  const newFiles = files.filter(name => !processedFiles.has(name));
+
+  if (newFiles.length === 0) {
+    // update heartbeat (no new files) - clear pending/current
+    await updateProgress(config, task, {
+      pendingFiles: [],
+      currentFile: '',
+      processedCount: processedFiles.size,
+      processedFilesJson: Array.from(processedFiles),
+      lastHeartbeat: new Date().toISOString()
+    });
+    return;
+  }
+
+  // report pending files before processing
+  await updateProgress(config, task, {
+    pendingFiles: newFiles.slice(),
+    currentFile: '',
+    processedCount: processedFiles.size,
+    processedFilesJson: Array.from(processedFiles),
+    lastHeartbeat: new Date().toISOString()
   });
 
-  if (taskStatus !== 'running') return;
+  // process new files
+  console.log(`[${taskKey}] found ${newFiles.length} new files`);
+  let successCount = 0;
+  let lastError = '';
 
-  for (const fileName of [...stats.pendingFiles]) {
-    const fullPath = path.join(folderPath, fileName);
+  for (let i = 0; i < newFiles.length; i++) {
+    const fileName = newFiles[i];
+    const fullPath = path.join(task.folderPath, fileName);
+
+    // check file size (max 5MB)
+    const stats = fs.statSync(fullPath);
+    if (stats.size > 5 * 1024 * 1024) {
+      console.warn(`[${taskKey}] file too large, skip: ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)}MB)`);
+      lastError = `${fileName}: file too large (>5MB)`;
+      // report this file as current so frontend shows error
+      const remaining = newFiles.slice(i + 1);
+      await updateProgress(config, task, {
+        pendingCount: remaining.length,
+        pendingFiles: remaining,
+        currentFile: fileName,
+        lastError,
+        lastHeartbeat: new Date().toISOString()
+      });
+      continue;
+    }
+
+    // report current file before upload
+    const remaining = newFiles.slice(i + 1);
+    await updateProgress(config, task, {
+      pendingFiles: newFiles.slice(i),
+      currentFile: fileName,
+      lastHeartbeat: new Date().toISOString()
+    });
+
     try {
-      stats = buildTaskStats(task, files, known, {
-        uploaded: stats.uploaded,
-        parsed: stats.parsed,
-        failed: stats.failed,
-        currentFile: fileName
-      });
-      await reportProgress(config, task, {
-        status: 'running',
-        folderPath,
-        stats
-      });
+      await uploadFile(config, task, fullPath, fileName);
+      processedFiles.add(fileName);
+      successCount++;
+      console.log(`[${taskKey}] ok ${fileName}`);
+    } catch (e) {
+      console.error(`[${taskKey}] fail ${fileName}:`, e.message);
+      lastError = `${fileName}: ${e.message}`;
+    }
 
-      await uploadTaskFile(config, task, fullPath, fileName);
-      known.add(fileName);
-      state.processedByTask[taskKey] = [...known];
-      writeJson(STATE_PATH, state);
-      stats = buildTaskStats(task, files, known, {
-        uploaded: stats.uploaded + 1,
-        parsed: stats.parsed + 1,
-        failed: stats.failed,
-        currentFile: ''
-      });
-      task.stats = stats;
-      try {
-        await reportProgress(config, task, {
-          status: 'running',
-          folderPath,
-          lastUploadAt: formatLocalDateTime(),
-          stats
-        });
-      } catch (progressErr) {
-        console.error(`Failed to write progress for ${fileName}: ${progressErr.message}`);
+    // 每个文件处理完后检查任务状态（支持用户暂停/停止）
+    try {
+      const tasks = await listTasks(config);
+      const currentTask = tasks.find(t => String(t.id) === taskKey);
+      if (!currentTask || currentTask.status !== 'running') {
+        console.log(`[${taskKey}] 任务状态已变更为 ${currentTask ? currentTask.status : 'deleted'}，停止处理`);
+        // 保存进度
+        state.processedByTask[taskKey] = Array.from(processedFiles);
+        writeJson(STATE_PATH, state);
+        return;
       }
-      } catch (e) {
-      stats = buildTaskStats(task, files, known, {
-        uploaded: stats.uploaded,
-        parsed: stats.parsed,
-        failed: stats.failed + 1,
-        currentFile: fileName
-      });
-      task.stats = stats;
-      try {
-        await reportProgress(config, task, {
-          status: 'running',
-          folderPath,
-          lastError: `${fileName}: ${e.message}`,
-          stats
-        });
-      } catch (progressErr) {
-        console.error(`Failed to write failed-file progress for ${fileName}: ${progressErr.message}`);
-      }
+    } catch (checkErr) {
+      // 检查失败不中断处理流程
+      console.warn(`[${taskKey}] 状态检查失败:`, checkErr.message);
     }
   }
 
-  state.processedByTask[taskKey] = [...known];
+  // update local state
+  state.processedByTask[taskKey] = Array.from(processedFiles);
   writeJson(STATE_PATH, state);
-  task.stats = buildTaskStats(task, files, known, {
-    uploaded: Number(task.stats?.uploaded || 0),
-    parsed: Number(task.stats?.parsed || 0),
-    failed: Number(task.stats?.failed || 0),
-    currentFile: ''
+
+  // update progress - clear pending/current, all done
+  await updateProgress(config, task, {
+    pendingFiles: [],
+    currentFile: '',
+    processedCount: processedFiles.size,
+    processedFilesJson: Array.from(processedFiles),
+    lastError,
+    lastHeartbeat: new Date().toISOString()
   });
 }
 
+// 首次配置
+async function setupConfig() {
+  console.log('🔧 本地助手首次配置');
+  console.log('');
+
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const question = (prompt) => new Promise(resolve => rl.question(prompt, answer => resolve(answer.trim())));
+
+  // 获取 API 地址
+  const apiBaseInput = await question('请输入 API 地址 (默认: https://api.zhenwu.fun/api，直接回车使用默认): ');
+  const apiBase = apiBaseInput || DEFAULT_API_BASE;
+
+  // 获取 Helper Token
+  console.log('');
+  console.log('提示：请访问 https://www.zhenwu.fun 登录后：');
+  console.log('  1. 进入"自动解析"页面');
+  console.log('  2. 点击"首次链接助手"按钮');
+  console.log('  3. 复制显示的 Token');
+  console.log('');
+  const helperToken = await question('请粘贴 Helper Token: ');
+
+  if (!helperToken) {
+    console.log('❌ Helper Token 不能为空');
+    process.exit(1);
+  }
+
+  // 验证 Token
+  console.log('验证 Token...');
+  try {
+    await fetch(apiBase.replace(/\/$/, '') + '/ocr-watch/tasks', {
+      headers: { 'Authorization': 'Bearer ' + helperToken }
+    });
+  } catch (e) {
+    console.log('❌ Token 验证失败:', e.message);
+    process.exit(1);
+  }
+
+  // 保存配置
+  const config = {
+    apiBase,
+    helperToken,
+    tasks: {}
+  };
+
+  writeJson(CONFIG_PATH, config);
+  writeJson(STATE_PATH, { processedByTask: {} });
+
+  console.log('');
+  console.log('✅ 配置已保存到:', CONFIG_PATH);
+  console.log('现在可以运行: node local-helper.minimal.js');
+
+  rl.close();
+  process.exit(0);
+}
+
+// 主函数
 async function main() {
   acquireSingleInstanceLock();
-  let config = getConfig();
-  config = await bindIfNeeded(config);
-  const state = getState();
-  console.log('Local helper is running in background.');
 
+  const NO_SETUP = process.argv.includes('--no-setup');
+  const SETUP_MODE = process.argv.includes('--setup');
+
+  if (SETUP_MODE) {
+    await setupConfig();
+    return;
+  }
+
+  // 读取配置（可选）
+  let config = readJson(CONFIG_PATH, null);
+  if (!config) {
+    if (NO_SETUP) {
+      console.log('❌ 未找到配置文件，请先运行: node local-helper.minimal.js --setup');
+      process.exit(1);
+    }
+    // 无配置文件时使用默认配置
+    console.log('⚠️  未找到配置文件，使用默认配置启动（仅支持文件夹选择功能）');
+    config = {
+      apiBase: DEFAULT_API_BASE,
+      helperToken: null,
+      tasks: {}
+    };
+  }
+
+  const state = readJson(STATE_PATH, { processedByTask: {} });
+
+  // 启动 HTTP 服务器（用于前端自动连接）
+  startHttpServer(config);
+
+  console.log('🚀 本地助手已启动');
+  console.log(`   API: ${config.apiBase || DEFAULT_API_BASE}`);
+  console.log(`   配置状态: ${config.helperToken ? '已配置' : '未配置（仅支持文件夹选择）'}`);
+
+  // 主循环
   while (true) {
     try {
-      config = getConfig();
-      config = await bindIfNeeded(config);
+      config = readJson(CONFIG_PATH, config);
+
+      // 如果没有 Token，跳过任务轮询
+      if (!config.helperToken) {
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL * 1000));
+        continue;
+      }
+
       const tasks = await listTasks(config);
-      pruneLocalState(state, tasks);
-      pruneTaskFolders(config, tasks);
+
+      // 同步 processedFiles
+      tasks.forEach(task => {
+        const taskKey = String(task.id);
+        if (task.processedFilesJson && Array.isArray(task.processedFilesJson)) {
+          const serverFiles = new Set(task.processedFilesJson);
+          const localFiles = new Set(state.processedByTask[taskKey] || []);
+
+          if (serverFiles.size !== localFiles.size || [...serverFiles].some(f => !localFiles.has(f))) {
+            console.log(`[${taskKey}] 同步已处理文件列表 (${serverFiles.size} 个)`);
+            state.processedByTask[taskKey] = Array.from(serverFiles);
+          }
+        }
+      });
+
+      writeJson(STATE_PATH, state);
+
+      // 处理所有 running 状态的任务
       for (const task of tasks) {
-        await processTask(config, state, task);
+        if (task.status === 'running') {
+          await processTask(config, state, task);
+        }
       }
     } catch (e) {
-      console.error('Task polling failed:', e.message);
-      if (/令牌|token|invalid|expired|过期|无效/i.test(e.message || '')) {
-        console.error('Helper token is invalid. Clearing credentials and waiting for re-link...');
-        config.helperToken = '';
-        config.clientId = null;
-        writeJson(CONFIG_PATH, config);
-        removeFileQuietly(PID_PATH);
-        // 不崩溃退出，继续循环等待重新链接；托盘 UI 可重新发起绑定
-      }
+      console.error('❌ 轮询失败:', e.message);
     }
-    await new Promise(resolve => setTimeout(resolve, POLL_MS));
+
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL * 1000));
   }
 }
 
 main().catch(err => {
-  console.error(err);
-  removeFileQuietly(PID_PATH);
-  process.exit(1);
 });
+// ========== HTTP 服务器（用于前端自动连接）==========
+
+function startHttpServer(config) {
+  if (httpServer) return;
+
+  httpServer = http.createServer((req, res) => {
+    // CORS 支持
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+
+    // /ping - 检测本地助手是否运行
+    if (req.url === '/ping' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        status: 'ok', 
+        version: '2.0',
+        configured: !!(config.helperToken)
+      }));
+      return;
+    }
+
+    // /activate - 接收前端传递的 Token
+    if (req.url === '/activate' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', async () => {
+        try {
+          const data = JSON.parse(body);
+          if (!data.token || !data.apiBase) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: '缺少必要参数' }));
+            return;
+          }
+
+          // 保存配置
+          config.helperToken = data.token;
+          config.apiBase = data.apiBase;
+          if (data.deviceId) config.deviceId = data.deviceId;
+          writeJson(CONFIG_PATH, config);
+
+          console.log('✅ 本地助手已激活，Token 已保存');
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', message: '激活成功' }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+
+    // /status - 获取当前状态
+    if (req.url === '/status' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        configured: !!(config.helperToken),
+        apiBase: config.apiBase || '',
+        running: true
+      }));
+      return;
+    }
+
+    // /select-folder - 弹出文件夹选择器
+    if (req.url === '/select-folder' && req.method === 'GET') {
+      const { execSync } = require('child_process');
+      const os = require('os');
+
+      const exePath = path.join(__dirname, 'fpicker.exe');
+      const resultPath = path.join(os.tmpdir(), 'nslg_folder_result.txt');
+
+      if (!fs.existsSync(exePath)) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 500, data: { path: null }, message: 'fpicker.exe not found' }));
+        return;
+      }
+
+      try {
+        // 清理旧结果文件
+        if (fs.existsSync(resultPath)) {
+          fs.unlinkSync(resultPath);
+        }
+
+        // 调用 fpicker.exe
+        const cmdArgs = `"${exePath}" "${resultPath}"`;
+        execSync(`cmd /c start "FolderPicker" /min /wait ${cmdArgs}`, { timeout: 120000 });
+
+        // 读取结果
+        let folderPath = null;
+        if (fs.existsSync(resultPath)) {
+          const raw = fs.readFileSync(resultPath, 'utf8').trim();
+          if (raw && raw !== 'CANCELLED' && !raw.startsWith('ERROR:')) {
+            folderPath = raw;
+          }
+          fs.unlinkSync(resultPath);
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 200, data: { path: folderPath } }));
+      } catch (e) {
+        if (fs.existsSync(resultPath)) {
+          fs.unlinkSync(resultPath);
+        }
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 500, data: { path: null }, message: e.message }));
+      }
+      return;
+    }
+
+    res.writeHead(404);
+    res.end('Not Found');
+  });
+
+  httpServer.listen(HELPER_PORT, '127.0.0.1', () => {
+    console.log(`🌐 HTTP 服务已启动: http://127.0.0.1:${HELPER_PORT}`);
+  });
+
+  httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`⚠️  端口 ${HELPER_PORT} 已被占用，HTTP 服务未启动`);
+      httpServer = null;
+    } else {
+      console.error('HTTP 服务器错误:', err);
+    }
+  });
+}

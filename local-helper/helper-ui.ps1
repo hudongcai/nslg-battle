@@ -885,6 +885,59 @@ function Show-StartupReadyMessage {
     ) | Out-Null
 }
 
+function Show-HelperStatus {
+    try {
+        # 检查 HTTP 服务状态
+        $httpStatus = '❌ 未运行'
+        $httpColor = 'Red'
+        try {
+            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9999/ping' -Method GET -TimeoutSec 2 -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+                $httpStatus = '✅ 正常运行'
+                $httpColor = 'Green'
+            }
+        } catch {}
+
+        # 检查配置状态
+        $config = Read-HelperConfig
+        $tokenStatus = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { '❌ 未配置' } else { '✅ 已配置' }
+        $tokenColor = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { 'Red' } else { 'Green' }
+
+        # 检查后台进程
+        $workerStatus = '❌ 未启动'
+        $workerColor = 'Red'
+        if ($script:HelperWorkerProc -and -not $script:HelperWorkerProc.HasExited) {
+            $workerStatus = '✅ 运行中'
+            $workerColor = 'Green'
+        }
+
+        # 构建状态消息
+        $statusMessage = @"
+HTTP 服务 (端口 9999): $httpStatus
+后台进程: $workerStatus
+Token 配置: $tokenStatus
+
+API 地址: $($config.apiBase)
+"@
+
+        # 显示状态对话框
+        $result = [System.Windows.Forms.MessageBox]::Show(
+            $statusMessage,
+            '助手状态检查',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
+
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "状态检查失败: $($_.Exception.Message)",
+            '助手状态检查',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+}
+
 function Initialize-NotifyIcon {
     try {
         $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
@@ -897,6 +950,13 @@ function Initialize-NotifyIcon {
         $script:NotifyIcon.Visible = $true
 
         $script:NotifyMenu = New-Object System.Windows.Forms.ContextMenuStrip
+
+        # 状态信息菜单项
+        $statusItem = $script:NotifyMenu.Items.Add('检查状态')
+        $statusItem.Add_Click({ Show-HelperStatus })
+
+        $script:NotifyMenu.Items.Add('-')  # 分隔线
+
         $refreshItem = $script:NotifyMenu.Items.Add('刷新任务')
         $refreshItem.Add_Click({ Refresh-UiTasks })
         $exitItem = $script:NotifyMenu.Items.Add('彻底退出')
