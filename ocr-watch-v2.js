@@ -98,7 +98,7 @@ function replaceOcrWatchPanel() {
   }, 0);
 
   initOcrWatch();
-  console.log('[OCR-Watch] 面板已加载 v202607071650');
+  console.log('[OCR-Watch] 面板已加载 v202607111951');
 }
 
 // ======= 数据加载 =======
