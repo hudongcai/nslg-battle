@@ -359,7 +359,17 @@ async function selectOcrWatchFolder() {
     return;
   }
 
-  // 已运行：直接调用文件夹选择接口
+  // 已运行但未配置：自动激活
+  if (!status.configured) {
+    console.log('[Helper] 助手未配置，正在自动激活...');
+    const activated = await activateLocalHelper();
+    if (!activated) {
+      alert('助手激活失败，请检查网络连接');
+      return;
+    }
+  }
+
+  // 已运行且已配置：直接调用文件夹选择接口
   try {
     const HELPER_API = 'http://127.0.0.1:9999';
     var resp = await fetch(HELPER_API + '/select-folder', {
