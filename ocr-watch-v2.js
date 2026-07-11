@@ -346,18 +346,31 @@ async function selectOcrWatchFolder() {
   if (!token) { alert('未登录或登录已过期，请重新登录'); return; }
   var pid = window.currentProjectId;
   if (!pid) { alert('请先选择项目'); return; }
+
   try {
-    var resp = await fetch(ocrWatchApiBase() + '/ocr-watch/select-folder?projectId=' + encodeURIComponent(pid), {
-      headers: { 'Authorization': 'Bearer ' + token }
+    // 调用本地助手的文件夹选择接口
+    const HELPER_API = 'http://127.0.0.1:9999';
+    var resp = await fetch(HELPER_API + '/select-folder', {
+      method: 'GET',
+      signal: AbortSignal.timeout(120000) // 120秒超时
     });
+
     var data = await resp.json();
     if (data.code === 200 && data.data && data.data.path) {
       var input = document.getElementById('ocrWatchFolder');
       if (input) input.value = data.data.path;
       await saveOcrWatchFolder(data.data.path);
+    } else if (data.data && data.data.path === null) {
+      console.log('[OCR-Watch] 用户取消选择或未选择文件夹');
     }
   } catch (e) {
-    alert('打开文件夹选择失败: ' + e.message);
+    if (e.name === 'TimeoutError') {
+      alert('文件夹选择超时，请重试');
+    } else if (e.message.includes('fetch')) {
+      alert('无法连接到本地助手，请确保本地助手已运行\n\n下载地址：点击页面上的"下载本地助手"按钮');
+    } else {
+      alert('打开文件夹选择失败: ' + e.message);
+    }
   }
 }
 async function startOcrWatchTask() {

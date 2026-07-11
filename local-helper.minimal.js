@@ -482,6 +482,52 @@ function startHttpServer(config) {
       return;
     }
 
+    // /select-folder - 弹出文件夹选择器
+    if (req.url === '/select-folder' && req.method === 'GET') {
+      const { execSync } = require('child_process');
+      const os = require('os');
+
+      const exePath = path.join(__dirname, 'fpicker.exe');
+      const resultPath = path.join(os.tmpdir(), 'nslg_folder_result.txt');
+
+      if (!fs.existsSync(exePath)) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 500, data: { path: null }, message: 'fpicker.exe not found' }));
+        return;
+      }
+
+      try {
+        // 清理旧结果文件
+        if (fs.existsSync(resultPath)) {
+          fs.unlinkSync(resultPath);
+        }
+
+        // 调用 fpicker.exe
+        const cmdArgs = `"${exePath}" "${resultPath}"`;
+        execSync(`cmd /c start "FolderPicker" /min /wait ${cmdArgs}`, { timeout: 120000 });
+
+        // 读取结果
+        let folderPath = null;
+        if (fs.existsSync(resultPath)) {
+          const raw = fs.readFileSync(resultPath, 'utf8').trim();
+          if (raw && raw !== 'CANCELLED' && !raw.startsWith('ERROR:')) {
+            folderPath = raw;
+          }
+          fs.unlinkSync(resultPath);
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 200, data: { path: folderPath } }));
+      } catch (e) {
+        if (fs.existsSync(resultPath)) {
+          fs.unlinkSync(resultPath);
+        }
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 500, data: { path: null }, message: e.message }));
+      }
+      return;
+    }
+
     res.writeHead(404);
     res.end('Not Found');
   });
