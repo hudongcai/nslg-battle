@@ -21,7 +21,6 @@ $files = @(
     'start-local-helper.vbs',
     'start-local-helper.bat',
     'helper-ui.ps1',
-    'local-helper.js',
     'ensure-app-icon.ps1',
     'register-protocol.ps1',
     'unregister-protocol.ps1',
@@ -40,6 +39,18 @@ $files = @(
 
 foreach ($file in $files) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $packageDir $file) -Force
+}
+
+# 复制新版本的 local-helper.minimal.js 作为 local-helper.js
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\local-helper.minimal.js') -Destination (Join-Path $packageDir 'local-helper.js') -Force
+
+# 复制 fpicker.exe（文件夹选择器）
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\fpicker.exe') -Destination (Join-Path $packageDir 'fpicker.exe') -Force
+
+# 复制 helper-app.ico（应用图标）
+$iconPath = Join-Path $PSScriptRoot 'helper-app.ico'
+if (Test-Path $iconPath) {
+    Copy-Item -LiteralPath $iconPath -Destination (Join-Path $packageDir 'helper-app.ico') -Force
 }
 
 Copy-Item -LiteralPath $nodePath -Destination (Join-Path $packageDir 'node.exe') -Force
