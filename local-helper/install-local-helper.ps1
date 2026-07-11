@@ -26,6 +26,7 @@ $payloadFiles = @(
     'start-local-helper.bat',
     'helper-ui.ps1',
     'local-helper.js',
+    'version.json',
     'fpicker.exe',
     'ensure-app-icon.ps1',
     'register-protocol.ps1',
