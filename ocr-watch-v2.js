@@ -460,8 +460,9 @@ const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/zhenwu-lo
 // 统一的提示文案
 function promptDownloadHelper(actionName = '使用此功能') {
   return confirm(
-    `需要安装本地助手才能${actionName}。\n\n` +
-    `点击"确定"下载安装程序，下载后双击运行即可。`
+    `需要安装并启动本地助手才能${actionName}。\n\n` +
+    `点击"确定"下载安装程序。\n\n` +
+    `如果已安装，请双击桌面的"Zhenwu Local Helper"快捷方式启动。`
   );
 }
 
@@ -470,7 +471,13 @@ function triggerDownloadHelper() {
   window.open(LOCAL_HELPER_DOWNLOAD_URL, '_blank');
   // 延迟显示提示，避免被 confirm 遮挡
   setTimeout(() => {
-    alert('📥 下载已开始\n\n下载完成后请双击运行安装程序，安装完成后刷新本页面即可使用。');
+    alert(
+      '📥 下载已开始\n\n' +
+      '安装步骤：\n' +
+      '1. 双击下载的安装程序\n' +
+      '2. 安装完成后，双击桌面快捷方式"Zhenwu Local Helper"启动\n' +
+      '3. 刷新本页面即可使用'
+    );
   }, 300);
 }
 
