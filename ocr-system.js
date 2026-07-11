@@ -79,6 +79,37 @@ function initOCR() {
       loadPendingTasksFromBackend();
     }
   }, 500);
+
+  // 检测 URL 参数 ?setup=1，自动触发首次配置
+  checkSetupMode();
+}
+
+function checkSetupMode() {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('setup') === '1') {
+    // 等待用户登录后自动打开配置
+    const checkLogin = setInterval(() => {
+      if (currentUser && typeof getToken === 'function' && getToken()) {
+        clearInterval(checkLogin);
+        // 展开本地助手配置区域
+        const helperPanel = document.getElementById('localHelperPanel');
+        if (helperPanel) {
+          helperPanel.style.display = 'block';
+          // 滚动到配置区域
+          setTimeout(() => {
+            helperPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 300);
+        }
+        // 自动触发生成连接码
+        setTimeout(() => {
+          connectLocalHelperWithMode('first');
+        }, 800);
+      }
+    }, 200);
+
+    // 10秒后停止检测
+    setTimeout(() => clearInterval(checkLogin), 10000);
+  }
 }
 
 function showOCRSection() {
@@ -1338,46 +1369,64 @@ async function connectLocalHelperWithMode(mode) {
       return;
     }
 
-    const { helperToken, apiBase } = data.data;
+    const { helperToken } = data.data;
 
-    // 显示配置信息的模态框
+    // 简洁的一键配置模态框
     const modalHtml = `
-      <div style="background: white; padding: 24px; border-radius: 8px; max-width: 600px; margin: 0 auto;">
-        <h3 style="margin: 0 0 16px 0; color: var(--text1);">本地助手配置信息</h3>
-        <div style="margin-bottom: 16px;">
-          <p style="margin: 0 0 8px 0; color: var(--text2); font-size: 14px;">请将以下 Token 复制到本地助手配置中：</p>
-          <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; font-family: monospace; word-break: break-all; user-select: all;">
+      <div style="background: white; padding: 28px; border-radius: 12px; max-width: 480px; margin: 0 auto; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+        <h3 style="margin: 0 0 20px 0; color: var(--text1); font-size: 18px;">本地助手连接码</h3>
+        <div style="margin-bottom: 20px;">
+          <p style="margin: 0 0 12px 0; color: var(--text2); font-size: 14px;">复制连接码并粘贴到本地助手中：</p>
+          <div id="linkCodeDisplay" style="background: #f8f9fa; padding: 16px; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 15px; word-break: break-all; user-select: all; border: 2px solid #e0e0e0; text-align: center; font-weight: 600; color: #333;">
             ${helperToken}
           </div>
         </div>
-        <div style="margin-bottom: 16px;">
-          <p style="margin: 0 0 8px 0; color: var(--text2); font-size: 14px;">API 地址（setup时直接回车使用默认）：</p>
-          <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; font-family: monospace; user-select: all;">
-            ${apiBase}
-          </div>
+        <div style="text-align: center; margin-bottom: 16px;">
+          <button id="copyLinkCodeBtn" class="btn btn-primary" style="padding: 10px 32px; font-size: 14px;">
+            📋 复制连接码
+          </button>
         </div>
-        <div style="padding: 12px; background: #fff3cd; border-radius: 4px; margin-bottom: 16px;">
-          <p style="margin: 0; color: #856404; font-size: 13px;">
-            <strong>操作步骤：</strong><br>
-            1. 双击运行"启动助手.bat"<br>
-            2. 在命令行中输入 API 地址（直接回车使用默认）<br>
-            3. 粘贴上面的 Token 并回车<br>
-            4. 配置完成后助手会自动启动
+        <div style="padding: 14px; background: #f0f7ff; border-radius: 6px; border-left: 3px solid #0066cc;">
+          <p style="margin: 0; color: #004080; font-size: 13px; line-height: 1.6;">
+            <strong>使用说明：</strong><br>
+            在本地助手窗口中粘贴此连接码，点击"连接"按钮即可完成配置。
           </p>
         </div>
-        <div style="text-align: right;">
-          <button onclick="this.closest('.modal').remove()" class="btn btn-primary">我知道了</button>
+        <div style="text-align: right; margin-top: 16px;">
+          <button onclick="this.closest('.modal').remove()" class="btn btn-secondary">关闭</button>
         </div>
       </div>
     `;
 
     const modal = document.createElement('div');
     modal.className = 'modal';
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 20px;';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 20px;';
     modal.innerHTML = modalHtml;
     document.body.appendChild(modal);
 
-    showToast('✅ 配置信息已生成', 'success');
+    // 绑定复制按钮事件
+    setTimeout(() => {
+      const copyBtn = document.getElementById('copyLinkCodeBtn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          const codeDisplay = document.getElementById('linkCodeDisplay');
+          if (codeDisplay) {
+            navigator.clipboard.writeText(helperToken).then(() => {
+              copyBtn.textContent = '✅ 已复制';
+              copyBtn.style.background = '#48c78e';
+              setTimeout(() => {
+                copyBtn.textContent = '📋 复制连接码';
+                copyBtn.style.background = '';
+              }, 2000);
+            }).catch(() => {
+              showToast('复制失败，请手动选择并复制', 'warn');
+            });
+          }
+        });
+      }
+    }, 100);
+
+    showToast('✅ 连接码已生成', 'success');
   } catch (e) {
     showToast('❌ 获取配置失败: ' + e.message, 'error');
   }
