@@ -1310,8 +1310,8 @@ async function svrPickFolder() {
 
 async function downloadLocalHelperPackage() {
   try {
-    // 从 GitHub Release 下载（稳定可靠，无缓存问题）
-    const downloadUrl = 'https://github.com/hudongcai/nslg-battle/releases/download/v2.0.1/zhenwu-local-helper-setup.exe';
+    // 从 GitHub Release 下载（稳定可靠，带时间戳避免缓存）
+    const downloadUrl = 'https://github.com/hudongcai/nslg-battle/releases/download/v2.0.2/zhenwu-local-helper-setup-07111929.exe';
     window.open(downloadUrl, '_blank');
     showToast('✅ 下载已开始，请查看浏览器下载内容', 'success');
   } catch (e) {
