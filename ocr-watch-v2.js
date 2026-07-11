@@ -455,7 +455,7 @@ const HELPER_API = 'http://127.0.0.1:9999';
 let helperConnected = false;
 
 // 统一的下载地址 - EXE 安装包
-const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/local-helper-installer.exe';
+const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/zhenwu-local-helper-setup.exe';
 
 // 统一的提示文案
 function promptDownloadHelper(actionName = '使用此功能') {
