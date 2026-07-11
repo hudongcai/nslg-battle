@@ -347,12 +347,23 @@ async function selectOcrWatchFolder() {
   var pid = window.currentProjectId;
   if (!pid) { alert('请先选择项目'); return; }
 
+  // 先检测本地助手是否运行
+  const status = await checkLocalHelper();
+
+  if (!status.running) {
+    // 未运行：询问是否下载
+    if (promptDownloadHelper('选择监听文件夹')) {
+      triggerDownloadHelper();
+    }
+    return;
+  }
+
+  // 已运行：直接调用文件夹选择接口
   try {
-    // 调用本地助手的文件夹选择接口
     const HELPER_API = 'http://127.0.0.1:9999';
     var resp = await fetch(HELPER_API + '/select-folder', {
       method: 'GET',
-      signal: AbortSignal.timeout(120000) // 120秒超时
+      signal: AbortSignal.timeout(120000)
     });
 
     var data = await resp.json();
@@ -366,8 +377,6 @@ async function selectOcrWatchFolder() {
   } catch (e) {
     if (e.name === 'TimeoutError') {
       alert('文件夹选择超时，请重试');
-    } else if (e.message.includes('fetch')) {
-      alert('无法连接到本地助手，请确保本地助手已运行\n\n下载地址：点击页面上的"下载本地助手"按钮');
     } else {
       alert('打开文件夹选择失败: ' + e.message);
     }
@@ -445,6 +454,26 @@ replaceOcrWatchPanel();
 const HELPER_API = 'http://127.0.0.1:9999';
 let helperConnected = false;
 
+// 统一的下载地址 - EXE 安装包
+const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/local-helper-installer.exe';
+
+// 统一的提示文案
+function promptDownloadHelper(actionName = '使用此功能') {
+  return confirm(
+    `需要安装本地助手才能${actionName}。\n\n` +
+    `点击"确定"下载安装程序，下载后双击运行即可。`
+  );
+}
+
+// 触发下载
+function triggerDownloadHelper() {
+  window.open(LOCAL_HELPER_DOWNLOAD_URL, '_blank');
+  // 延迟显示提示，避免被 confirm 遮挡
+  setTimeout(() => {
+    alert('📥 下载已开始\n\n下载完成后请双击运行安装程序，安装完成后刷新本页面即可使用。');
+  }, 300);
+}
+
 // 检测本地助手是否运行
 async function checkLocalHelper() {
   console.log('[Helper] 开始检测本地助手...');
@@ -502,8 +531,8 @@ async function ensureLocalHelperConnected() {
 
   if (!status.running) {
     // 本地助手未运行，提示用户下载
-    if (confirm('需要安装本地助手才能使用自动监听功能。\n\n点击"确定"下载启动脚本，下载后双击运行即可自动连接。')) {
-      window.location.href = '/download/start-helper.bat';
+    if (promptDownloadHelper('使用自动监听功能')) {
+      triggerDownloadHelper();
     }
     return false;
   }
