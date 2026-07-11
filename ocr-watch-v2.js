@@ -352,7 +352,8 @@ async function selectOcrWatchFolder() {
 
   if (!status.running) {
     // 未运行：询问是否下载
-    if (promptDownloadHelper('选择监听文件夹')) {
+    const confirmed = await promptDownloadHelper('选择监听文件夹');
+    if (confirmed) {
       triggerDownloadHelper();
     }
     return;
@@ -454,30 +455,165 @@ replaceOcrWatchPanel();
 const HELPER_API = 'http://127.0.0.1:9999';
 let helperConnected = false;
 
-// 统一的下载地址 - EXE 安装包
-const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/zhenwu-local-helper-setup.exe';
+// 统一的下载地址 - 使用 GitHub Releases（下载速度更快）
+const LOCAL_HELPER_DOWNLOAD_URL = 'https://github.com/hudongcai/nslg-battle/releases/download/local-helper-v2.0/zhenwu-local-helper-setup.exe';
+
+// ========== 自定义暗黑风格弹窗 ==========
+function showCustomDialog(options) {
+  const { title, message, buttons, onConfirm, onCancel } = options;
+
+  // 创建遮罩层
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+  `;
+
+  // 创建对话框
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: linear-gradient(135deg, #151a2e, #1a2038);
+    border: 1px solid rgba(240, 180, 41, 0.3);
+    border-radius: 12px;
+    padding: 24px;
+    min-width: 400px;
+    max-width: 500px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: slideUp 0.3s ease;
+  `;
+
+  // 标题
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = `
+    font-size: 16px;
+    font-weight: 700;
+    color: #f0b429;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+  titleEl.innerHTML = `<span style="font-size: 20px;">⚠️</span>${title}`;
+
+  // 消息
+  const messageEl = document.createElement('div');
+  messageEl.style.cssText = `
+    font-size: 14px;
+    line-height: 1.6;
+    color: #e8eaed;
+    margin-bottom: 24px;
+    white-space: pre-line;
+  `;
+  messageEl.textContent = message;
+
+  // 按钮容器
+  const buttonsEl = document.createElement('div');
+  buttonsEl.style.cssText = `
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  `;
+
+  // 创建按钮
+  buttons.forEach(btn => {
+    const button = document.createElement('button');
+    button.textContent = btn.text;
+    button.style.cssText = `
+      padding: 8px 20px;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      ${btn.primary ?
+        'background: linear-gradient(135deg, #f0b429, #e09422); color: #0c0f1a;' :
+        'background: #232a45; color: #e8eaed; border: 1px solid #252d44;'}
+    `;
+
+    button.onmouseover = () => {
+      button.style.transform = 'translateY(-1px)';
+      button.style.filter = 'brightness(1.1)';
+    };
+    button.onmouseout = () => {
+      button.style.transform = 'translateY(0)';
+      button.style.filter = 'brightness(1)';
+    };
+
+    button.onclick = () => {
+      document.body.removeChild(overlay);
+      if (btn.callback) btn.callback();
+    };
+
+    buttonsEl.appendChild(button);
+  });
+
+  dialog.appendChild(titleEl);
+  dialog.appendChild(messageEl);
+  dialog.appendChild(buttonsEl);
+  overlay.appendChild(dialog);
+
+  // 添加动画样式
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  document.body.appendChild(overlay);
+
+  // 点击遮罩关闭
+  overlay.onclick = (e) => {
+    if (e.target === overlay) {
+      document.body.removeChild(overlay);
+      if (onCancel) onCancel();
+    }
+  };
+}
 
 // 统一的提示文案
 function promptDownloadHelper(actionName = '使用此功能') {
-  return confirm(
-    `需要安装并启动本地助手才能${actionName}。\n\n` +
-    `点击"确定"下载安装程序。\n\n` +
-    `如果已安装，请双击桌面的"Zhenwu Local Helper"快捷方式启动。`
-  );
+  return new Promise((resolve) => {
+    showCustomDialog({
+      title: '需要安装本地助手',
+      message: `需要安装并启动本地助手才能${actionName}。\n\n点击"立即下载"获取安装程序。\n\n如果已安装，请双击桌面的"Zhenwu Local Helper"快捷方式启动。`,
+      buttons: [
+        { text: '取消', primary: false, callback: () => resolve(false) },
+        { text: '立即下载', primary: true, callback: () => resolve(true) }
+      ]
+    });
+  });
 }
 
 // 触发下载
 function triggerDownloadHelper() {
   window.open(LOCAL_HELPER_DOWNLOAD_URL, '_blank');
-  // 延迟显示提示，避免被 confirm 遮挡
+  // 延迟显示提示，避免被遮挡
   setTimeout(() => {
-    alert(
-      '📥 下载已开始\n\n' +
-      '安装步骤：\n' +
-      '1. 双击下载的安装程序\n' +
-      '2. 安装完成后，双击桌面快捷方式"Zhenwu Local Helper"启动\n' +
-      '3. 刷新本页面即可使用'
-    );
+    showCustomDialog({
+      title: '下载已开始',
+      message: '📥 安装步骤：\n\n1. 双击下载的安装程序\n2. 安装完成后，双击桌面快捷方式"Zhenwu Local Helper"启动\n3. 刷新本页面即可使用',
+      buttons: [
+        { text: '知道了', primary: true, callback: () => {} }
+      ]
+    });
   }, 300);
 }
 
@@ -538,7 +674,8 @@ async function ensureLocalHelperConnected() {
 
   if (!status.running) {
     // 本地助手未运行，提示用户下载
-    if (promptDownloadHelper('使用自动监听功能')) {
+    const confirmed = await promptDownloadHelper('使用自动监听功能');
+    if (confirmed) {
       triggerDownloadHelper();
     }
     return false;
