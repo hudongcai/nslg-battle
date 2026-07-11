@@ -455,9 +455,8 @@ replaceOcrWatchPanel();
 const HELPER_API = 'http://127.0.0.1:9999';
 let helperConnected = false;
 
-// 统一的下载地址 - 使用 GitHub Releases（下载速度更快）
-const LOCAL_HELPER_DOWNLOAD_URL = 'https://github.com/hudongcai/nslg-battle/releases/download/local-helper-v2.0/zhenwu-local-helper-setup.exe';
-const LOCAL_HELPER_DOWNLOAD_URL_FALLBACK = window.location.origin + '/downloads/zhenwu-local-helper-setup.exe';
+// 统一的下载地址 - 使用 GitHub Pages
+const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/zhenwu-local-helper-setup.exe';
 
 // ========== 自定义暗黑风格弹窗 ==========
 function showCustomDialog(options) {
@@ -603,22 +602,9 @@ function promptDownloadHelper(actionName = '使用此功能') {
   });
 }
 
-// 触发下载（带回退方案）
-async function triggerDownloadHelper() {
-  // 先尝试从 GitHub Releases 下载
-  try {
-    const testResp = await fetch(LOCAL_HELPER_DOWNLOAD_URL, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-    if (testResp.ok) {
-      window.open(LOCAL_HELPER_DOWNLOAD_URL, '_blank');
-    } else {
-      throw new Error('Release not found');
-    }
-  } catch (e) {
-    // 回退到 GitHub Pages
-    console.log('[Helper] GitHub Release 不可用，使用备用下载地址');
-    window.open(LOCAL_HELPER_DOWNLOAD_URL_FALLBACK, '_blank');
-  }
-
+// 触发下载
+function triggerDownloadHelper() {
+  window.open(LOCAL_HELPER_DOWNLOAD_URL, '_blank');
   // 延迟显示提示，避免被遮挡
   setTimeout(() => {
     showCustomDialog({
