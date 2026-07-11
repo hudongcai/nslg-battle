@@ -911,8 +911,18 @@ function Show-HelperStatus {
             $workerColor = 'Green'
         }
 
+        # 获取版本信息（从 local-helper.js 文件的修改时间）
+        $helperJsPath = Join-Path $PSScriptRoot 'local-helper.js'
+        $versionTime = '未知'
+        if (Test-Path $helperJsPath) {
+            $fileTime = (Get-Item $helperJsPath).LastWriteTime
+            $versionTime = $fileTime.ToString('yyyy-MM-dd HH:mm')
+        }
+
         # 构建状态消息
         $statusMessage = @"
+版本时间: $versionTime
+
 HTTP 服务 (端口 9999): $httpStatus
 后台进程: $workerStatus
 Token 配置: $tokenStatus
