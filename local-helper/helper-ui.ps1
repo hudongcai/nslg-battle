@@ -998,15 +998,13 @@ function Initialize-NotifyIcon {
 
         $script:NotifyMenu.Items.Add('-')  # 分隔线
 
-        # 状态信息菜单项
-        $statusItem = $script:NotifyMenu.Items.Add('检查状态')
-        $statusItem.Add_Click({ Show-HelperStatus })
-
-        $refreshItem = $script:NotifyMenu.Items.Add('刷新任务')
-        $refreshItem.Add_Click({ Refresh-UiTasks })
+        # 状态检查菜单项
+        $checkItem = $script:NotifyMenu.Items.Add('检查状态')
+        $checkItem.Add_Click({ Show-StatusDialog })
 
         $script:NotifyMenu.Items.Add('-')  # 分隔线
 
+        # 彻底退出菜单项
         $exitItem = $script:NotifyMenu.Items.Add('彻底退出')
         $exitItem.Add_Click({
             $script:ExitRequested = $true
@@ -1016,11 +1014,20 @@ function Initialize-NotifyIcon {
 
         # 双击托盘图标显示窗口
         $script:NotifyIcon.Add_DoubleClick({ Show-HelperWindow })
-        Set-TrayStatus '托盘状态：已初始化' ([System.Drawing.Color]::FromArgb(55, 125, 34))
+
+        # 单击托盘图标也显示窗口（更容易触发）
+        $script:NotifyIcon.Add_Click({
+            param($sender, $e)
+            if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+                Show-HelperWindow
+            }
+        })
+
+        Write-Host "✅ 托盘图标已初始化"
     } catch {
         $script:NotifyIcon = $null
         $script:NotifyMenu = $null
-        Set-TrayStatus '托盘状态：初始化失败' ([System.Drawing.Color]::Firebrick)
+        Write-Host "❌ 托盘图标初始化失败: $($_.Exception.Message)"
     }
 }
 
@@ -1066,197 +1073,74 @@ $form.Add_Shown({
     }
 })
 
-# 检查是否首次运行（无 Token）
+# 统一使用连接码输入界面（不再区分首次运行和正常界面）
 $config = Read-HelperConfig
-$isFirstRun = [string]::IsNullOrWhiteSpace([string]$config.helperToken)
 
-if ($isFirstRun) {
-    # === 首次配置界面 ===
-    $form.Size = New-Object System.Drawing.Size(520, 400)
+# === 连接码输入界面 ===
+$form.Size = New-Object System.Drawing.Size(520, 400)
 
-    $title = New-Object System.Windows.Forms.Label
-    $title.Text = '真武本地助手 - 首次配置'
-    $title.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
-    $title.Location = New-Object System.Drawing.Point(30, 25)
-    $title.AutoSize = $true
-    $form.Controls.Add($title)
+$title = New-Object System.Windows.Forms.Label
+$title.Text = '真武本地助手'
+$title.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
+$title.Location = New-Object System.Drawing.Point(30, 25)
+$title.AutoSize = $true
+$form.Controls.Add($title)
 
-    $guide = New-Object System.Windows.Forms.Label
-    $guide.Text = "欢迎使用！请完成以下配置：`n`n① 点击下方按钮打开配置网页`n② 在网页中生成并复制连接码`n③ 将连接码粘贴到下方输入框"
-    $guide.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-    $guide.ForeColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    $guide.Location = New-Object System.Drawing.Point(30, 65)
-    $guide.Size = New-Object System.Drawing.Size(460, 90)
-    $form.Controls.Add($guide)
+$guide = New-Object System.Windows.Forms.Label
+$guide.Text = "① 点击下方按钮打开配置网页`n② 在网页中生成并复制连接码`n③ 将连接码粘贴到下方输入框"
+$guide.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$guide.ForeColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+$guide.Location = New-Object System.Drawing.Point(30, 65)
+$guide.Size = New-Object System.Drawing.Size(460, 90)
+$form.Controls.Add($guide)
 
-    $openWebButton = New-Object System.Windows.Forms.Button
-    $openWebButton.Text = '🌐 打开配置网页'
-    $openWebButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-    $openWebButton.Location = New-Object System.Drawing.Point(30, 170)
-    $openWebButton.Size = New-Object System.Drawing.Size(460, 40)
-    $openWebButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
-    $openWebButton.ForeColor = [System.Drawing.Color]::White
-    $openWebButton.FlatStyle = 'Flat'
-    $openWebButton.Add_Click({
-        Start-Process 'https://www.zhenwu.fun/?setup=1'
-    })
-    $form.Controls.Add($openWebButton)
-
-    $codeLabel = New-Object System.Windows.Forms.Label
-    $codeLabel.Text = '连接码:'
-    $codeLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    $codeLabel.Location = New-Object System.Drawing.Point(30, 235)
-    $codeLabel.AutoSize = $true
-    $form.Controls.Add($codeLabel)
-
-    $script:LinkCodeBox = New-Object System.Windows.Forms.TextBox
-    $script:LinkCodeBox.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-    $script:LinkCodeBox.Location = New-Object System.Drawing.Point(30, 260)
-    $script:LinkCodeBox.Size = New-Object System.Drawing.Size(340, 30)
-    $script:LinkCodeBox.Add_KeyDown({
-        param($sender, $e)
-        if ($e.Control -and $e.KeyCode -eq 'A') {
-            $script:LinkCodeBox.SelectAll()
-            $e.SuppressKeyPress = $true
-        }
-    })
-    $form.Controls.Add($script:LinkCodeBox)
-
-    $connectButton = New-Object System.Windows.Forms.Button
-    $connectButton.Text = '连接'
-    $connectButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-    $connectButton.Location = New-Object System.Drawing.Point(380, 258)
-    $connectButton.Size = New-Object System.Drawing.Size(110, 34)
-    $form.Controls.Add($connectButton)
-
-    $script:StatusLabel = New-Object System.Windows.Forms.Label
-    $script:StatusLabel.Text = '状态: 等待配置...'
-    $script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    $script:StatusLabel.ForeColor = [System.Drawing.Color]::DimGray
-    $script:StatusLabel.Location = New-Object System.Drawing.Point(30, 310)
-    $script:StatusLabel.Size = New-Object System.Drawing.Size(460, 30)
-    $form.Controls.Add($script:StatusLabel)
-
-    # 自动打开配置网页
+$openWebButton = New-Object System.Windows.Forms.Button
+$openWebButton.Text = '🌐 打开配置网页'
+$openWebButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$openWebButton.Location = New-Object System.Drawing.Point(30, 170)
+$openWebButton.Size = New-Object System.Drawing.Size(460, 40)
+$openWebButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
+$openWebButton.ForeColor = [System.Drawing.Color]::White
+$openWebButton.FlatStyle = 'Flat'
+$openWebButton.Add_Click({
     Start-Process 'https://www.zhenwu.fun/?setup=1'
+})
+$form.Controls.Add($openWebButton)
 
-} else {
-    # === 正常界面 ===
-    $form.Size = New-Object System.Drawing.Size(980, 640)
+$codeLabel = New-Object System.Windows.Forms.Label
+$codeLabel.Text = '连接码:'
+$codeLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$codeLabel.Location = New-Object System.Drawing.Point(30, 235)
+$codeLabel.AutoSize = $true
+$form.Controls.Add($codeLabel)
 
-    $title = New-Object System.Windows.Forms.Label
-    $title.Text = '真武本地助手'
-    $title.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
-    $title.Location = New-Object System.Drawing.Point(18, 18)
-    $title.AutoSize = $true
-    $form.Controls.Add($title)
+$script:LinkCodeBox = New-Object System.Windows.Forms.TextBox
+$script:LinkCodeBox.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$script:LinkCodeBox.Location = New-Object System.Drawing.Point(30, 260)
+$script:LinkCodeBox.Size = New-Object System.Drawing.Size(340, 30)
+$script:LinkCodeBox.Add_KeyDown({
+    param($sender, $e)
+    if ($e.Control -and $e.KeyCode -eq 'A') {
+        $script:LinkCodeBox.SelectAll()
+        $e.SuppressKeyPress = $true
+    }
+})
+$form.Controls.Add($script:LinkCodeBox)
 
-    $subTitle = New-Object System.Windows.Forms.Label
-    $subTitle.Text = '先在网页创建任务，再在这里为任务选择截图文件夹。助手会在后台持续监听。'
-    $subTitle.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    $subTitle.ForeColor = [System.Drawing.Color]::DimGray
-    $subTitle.Location = New-Object System.Drawing.Point(20, 50)
-    $subTitle.AutoSize = $true
-    $form.Controls.Add($subTitle)
+$connectButton = New-Object System.Windows.Forms.Button
+$connectButton.Text = '连接'
+$connectButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$connectButton.Location = New-Object System.Drawing.Point(380, 258)
+$connectButton.Size = New-Object System.Drawing.Size(110, 34)
+$form.Controls.Add($connectButton)
 
-    $linkLabel = New-Object System.Windows.Forms.Label
-    $linkLabel.Text = '连接码'
-    $linkLabel.Location = New-Object System.Drawing.Point(22, 88)
-    $linkLabel.AutoSize = $true
-    $form.Controls.Add($linkLabel)
-
-    $script:LinkCodeBox = New-Object System.Windows.Forms.TextBox
-    $script:LinkCodeBox.Location = New-Object System.Drawing.Point(90, 84)
-    $script:LinkCodeBox.Size = New-Object System.Drawing.Size(410, 28)
-    $script:LinkCodeBox.Add_KeyDown({
-        param($sender, $e)
-        if ($e.Control -and $e.KeyCode -eq 'A') {
-            $script:LinkCodeBox.SelectAll()
-            $e.SuppressKeyPress = $true
-        }
-    })
-    $form.Controls.Add($script:LinkCodeBox)
-
-    $connectButton = New-Object System.Windows.Forms.Button
-    $connectButton.Text = '连接助手'
-    $connectButton.Location = New-Object System.Drawing.Point(514, 82)
-    $connectButton.Size = New-Object System.Drawing.Size(100, 30)
-    $form.Controls.Add($connectButton)
-
-    $refreshButton = New-Object System.Windows.Forms.Button
-    $refreshButton.Text = '刷新任务'
-    $refreshButton.Location = New-Object System.Drawing.Point(624, 82)
-    $refreshButton.Size = New-Object System.Drawing.Size(92, 30)
-    $form.Controls.Add($refreshButton)
-
-    $startButton = New-Object System.Windows.Forms.Button
-    $startButton.Text = '启动后台'
-    $startButton.Location = New-Object System.Drawing.Point(726, 82)
-    $startButton.Size = New-Object System.Drawing.Size(120, 30)
-    $form.Controls.Add($startButton)
-
-    $hideButton = New-Object System.Windows.Forms.Button
-    $hideButton.Text = '隐藏到托盘'
-    $hideButton.Location = New-Object System.Drawing.Point(856, 82)
-    $hideButton.Size = New-Object System.Drawing.Size(96, 30)
-    $form.Controls.Add($hideButton)
-
-    $chooseButton = New-Object System.Windows.Forms.Button
-    $chooseButton.Text = '选择截图文件夹'
-    $chooseButton.Location = New-Object System.Drawing.Point(22, 126)
-    $chooseButton.Size = New-Object System.Drawing.Size(230, 30)
-    $form.Controls.Add($chooseButton)
-
-    $exitButton = New-Object System.Windows.Forms.Button
-    $exitButton.Text = '彻底退出'
-    $exitButton.Location = New-Object System.Drawing.Point(856, 126)
-    $exitButton.Size = New-Object System.Drawing.Size(96, 30)
-    $form.Controls.Add($exitButton)
-
-    $script:StatusLabel = New-Object System.Windows.Forms.Label
-    $script:StatusLabel.Location = New-Object System.Drawing.Point(270, 132)
-    $script:StatusLabel.Size = New-Object System.Drawing.Size(570, 22)
-    $script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    $script:StatusLabel.ForeColor = [System.Drawing.Color]::DimGray
-    $form.Controls.Add($script:StatusLabel)
-
-    $script:TrayStatusLabel = New-Object System.Windows.Forms.Label
-    $script:TrayStatusLabel.Location = New-Object System.Drawing.Point(270, 108)
-    $script:TrayStatusLabel.Size = New-Object System.Drawing.Size(570, 18)
-    $script:TrayStatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    $script:TrayStatusLabel.ForeColor = [System.Drawing.Color]::DimGray
-    $script:TrayStatusLabel.Text = '托盘状态：初始化中...'
-    $form.Controls.Add($script:TrayStatusLabel)
-
-    $script:TaskGrid = New-Object System.Windows.Forms.DataGridView
-    $script:TaskGrid.Location = New-Object System.Drawing.Point(22, 170)
-    $script:TaskGrid.Size = New-Object System.Drawing.Size(930, 390)
-    $script:TaskGrid.SelectionMode = 'FullRowSelect'
-    $script:TaskGrid.MultiSelect = $false
-    $script:TaskGrid.AllowUserToAddRows = $false
-    $script:TaskGrid.AllowUserToDeleteRows = $false
-    $script:TaskGrid.ReadOnly = $true
-    $script:TaskGrid.RowHeadersVisible = $false
-    $script:TaskGrid.AutoSizeColumnsMode = 'Fill'
-    $null = $script:TaskGrid.Columns.Add('taskId', '任务ID')
-    $null = $script:TaskGrid.Columns.Add('projectId', '项目ID')
-    $null = $script:TaskGrid.Columns.Add('taskName', '任务名称')
-    $null = $script:TaskGrid.Columns.Add('status', '状态')
-    $null = $script:TaskGrid.Columns.Add('folderPath', '监听文件夹')
-    $null = $script:TaskGrid.Columns.Add('uploaded', '已上传')
-    $null = $script:TaskGrid.Columns.Add('pending', '待处理')
-    $null = $script:TaskGrid.Columns.Add('updatedAt', '更新时间')
-    $script:TaskGrid.Columns['folderPath'].FillWeight = 220
-    $script:TaskGrid.Columns['taskName'].FillWeight = 130
-    $form.Controls.Add($script:TaskGrid)
-
-    $tipLabel = New-Object System.Windows.Forms.Label
-    $tipLabel.Text = '流程：1. 在网页创建任务  2. 在这里连接助手  3. 为该任务选择截图文件夹'
-    $tipLabel.Location = New-Object System.Drawing.Point(22, 574)
-    $tipLabel.Size = New-Object System.Drawing.Size(920, 22)
-    $tipLabel.ForeColor = [System.Drawing.Color]::DimGray
-    $form.Controls.Add($tipLabel)
-}
+$script:StatusLabel = New-Object System.Windows.Forms.Label
+$script:StatusLabel.Text = '状态: 等待连接...'
+$script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$script:StatusLabel.ForeColor = [System.Drawing.Color]::DimGray
+$script:StatusLabel.Location = New-Object System.Drawing.Point(30, 310)
+$script:StatusLabel.Size = New-Object System.Drawing.Size(460, 30)
+$form.Controls.Add($script:StatusLabel)
 
 $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $folderDialog.Description = '请选择会持续新增截图的文件夹。'
@@ -1348,84 +1232,36 @@ $connectButton.Add_Click({
         $result = Connect-Helper $script:LinkCodeBox.Text
         Set-Status ("连接成功 · 当前设备: " + $result.deviceName) ([System.Drawing.Color]::FromArgb(55, 125, 34))
         Start-HelperWorker -ForceRestart
-        if ($isFirstRun) {
-            # 首次配置成功后，关闭当前窗口并重新启动以显示完整界面
-            [System.Windows.Forms.MessageBox]::Show(
-                '配置成功！助手将重新启动并在后台运行。',
-                '真武本地助手',
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information
-            ) | Out-Null
-            $script:ExitRequested = $true
-            if ($script:MainForm) { $script:MainForm.Close() }
-            # 重新启动助手
-            Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath -WindowStyle Hidden
-        } else {
-            Refresh-UiTasks
+
+        # 连接成功后隐藏到托盘
+        Start-Sleep -Milliseconds 500
+        Hide-HelperWindow
+        if ($script:NotifyIcon) {
+            $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
+            $script:NotifyIcon.BalloonTipText = '连接成功！助手已在后台运行，双击托盘图标可重新打开。'
+            $script:NotifyIcon.ShowBalloonTip(3000)
         }
     } catch {
         Set-Status $_.Exception.Message ([System.Drawing.Color]::Firebrick)
     }
 })
 
-if (-not $isFirstRun) {
-    $refreshButton.Add_Click({
-        Refresh-UiTasks
-    })
-
-    $startButton.Add_Click({
-        try {
-            Start-HelperWorker
-            Set-Status '后台监听已启动。' ([System.Drawing.Color]::FromArgb(55, 125, 34))
-        } catch {
-            Set-Status $_.Exception.Message ([System.Drawing.Color]::Firebrick)
-        }
-    })
-
-    $hideButton.Add_Click({
-        Hide-HelperWindow
-        if ($script:NotifyIcon) {
-            Set-Status '窗口已隐藏到托盘。' ([System.Drawing.Color]::FromArgb(55, 125, 34))
-        } else {
-            Set-Status '托盘未初始化，窗口已隐藏。' ([System.Drawing.Color]::Firebrick)
-        }
-    })
-
-    $chooseButton.Add_Click({
-        Prompt-BindSelectedTaskFolder
-    })
-
-    $exitButton.Add_Click({
-        $script:StopWorkerOnExit = $true
-        $script:ExitRequested = $true
-        if ($script:MainForm) { $script:MainForm.Close() }
-    })
-
-    $script:TaskGrid.Add_CellDoubleClick({
-        if ($script:TaskGrid.CurrentRow) {
-            Prompt-BindSelectedTaskFolder
-        }
-    })
-}
-
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1000
 $timer.Add_Tick({
     Process-PendingLaunchCommand
-    if (-not $isFirstRun) {
-        Refresh-UiTasks
-    }
 })
 $timer.Start()
 
-if (-not $isFirstRun) {
-    try {
-        $config = Read-HelperConfig
+# 启动 Worker
+try {
+    $config = Read-HelperConfig
+    if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
         Start-HelperWorker
-    } catch {}
+    }
+} catch {}
 
-    Refresh-UiTasks
-}
+# 处理启动参数中的连接码
 if (-not [string]::IsNullOrWhiteSpace($script:LaunchLinkCode)) {
     try {
         Apply-LaunchApiBase
@@ -1434,8 +1270,14 @@ if (-not [string]::IsNullOrWhiteSpace($script:LaunchLinkCode)) {
             $result = Connect-Helper $script:LaunchLinkCode
             Set-Status ("连接成功 · 当前设备: " + $result.deviceName) ([System.Drawing.Color]::FromArgb(55, 125, 34))
             Start-HelperWorker -ForceRestart
-            if (-not $isFirstRun) {
-                Refresh-UiTasks
+
+            # 自动隐藏到托盘
+            Start-Sleep -Milliseconds 500
+            Hide-HelperWindow
+            if ($script:NotifyIcon) {
+                $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
+                $script:NotifyIcon.BalloonTipText = '连接成功！助手已在后台运行。'
+                $script:NotifyIcon.ShowBalloonTip(3000)
             }
         }
     } catch {
