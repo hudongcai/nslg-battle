@@ -395,20 +395,26 @@ function Connect-Helper([string]$link连接码) {
         throw '连接码格式不正确，请从网页重新复制。'
     }
 
-    # 测试 token 是否有效（调用一个需要认证的接口）
-    try {
-        $testResp = Invoke-HelperApi -Path '/ocr-watch/tasks' -Method 'GET' -HelperToken $helperToken
-        if ($testResp.code -ne 200) {
-            throw '连接码无效或已过期，请重新获取。'
-        }
-    } catch {
-        throw "连接验证失败: $($_.Exception.Message)"
-    }
-
-    # 保存配置
+    # 先保存 token 到配置（Invoke-HelperApi 会从配置读取）
     $config.helperToken = $helperToken
     $config.clientId = $config.deviceId
     Save-HelperConfig $config
+
+    # 测试 token 是否有效（调用一个需要认证的接口）
+    try {
+        $testResp = Invoke-HelperApi -Path '/ocr-watch/tasks' -Method 'GET'
+        if ($testResp.code -ne 200) {
+            # 验证失败，清除 token
+            $config.helperToken = $null
+            Save-HelperConfig $config
+            throw '连接码无效或已过期，请重新获取。'
+        }
+    } catch {
+        # 验证失败，清除 token
+        $config.helperToken = $null
+        Save-HelperConfig $config
+        throw "连接验证失败: $($_.Exception.Message)"
+    }
 
     return @{
         helperToken = $helperToken

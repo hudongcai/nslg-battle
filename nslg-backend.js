@@ -1739,7 +1739,7 @@ app.get('/download/local-helper', (req, res) => {
 
   // 设置响应头，强制下载
   res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', 'attachment; filename="zhenwu-local-helper-setup-2607121437.exe"');
+  res.setHeader('Content-Disposition', 'attachment; filename="zhenwu-local-helper-setup-2607121444.exe"');
 
   // 流式传输文件
   const fileStream = fs.createReadStream(filePath);
