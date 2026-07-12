@@ -387,27 +387,33 @@ function Connect-Helper([string]$link连接码) {
     Ensure-DeviceId $config
     Ensure-TaskFolders $config
 
-    $payload = @{
-        linkToken = $link连接码.Trim()
-        deviceId = $config.deviceId
-        deviceName = $env:COMPUTERNAME
-        helperVersion = '0.2.0-ui'
-        meta = @{
-            platform = 'windows-powershell'
-            projectId = $script:LaunchProjectId
+    # 直接使用输入的 token 作为 helperToken（已从网页获取的永久 token）
+    $helperToken = $link连接码.Trim()
+
+    # 验证 token 格式
+    if (-not $helperToken.StartsWith('helper-auth-')) {
+        throw '连接码格式不正确，请从网页重新复制。'
+    }
+
+    # 测试 token 是否有效（调用一个需要认证的接口）
+    try {
+        $testResp = Invoke-HelperApi -Path '/ocr-watch/tasks' -Method 'GET' -HelperToken $helperToken
+        if ($testResp.code -ne 200) {
+            throw '连接码无效或已过期，请重新获取。'
         }
+    } catch {
+        throw "连接验证失败: $($_.Exception.Message)"
     }
 
-    $resp = Invoke-HelperApi -Path '/local-helper/link/consume' -Method 'POST' -Body $payload -Anonymous
-    if ($resp.code -ne 200) {
-        if ($resp.message) { throw $resp.message }
-        throw '连接失败。'
-    }
-
-    $config.helperToken = $resp.data.helperToken
-    $config.clientId = $resp.data.clientId
+    # 保存配置
+    $config.helperToken = $helperToken
+    $config.clientId = $config.deviceId
     Save-HelperConfig $config
-    return $resp.data
+
+    return @{
+        helperToken = $helperToken
+        deviceId = $config.deviceId
+    }
 }
 
 function Start-HelperWorker {
