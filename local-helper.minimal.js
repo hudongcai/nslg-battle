@@ -150,16 +150,20 @@ async function updateProgress(config, task, payload) {
 async function processTask(config, state, task) {
   const taskKey = String(task.id);
 
+  // 优先使用本地配置的文件夹路径，否则使用数据库中的路径
+  const localFolder = config.taskFolders && config.taskFolders[taskKey];
+  const folderPath = localFolder || task.folderPath;
+
   // 检查目录是否设置
-  if (!task.folderPath || task.folderPath.trim() === '') {
+  if (!folderPath || folderPath.trim() === '') {
     return;
   }
 
   // 检查目录是否存在
-  if (!fs.existsSync(task.folderPath)) {
-    console.warn(`[${taskKey}] 目录不存在: ${task.folderPath}`);
+  if (!fs.existsSync(folderPath)) {
+    console.warn(`[${taskKey}] 目录不存在: ${folderPath}`);
     await updateProgress(config, task, {
-      lastError: `目录不存在: ${task.folderPath}`,
+      lastError: `目录不存在: ${folderPath}`,
       lastHeartbeat: new Date().toISOString()
     });
     return;
@@ -179,7 +183,7 @@ async function processTask(config, state, task) {
   }
 
   // 获取所有文件
-  const files = listImages(task.folderPath);
+  const files = listImages(folderPath);
 
   // 找出新文件
   const newFiles = files.filter(name => !processedFiles.has(name));
@@ -212,7 +216,7 @@ async function processTask(config, state, task) {
 
   for (let i = 0; i < newFiles.length; i++) {
     const fileName = newFiles[i];
-    const fullPath = path.join(task.folderPath, fileName);
+    const fullPath = path.join(folderPath, fileName);
 
     // check file size (max 5MB)
     const stats = fs.statSync(fullPath);

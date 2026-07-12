@@ -1731,7 +1731,7 @@ if ($dialog.ShowDialog() -eq 'OK') {
 
 // ========== 本地助手下载接口 ==========
 app.get('/download/local-helper', (req, res) => {
-  const filePath = path.join(__dirname, 'downloads', 'zhenwu-local-helper-setup-202607121557.exe');
+  const filePath = path.join(__dirname, 'downloads', 'zhenwu-local-helper-setup-202607121623.exe');
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ code: 404, message: '安装包不存在' });
@@ -1739,7 +1739,7 @@ app.get('/download/local-helper', (req, res) => {
 
   // 设置响应头，强制下载
   res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', 'attachment; filename="zhenwu-local-helper-setup-202607121557.exe"');
+  res.setHeader('Content-Disposition', 'attachment; filename="zhenwu-local-helper-setup-202607121623.exe"');
 
   // 流式传输文件
   const fileStream = fs.createReadStream(filePath);
