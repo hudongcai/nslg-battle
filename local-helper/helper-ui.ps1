@@ -970,20 +970,31 @@ function Initialize-NotifyIcon {
 
         $script:NotifyMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
+        # 显示窗口菜单项
+        $showItem = $script:NotifyMenu.Items.Add('显示窗口')
+        $showItem.Font = New-Object System.Drawing.Font($showItem.Font, [System.Drawing.FontStyle]::Bold)
+        $showItem.Add_Click({ Show-HelperWindow })
+
+        $script:NotifyMenu.Items.Add('-')  # 分隔线
+
         # 状态信息菜单项
         $statusItem = $script:NotifyMenu.Items.Add('检查状态')
         $statusItem.Add_Click({ Show-HelperStatus })
 
-        $script:NotifyMenu.Items.Add('-')  # 分隔线
-
         $refreshItem = $script:NotifyMenu.Items.Add('刷新任务')
         $refreshItem.Add_Click({ Refresh-UiTasks })
+
+        $script:NotifyMenu.Items.Add('-')  # 分隔线
+
         $exitItem = $script:NotifyMenu.Items.Add('彻底退出')
         $exitItem.Add_Click({
             $script:ExitRequested = $true
             if ($script:MainForm) { $script:MainForm.Close() }
         })
         $script:NotifyIcon.ContextMenuStrip = $script:NotifyMenu
+
+        # 双击托盘图标显示窗口
+        $script:NotifyIcon.Add_DoubleClick({ Show-HelperWindow })
         Set-TrayStatus '托盘状态：已初始化' ([System.Drawing.Color]::FromArgb(55, 125, 34))
     } catch {
         $script:NotifyIcon = $null
