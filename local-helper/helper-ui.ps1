@@ -1000,7 +1000,7 @@ function Initialize-NotifyIcon {
 
         # 状态检查菜单项
         $checkItem = $script:NotifyMenu.Items.Add('检查状态')
-        $checkItem.Add_Click({ Show-StatusDialog })
+        $checkItem.Add_Click({ Show-HelperStatus })
 
         $script:NotifyMenu.Items.Add('-')  # 分隔线
 
