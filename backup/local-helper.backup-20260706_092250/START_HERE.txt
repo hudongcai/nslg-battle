@@ -1,0 +1,12 @@
+Zhenwu Local Helper - Quick Start
+
+1. Double-click zhenwu-local-helper-setup.exe
+2. Go back to the web page
+3. Click "Connect Local Helper"
+4. If the helper does not open automatically, double-click the desktop shortcut "Zhenwu Local Helper"
+5. In the helper window, select the screenshot folder for the task
+
+Notes:
+- Closing the window hides it to the tray
+- Use the tray menu "彻底退出" only when you want to stop the background listener completely
+- If this is the first time on this computer, do not skip step 1

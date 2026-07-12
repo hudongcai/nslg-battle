@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(which python3 *)",
+      "Read(//usr/**)",
+      "PowerShell(& \"C:\\\\Users\\\\Administrator\\\\.workbuddy\\\\binaries\\\\python\\\\versions\\\\3.13.12\\\\python.exe\" -m http.server 8080)",
+      "Bash(rm -f backend-err.log backend.log cloudflare.log frontend.log http.log reset-password.log server.err server.log diff.txt)",
+      "Bash(grep -c \"//.*\\\\|/\\\\*.*\\\\*/\" index.html cloud-sync.js nslg-backend.js data-system.js user-system.js project-system.js)",
+      "Bash(curl -s http://localhost:3000/api/battles)",
+      "Bash(curl -s http://localhost:3000/api/users)",
+      "Bash(curl -s http://localhost:3000/api/roles)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(sed -i 's/verticalGeneralsList\\(enemy\\\\.generals\\)/verticalTeamRowHtml\\(enemy.generals, enemy.tactics\\)/g' counter-analysis-enhanced.js)",
+      "Bash(sed -i 's/verticalTacticsOnlyList\\(enemy\\\\.tactics\\)/PLACEHOLDER_REMOVE_THIS_LINE/g' counter-analysis-enhanced.js)",
+      "Bash(git checkout *)",
+      "Bash(node --check counter-analysis-enhanced.js)",
+      "PowerShell(\\(Invoke-WebRequest -Uri \"http://localhost:8080/counter-analysis-enhanced.js\" -UseBasicParsing\\).Content | Select-String \"verticalTeamRowHtml|verticalTacticsOnlyList|verticalGeneralsList\")",
+      "Bash(git -C \"E:\\\\nslg-battle4\" log --oneline -20)",
+      "Bash(Get-ChildItem \"E:\\\\nslg-battle4\" -File)",
+      "Bash(Select-Object Name, Length, LastWriteTime)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(dir \"E:\\\\nslg-battle4\" /B)"
+    ],
+    "additionalDirectories": [
+      "E:\\nslg-battle4"
+    ]
+  }
+}

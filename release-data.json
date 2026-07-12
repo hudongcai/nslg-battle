@@ -1,0 +1,7 @@
+{
+  "tag_name": "v2.0.3",
+  "name": "本地助手 v2.0.3 (2026-07-11 20:01) - 修复 VBS 编码",
+  "body": "修复 VBScript 编码问题，解决启动时的无效字符错误\n\n- 修复：VBS 文件改用 ANSI/GBK 编码，兼容中文 Windows\n- 文件名：zhenwu-local-helper-setup-07112001.exe\n- 大小：34,516,480 字节 (33 MB)",
+  "draft": false,
+  "prerelease": false
+}

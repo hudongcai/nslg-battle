@@ -1,0 +1,9 @@
+{
+  "apiBase": "http://localhost:3000/api",
+  "helperToken": "mock-token-13651810449-1783340458148",
+  "clientId": 3,
+  "deviceId": "8223033f-d700-4250-878e-cc6b60364653",
+  "taskFolders": {
+    "1": "C:\\test"
+  }
+}

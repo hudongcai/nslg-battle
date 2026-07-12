@@ -1,0 +1,7 @@
+{
+  "apiBase": "http://127.0.0.1:3000/api",
+  "helperToken": "helper-auth-c512f5eebcf54d4c3ae1cb380789347c73c4",
+  "clientId": 3,
+  "deviceId": "8223033f-d700-4250-878e-cc6b60364653",
+  "taskFolders": {}
+}
