@@ -11,7 +11,7 @@ $script:ConfigPath = Join-Path $PSScriptRoot 'local-helper.config.json'
 $script:StatePath = Join-Path $PSScriptRoot 'local-helper.state.json'
 $script:HelperScript = Join-Path $PSScriptRoot 'local-helper.js'
 $script:BundledNodePath = Join-Path $PSScriptRoot 'node.exe'
-$script:DefaultApiBase = 'http://127.0.0.1:3000/api'
+$script:DefaultApiBase = 'https://api.zhenwu.fun/api'
 $script:LaunchLinkCode = ''
 $script:MainForm = $null
 $script:ExitRequested = $false
@@ -1104,6 +1104,13 @@ if ($isFirstRun) {
     $script:LinkCodeBox.Font = New-Object System.Drawing.Font('Segoe UI', 10)
     $script:LinkCodeBox.Location = New-Object System.Drawing.Point(30, 260)
     $script:LinkCodeBox.Size = New-Object System.Drawing.Size(340, 30)
+    $script:LinkCodeBox.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Control -and $e.KeyCode -eq 'A') {
+            $script:LinkCodeBox.SelectAll()
+            $e.SuppressKeyPress = $true
+        }
+    })
     $form.Controls.Add($script:LinkCodeBox)
 
     $connectButton = New-Object System.Windows.Forms.Button
@@ -1152,6 +1159,13 @@ if ($isFirstRun) {
     $script:LinkCodeBox = New-Object System.Windows.Forms.TextBox
     $script:LinkCodeBox.Location = New-Object System.Drawing.Point(90, 84)
     $script:LinkCodeBox.Size = New-Object System.Drawing.Size(410, 28)
+    $script:LinkCodeBox.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Control -and $e.KeyCode -eq 'A') {
+            $script:LinkCodeBox.SelectAll()
+            $e.SuppressKeyPress = $true
+        }
+    })
     $form.Controls.Add($script:LinkCodeBox)
 
     $connectButton = New-Object System.Windows.Forms.Button
