@@ -1127,16 +1127,16 @@ app.post('/api/battles/ocr-clear-pending', requireActiveUser, async (req, res) =
 
     if (!projectId) return res.json({ code: 400, message: '缺少项目ID' });
 
-    // 删除当前项目的所有任务（除了正在处理的）
+    // 删除当前项目的所有任务（包括 processing 状态）
     const [deleteResult] = await pool.query(
-      'DELETE FROM ocr_pending_tasks WHERE user_id = ? AND project_id = ? AND status != ?',
-      [userId, Number(projectId), 'processing']
+      'DELETE FROM ocr_pending_tasks WHERE user_id = ? AND project_id = ?',
+      [userId, Number(projectId)]
     );
 
     // 更新所有关联监听任务的 pending_count
     await pool.query(
       `UPDATE ocr_watch_tasks
-       SET pending_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ocr_watch_tasks.id AND status = 'pending'),
+       SET pending_count = 0,
            updated_at = NOW()
        WHERE user_id = ? AND project_id = ?`,
       [userId, Number(projectId)]
