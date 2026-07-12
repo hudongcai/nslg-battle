@@ -915,10 +915,19 @@ function Show-HelperStatus {
         $tokenStatus = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { '❌ 未配置' } else { '✅ 已配置' }
         $tokenColor = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { 'Red' } else { 'Green' }
 
-        # 检查后台进程
+        # 检查后台进程（通过实际进程检测，而不是依赖 UI 启动时保存的进程对象）
         $workerStatus = '❌ 未启动'
         $workerColor = 'Red'
-        if ($script:HelperWorkerProc -and -not $script:HelperWorkerProc.HasExited) {
+        $helperJsPath = Join-Path $PSScriptRoot 'local-helper.js'
+        $runningWorker = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
+            try {
+                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+                return $cmdLine -and $cmdLine -like "*local-helper.js*"
+            } catch {
+                return $false
+            }
+        }
+        if ($runningWorker) {
             $workerStatus = '✅ 运行中'
             $workerColor = 'Green'
         }
