@@ -1112,7 +1112,12 @@ app.post('/api/battles/ocr-execute', requireActiveUser, async (req, res) => {
       }
     }
 
-    res.json({ code: 200, message: '识别成功', data: { battleId: newId, record } });
+    // 返回扁平结构，兼容前端数据格式
+    record.id = newId;
+    record.battleId = newId;
+    record.cloudId = newId;
+    record.projectId = projectId;
+    res.json({ code: 200, message: '识别成功', data: record });
   } catch (err) {
     console.error('[OCR-Execute] 执行失败:', err);
     res.json({ code: 500, message: err.message });
