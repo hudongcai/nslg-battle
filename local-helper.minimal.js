@@ -539,6 +539,36 @@ function startHttpServer(config) {
       return;
     }
 
+    // /bind-task - 绑定任务到文件夹
+    if (req.url === '/bind-task' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        try {
+          const { taskId, folderPath } = JSON.parse(body);
+
+          if (!taskId || !folderPath) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ code: 400, message: 'taskId and folderPath are required' }));
+            return;
+          }
+
+          // 更新配置文件
+          const config = readJson(CONFIG_PATH, { apiBase: DEFAULT_API_BASE, helperToken: '', clientId: null, deviceId: '', taskFolders: {} });
+          if (!config.taskFolders) config.taskFolders = {};
+          config.taskFolders[String(taskId)] = folderPath;
+          writeJson(CONFIG_PATH, config);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 200, message: 'Task bound successfully' }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 500, message: e.message }));
+        }
+      });
+      return;
+    }
+
     res.writeHead(404);
     res.end('Not Found');
   });

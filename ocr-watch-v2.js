@@ -325,7 +325,26 @@ async function saveOcrWatchFolder(folderPath) {
       body: JSON.stringify({ projectId: Number(pid), folderPath: folderPath })
     });
     var data = await resp.json();
-    if (data.code === 200) await loadOcrWatchTask(pid); else alert(data.message);
+    if (data.code === 200) {
+      // 保存成功后，通知本地助手绑定任务
+      const taskId = data.data && data.data.id ? data.data.id : (window.ocrWatchTask ? window.ocrWatchTask.id : null);
+      if (taskId) {
+        try {
+          await fetch('http://127.0.0.1:9999/bind-task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskId: taskId, folderPath: folderPath }),
+            signal: AbortSignal.timeout(5000)
+          });
+          console.log('[OCR-Watch] 已通知本地助手绑定任务', taskId, folderPath);
+        } catch (e) {
+          console.warn('[OCR-Watch] 通知本地助手失败:', e.message);
+        }
+      }
+      await loadOcrWatchTask(pid);
+    } else {
+      alert(data.message);
+    }
   } catch (e) { alert('失败: ' + e.message); }
 }
 
