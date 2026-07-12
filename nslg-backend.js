@@ -1133,10 +1133,12 @@ app.post('/api/battles/ocr-clear-pending', requireActiveUser, async (req, res) =
       [userId, Number(projectId)]
     );
 
-    // 更新所有关联监听任务的 pending_count
+    // 清空所有关联监听任务的 pending_files_json 和 pending_count
     await pool.query(
       `UPDATE ocr_watch_tasks
-       SET pending_count = 0,
+       SET pending_files_json = JSON_ARRAY(),
+           pending_count = 0,
+           current_file = '',
            updated_at = NOW()
        WHERE user_id = ? AND project_id = ?`,
       [userId, Number(projectId)]
