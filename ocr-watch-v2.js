@@ -351,6 +351,19 @@ async function saveOcrWatchFolder(folderPath) {
 async function ocrWatchControl(action) {
   console.log('[OCR-Watch] control action:', action, 'task:', window.ocrWatchTask ? window.ocrWatchTask.id : 'null');
   if (!window.ocrWatchTask) { console.warn('[OCR-Watch] 无任务，无法执行', action); return; }
+
+  // 乐观更新UI：立即更新按钮状态，不等后端响应
+  const btnToggle = document.getElementById('btnOcrWatchToggle');
+  if (btnToggle) {
+    if (action === 'pause') {
+      btnToggle.textContent = '▶ 继续监听';
+      btnToggle.className = 'btn btn-sm btn-primary';
+    } else if (action === 'start') {
+      btnToggle.textContent = '⏸ 暂停监听';
+      btnToggle.className = 'btn btn-sm btn-secondary';
+    }
+  }
+
   var token = localStorage.getItem('nslg_token');
   try {
     var resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks/' + window.ocrWatchTask.id + '/control', {
@@ -360,8 +373,19 @@ async function ocrWatchControl(action) {
     });
     var data = await resp.json();
     console.log('[OCR-Watch] control response:', data.code, data.message || '');
-    if (data.code === 200) loadOcrWatchTask(window.ocrWatchTask.projectId); else alert(data.message);
-  } catch (e) { console.error('[OCR-Watch] control error:', e.message); alert('失败: ' + e.message); }
+    if (data.code === 200) {
+      loadOcrWatchTask(window.ocrWatchTask.projectId);
+    } else {
+      alert(data.message);
+      // 操作失败，恢复按钮状态
+      loadOcrWatchTask(window.ocrWatchTask.projectId);
+    }
+  } catch (e) {
+    console.error('[OCR-Watch] control error:', e.message);
+    alert('失败: ' + e.message);
+    // 操作失败，恢复按钮状态
+    loadOcrWatchTask(window.ocrWatchTask.projectId);
+  }
 }
 
 async function selectOcrWatchFolder() {
