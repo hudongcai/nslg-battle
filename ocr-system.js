@@ -1341,7 +1341,8 @@ async function svrPickFolder() {
 
 async function downloadLocalHelperPackage() {
   try {
-    const downloadUrl = window.location.origin + '/downloads/zhenwu-local-helper-setup-07132301.exe';
+    const apiBase = typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE ? CLOUD_API_BASE : 'http://localhost:3000/api';
+    const downloadUrl = apiBase.replace(/\/api\/?$/, '') + '/download/local-helper';
     window.open(downloadUrl, '_blank');
     showToast('✅ 下载已开始，请查看浏览器下载内容', 'success');
   } catch (e) {

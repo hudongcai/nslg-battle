@@ -1738,17 +1738,31 @@ if ($dialog.ShowDialog() -eq 'OK') {
 
 // ========== 本地助手下载接口 ==========
 app.get('/download/local-helper', (req, res) => {
-  const filePath = path.join(__dirname, 'downloads', 'zhenwu-local-helper-setup-07132301.exe');
+  const downloadsDir = path.join(__dirname, 'downloads');
+  const installers = fs.readdirSync(downloadsDir)
+    .filter(name => /^zhenwu-local-helper-setup-\d+\.exe$/i.test(name))
+    .map(name => {
+      const filePath = path.join(downloadsDir, name);
+      const suffix = (name.match(/setup-(\d+)\.exe$/i) || [])[1] || '';
+      return { name, filePath, suffix, mtimeMs: fs.statSync(filePath).mtimeMs };
+    });
+  const preferredInstallers = installers.filter(item => item.suffix.length === 8);
+  const latestInstaller = (preferredInstallers.length ? preferredInstallers : installers)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+
+  if (!latestInstaller) {
+    return res.status(404).json({ code: 404, message: '安装包不存在' });
+  }
+
+  const filePath = latestInstaller.filePath;
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ code: 404, message: '安装包不存在' });
   }
 
-  // 设置响应头，强制下载
   res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', 'attachment; filename="zhenwu-local-helper-setup-07132301.exe"');
+  res.setHeader('Content-Disposition', `attachment; filename="${latestInstaller.name}"`);
 
-  // 流式传输文件
   const fileStream = fs.createReadStream(filePath);
   fileStream.pipe(res);
 

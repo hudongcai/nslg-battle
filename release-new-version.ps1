@@ -56,8 +56,8 @@ $ocrWatchContent | Set-Content $ocrWatchFile -Encoding UTF8 -NoNewline
 $ocrSystemFile = "$PSScriptRoot\ocr-system.js"
 $ocrSystemContent = Get-Content $ocrSystemFile -Raw -Encoding UTF8
 $ocrSystemContent = $ocrSystemContent -replace 'zhenwu-local-helper-setup(?:-\d+)?\.exe', $installerName
-$ocrSystemContent = $ocrSystemContent -replace "const downloadUrl = 'https://api\.zhenwu\.fun/download/local-helper';", "const downloadUrl = window.location.origin + '/downloads/$installerName';"
-$ocrSystemContent = $ocrSystemContent -replace 'const downloadUrl = "https://api\.zhenwu\.fun/download/local-helper";', "const downloadUrl = window.location.origin + '/downloads/$installerName';"
+$ocrSystemContent = $ocrSystemContent -replace "const downloadUrl = 'https://api\.zhenwu\.fun/download/local-helper';", "const downloadUrl = apiBase.replace(/\/api\/?$/, '') + '/download/local-helper';"
+$ocrSystemContent = $ocrSystemContent -replace 'const downloadUrl = "https://api\.zhenwu\.fun/download/local-helper";', "const downloadUrl = apiBase.replace(/\/api\/?$/, '') + '/download/local-helper';"
 $ocrSystemContent | Set-Content $ocrSystemFile -Encoding UTF8 -NoNewline
 
 Write-Host "Frontend publish time and helper download URLs updated" -ForegroundColor Green
@@ -102,6 +102,6 @@ Write-Host ""
 Write-Host "Version: v$versionTime" -ForegroundColor Gray
 Write-Host "Published: $displayTime" -ForegroundColor Gray
 Write-Host "Installer: $installerName" -ForegroundColor Gray
-Write-Host "Download: $installerUrl" -ForegroundColor Cyan
+Write-Host "Download: https://api.zhenwu.fun/download/local-helper" -ForegroundColor Cyan
 Write-Host "GitHub Pages deployment usually takes 1-3 minutes" -ForegroundColor Gray
 Write-Host ""

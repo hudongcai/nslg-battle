@@ -513,7 +513,7 @@ const HELPER_API = 'http://127.0.0.1:9999';
 let helperConnected = false;
 
 // 统一的下载地址 - 使用 GitHub Pages
-const LOCAL_HELPER_DOWNLOAD_URL = window.location.origin + '/downloads/zhenwu-local-helper-setup-07132301.exe';
+const LOCAL_HELPER_DOWNLOAD_URL = ((typeof CLOUD_API_BASE !== 'undefined' && CLOUD_API_BASE) ? CLOUD_API_BASE : 'http://localhost:3000/api').replace(/\/api\/?$/, '') + '/download/local-helper';
 
 // ========== 自定义暗黑风格弹窗 ==========
 function showCustomDialog(options) {
