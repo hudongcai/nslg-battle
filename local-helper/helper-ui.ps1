@@ -38,21 +38,46 @@ $script:LastLaunchCommandStamp = ''
 function Read-HelperConfig {
     if (Test-Path $script:ConfigPath) {
         try {
-            return Get-Content $script:ConfigPath -Raw | ConvertFrom-Json
+            return Normalize-HelperConfig (Get-Content $script:ConfigPath -Raw | ConvertFrom-Json)
         } catch {}
     }
 
-    return [pscustomobject]@{
+    return Normalize-HelperConfig ([pscustomobject]@{
         apiBase = $script:DefaultApiBase
         helperToken = ''
         clientId = $null
         deviceId = ''
         taskFolders = @{}
-    }
+    })
 }
 
 function Save-HelperConfig($config) {
+    $config = Normalize-HelperConfig $config
     $config | ConvertTo-Json -Depth 8 | Set-Content -Path $script:ConfigPath -Encoding UTF8
+}
+
+function Ensure-ConfigProperty($config, [string]$name, $value) {
+    if (-not $config.PSObject.Properties[$name]) {
+        $config | Add-Member -NotePropertyName $name -NotePropertyValue $value -Force
+    }
+}
+
+function Normalize-HelperConfig($config) {
+    if ($null -eq $config) {
+        $config = [pscustomobject]@{}
+    }
+
+    Ensure-ConfigProperty $config 'apiBase' $script:DefaultApiBase
+    Ensure-ConfigProperty $config 'helperToken' ''
+    Ensure-ConfigProperty $config 'clientId' $null
+    Ensure-ConfigProperty $config 'deviceId' ''
+    Ensure-ConfigProperty $config 'taskFolders' @{}
+
+    if ([string]::IsNullOrWhiteSpace([string]$config.apiBase)) {
+        $config.apiBase = $script:DefaultApiBase
+    }
+
+    return $config
 }
 
 function Read-HelperState {
@@ -195,6 +220,7 @@ function Invoke-HelperApi {
 }
 
 function Ensure-DeviceId($config) {
+    Ensure-ConfigProperty $config 'deviceId' ''
     if ([string]::IsNullOrWhiteSpace([string]$config.deviceId)) {
         $config.deviceId = [guid]::NewGuid().ToString()
     }
@@ -1142,6 +1168,14 @@ $script:StatusLabel.Location = New-Object System.Drawing.Point(30, 310)
 $script:StatusLabel.Size = New-Object System.Drawing.Size(460, 30)
 $form.Controls.Add($script:StatusLabel)
 
+if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
+    Ensure-DeviceId $config
+    Save-HelperConfig $config
+    $script:LinkCodeBox.Text = '已保存连接码，无需重新输入'
+    $connectButton.Text = '重新连接'
+    Set-Status ("已连接 · 设备标识: " + $config.deviceId) ([System.Drawing.Color]::FromArgb(55, 125, 34))
+}
+
 $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $folderDialog.Description = '请选择会持续新增截图的文件夹。'
 $folderDialog.ShowNewFolderButton = $false
@@ -1257,6 +1291,8 @@ $timer.Start()
 try {
     $config = Read-HelperConfig
     if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
+        Ensure-DeviceId $config
+        Save-HelperConfig $config
         Start-HelperWorker
     }
 } catch {}
@@ -1333,5 +1369,3 @@ if ($script:NotifyMenu) {
 if ($script:StopWorkerOnExit) {
     Stop-HelperWorker
 }
-
-

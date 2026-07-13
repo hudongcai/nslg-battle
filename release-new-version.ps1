@@ -10,7 +10,7 @@ Write-Host ""
 
 # 1. 生成时间戳
 $now = Get-Date
-$versionTime = $now.ToString('yyMMddHHmm')  # 2607121530
+$versionTime = $now.ToString('MMddHHmm')  # 07132253
 $displayTime = $now.ToString('yyyy.MM.dd HH:mm')  # 2026.07.12 15:30
 
 Write-Host "[1/6] 生成时间戳" -ForegroundColor Yellow
@@ -21,7 +21,9 @@ Write-Host ""
 # 2. 构建本地助手安装包
 Write-Host "[2/6] 构建本地助手安装包..." -ForegroundColor Yellow
 Set-Location "$PSScriptRoot\local-helper"
+$env:ZHENWU_HELPER_VERSION_SUFFIX = $versionTime
 & .\build-local-helper-package.ps1
+$env:ZHENWU_HELPER_VERSION_SUFFIX = $null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  ❌ 构建失败" -ForegroundColor Red
     exit 1
@@ -33,7 +35,7 @@ Write-Host ""
 Write-Host "[3/6] 更新后端下载文件名..." -ForegroundColor Yellow
 $backendFile = "$PSScriptRoot\nslg-backend.js"
 $backendContent = Get-Content $backendFile -Raw -Encoding UTF8
-$backendContent = $backendContent -replace 'filename="zhenwu-local-helper-setup-\d+\.exe"', "filename=`"zhenwu-local-helper-setup-$versionTime.exe`""
+$backendContent = $backendContent -replace 'zhenwu-local-helper-setup(?:-\d+)?\.exe', "zhenwu-local-helper-setup-$versionTime.exe"
 $backendContent | Set-Content $backendFile -Encoding UTF8 -NoNewline
 Write-Host "  ✅ 更新为: zhenwu-local-helper-setup-$versionTime.exe" -ForegroundColor Green
 Write-Host ""
@@ -50,7 +52,12 @@ Write-Host ""
 # 5. 提交到 Git
 Write-Host "[5/6] 提交到 Git..." -ForegroundColor Yellow
 Set-Location $PSScriptRoot
-git add local-helper/helper-ui.ps1 nslg-backend.js downloads/zhenwu-local-helper-setup.exe index.html
+$ocrWatchFile = "$PSScriptRoot\ocr-watch-v2.js"
+$ocrWatchContent = Get-Content $ocrWatchFile -Raw -Encoding UTF8
+$ocrWatchContent = $ocrWatchContent -replace 'zhenwu-local-helper-setup(?:-\d+)?\.exe', "zhenwu-local-helper-setup-$versionTime.exe"
+$ocrWatchContent | Set-Content $ocrWatchFile -Encoding UTF8 -NoNewline
+
+git add local-helper/helper-ui.ps1 local-helper/build-local-helper-package.ps1 nslg-backend.js ocr-watch-v2.js "downloads/zhenwu-local-helper-setup-$versionTime.exe" index.html
 $fullCommitMessage = "$CommitMessage (v$versionTime)"
 git commit -m $fullCommitMessage
 if ($LASTEXITCODE -ne 0) {

@@ -1,7 +1,9 @@
 ﻿$packageDir = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper'
 $zipPath = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper.zip'
 $publicDownloadDir = Join-Path $PSScriptRoot '..\downloads'
-$installerPath = Join-Path $publicDownloadDir 'zhenwu-local-helper-setup.exe'
+$versionSuffix = if ($env:ZHENWU_HELPER_VERSION_SUFFIX) { $env:ZHENWU_HELPER_VERSION_SUFFIX } else { (Get-Date).ToString('MMddHHmm') }
+$installerName = "zhenwu-local-helper-setup-$versionSuffix.exe"
+$installerPath = Join-Path $publicDownloadDir $installerName
 $nodePath = (Get-Command node -ErrorAction Stop).Source
 $cscPath = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $installerSourcePath = Join-Path $PSScriptRoot '..\release\zhenwu-local-helper-installer.cs'
@@ -190,8 +192,7 @@ Set-Content -LiteralPath $installerSourcePath -Value $installerSource -Encoding 
     $installerSourcePath
 
 if (-not (Test-Path $installerPath)) {
-    throw 'Failed to build zhenwu-local-helper-setup.exe'
+    throw "Failed to build $installerName"
 }
 
 Get-Item $zipPath, $installerPath | Select-Object FullName,Length
-
