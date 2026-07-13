@@ -1341,8 +1341,7 @@ async function svrPickFolder() {
 
 async function downloadLocalHelperPackage() {
   try {
-    // 从本地后端下载（稳定快速，无墙问题）
-    const downloadUrl = 'https://api.zhenwu.fun/download/local-helper';
+    const downloadUrl = window.location.origin + '/downloads/zhenwu-local-helper-setup-07132301.exe';
     window.open(downloadUrl, '_blank');
     showToast('✅ 下载已开始，请查看浏览器下载内容', 'success');
   } catch (e) {
@@ -1451,4 +1450,3 @@ async function manualRefreshHelperStatus(btn) {
     }
   }
 }
-
