@@ -175,23 +175,22 @@ async function processTask(config, state, task) {
     return;
   }
 
-  // MySQL is authoritative. Local cache is only a fallback when the server cannot be reached.
+  // MySQL is authoritative. If the server cannot be reached, do not guess from local cache.
   let processedFiles = new Set();
-  let loadedServerProcessedFiles = false;
 
   // 从后端获取已成功解析的文件列表（防止重复提交）
   try {
     const data = await apiFetch(config, `/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(task.projectId || '')}`);
     if (Array.isArray(data.data)) {
-      loadedServerProcessedFiles = true;
       data.data.forEach(name => processedFiles.add(name));
     }
   } catch (e) {
-    console.warn(`[${taskKey}] 查询已解析文件失败，仅使用本地缓存:`, e.message);
-  }
-
-  if (!loadedServerProcessedFiles) {
-    processedFiles = new Set(state.processedByTask[taskKey] || []);
+    console.warn(`[${taskKey}] 查询已解析文件失败，跳过本轮扫描，避免错误覆盖进度:`, e.message);
+    await updateProgress(config, task, {
+      lastError: `查询已解析文件失败: ${e.message}`,
+      lastHeartbeat: new Date().toISOString()
+    });
+    return;
   }
 
   // 获取所有文件

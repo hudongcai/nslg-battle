@@ -1196,12 +1196,13 @@ function updateOCRProgress() {
   let autoTotal = 0;
 
   if (watchTaskMatchesProject) {
-    autoDone = watchTask.processedCount || 0;
-    autoTotal = (watchTask.processedCount || 0) + (watchTask.pendingCount || 0);
-    // 如果有正在处理的文件，加入总数
-    if (watchTask.currentFile && String(watchTask.currentFile).trim()) {
-      autoTotal += 1;
-    }
+    const pendingFiles = Array.isArray(watchTask.pendingFiles)
+      ? watchTask.pendingFiles.filter(name => String(name || '').trim())
+      : [];
+    const currentFile = String(watchTask.currentFile || '').trim();
+    const recentDone = Array.isArray(window.autoCompletedFiles) ? window.autoCompletedFiles.length : 0;
+    autoDone = recentDone;
+    autoTotal = recentDone + pendingFiles.filter(name => name !== currentFile).length + (currentFile ? 1 : 0);
   }
 
   // 合并统计（本地助手和数据库是同一批文件，二选一，不能相加）
