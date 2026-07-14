@@ -1840,7 +1840,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
       status: r.status,
       pendingCount: r.pending_count || 0,
       failedCount: r.failed_count || 0,
-      processedCount: Number(r.actual_processed) || 0,
+      processedCount: Number(r.processed_count) || 0,
       processedFilesJson: processedFilesByProject.get(String(r.project_id)) || [],
       pendingFiles: safeJsonParse(r.pending_files_json, []),
       currentFile: r.current_file || '',
@@ -1893,6 +1893,9 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
         updateFields.push('processed_count = 0');
         updateFields.push('pending_count = 0');
         updateFields.push('failed_count = 0');
+        updateFields.push('pending_files_json = JSON_ARRAY()');
+        updateFields.push('current_file = ""');
+        updateFields.push('last_error = ""');
       }
 
       updateParams.push(existing[0].id);
@@ -1993,10 +1996,33 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
       return res.json({ code: 400, message: '任务参数无效' });
     }
 
+    const [existingTaskRows] = await pool.query(
+      'SELECT status, pending_count, processed_count, pending_files_json, current_file FROM ocr_watch_tasks WHERE id = ? LIMIT 1',
+      [taskId]
+    );
+    if (!existingTaskRows.length) {
+      return res.json({ code: 404, message: '监听任务不存在' });
+    }
+    const existingTask = existingTaskRows[0];
+    const incomingPendingFiles = Array.isArray(pendingFiles)
+      ? pendingFiles.map(item => String(item || '').trim()).filter(Boolean)
+      : null;
+    const incomingPendingCount = pendingCount !== undefined ? Math.max(0, Number(pendingCount) || 0) : null;
+    const incomingCurrentFile = currentFile !== undefined ? String(currentFile || '').trim() : null;
+    const incomingProcessedCount = processedCount !== undefined ? Number(processedCount) || 0 : null;
+    const suspiciousClear =
+      existingTask.status === 'running' &&
+      Number(existingTask.pending_count || 0) > 1 &&
+      incomingPendingCount === 0 &&
+      incomingPendingFiles &&
+      incomingPendingFiles.length === 0 &&
+      incomingCurrentFile === '' &&
+      incomingProcessedCount !== null &&
+      incomingProcessedCount <= Number(existingTask.processed_count || 0);
     const updateFields = ['updated_at = NOW()'];
     const updateParams = [];
 
-    if (pendingCount !== undefined) {
+    if (pendingCount !== undefined && !suspiciousClear) {
       updateFields.push('pending_count = ?');
       updateParams.push(Math.max(0, Number(pendingCount) || 0));
     }
@@ -2007,17 +2033,17 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
     //   updateParams.push(Number(pendingCount));
     // }
 
-    if (processedCount !== undefined) {
+    if (processedCount !== undefined && !suspiciousClear) {
       updateFields.push('processed_count = ?');
       updateParams.push(Number(processedCount));
     }
 
-    if (processedFilesJson && Array.isArray(processedFilesJson)) {
+    if (processedFilesJson && Array.isArray(processedFilesJson) && !suspiciousClear) {
       updateFields.push('processed_files_json = ?');
       updateParams.push(JSON.stringify(processedFilesJson));
     }
 
-    if (pendingFiles !== undefined) {
+    if (pendingFiles !== undefined && !suspiciousClear) {
       updateFields.push('pending_files_json = ?');
       updateParams.push(Array.isArray(pendingFiles) ? JSON.stringify(pendingFiles) : null);
     }
@@ -2029,7 +2055,7 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
       updateParams.push('pending');
     }
 
-    if (currentFile !== undefined) {
+    if (currentFile !== undefined && !suspiciousClear) {
       updateFields.push('current_file = ?');
       updateParams.push(String(currentFile || '').slice(0, 512));
     }

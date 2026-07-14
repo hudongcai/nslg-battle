@@ -251,12 +251,16 @@ function updateOcrWatchUI() {
   }
   var heartbeatAge = heartbeatMs;
   var effectiveStatus = task.status;
+  var folderMissing = /目录不存在/.test(String(task.lastError || ''));
 
   // 如果状态是 running 或 paused，但心跳为空或超时，视为 idle
   if (task.status === 'running' || task.status === 'paused') {
     if (!task.lastHeartbeat || heartbeatAge > 120000) {
       effectiveStatus = 'idle';
     }
+  }
+  if (folderMissing) {
+    effectiveStatus = 'error';
   }
 
   console.log('[OCR-Watch] UI update: rawStatus=' + task.status + ' effective=' + effectiveStatus + ' heartbeat=' + (task.lastHeartbeat || 'null') + ' heartbeatAge=' + heartbeatAge + 'ms taskKeys=' + Object.keys(task).join(','));
@@ -297,6 +301,10 @@ function updateOcrWatchUI() {
       btnToggle.disabled = false;
       btnToggle.textContent = '▶ 继续监听';
       btnToggle.className = 'btn btn-sm btn-primary';
+    } else if (effectiveStatus === 'error' && folderMissing) {
+      btnToggle.disabled = true;
+      btnToggle.textContent = '请重新选择目录';
+      btnToggle.className = 'btn btn-sm btn-secondary';
     } else if (isStaleIdle || effectiveStatus === 'idle') {
       btnToggle.disabled = !hasFolder;
       btnToggle.textContent = '▶ 开始监听';
