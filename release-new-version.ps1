@@ -1,107 +1,178 @@
 param(
-    [string]$CommitMessage = "Release new version"
+    [string]$CommitMessage = "Release",
+    [switch]$BuildHelper,
+    [switch]$SkipCommit,
+    [switch]$SkipPush,
+    [switch]$SkipVerify
 )
 
 $ErrorActionPreference = "Stop"
 
-$now = Get-Date
-$versionTime = $now.ToString('MMddHHmm')
-$displayTime = $now.ToString('yyyy.MM.dd HH:mm')
-$installerName = "zhenwu-local-helper-setup-$versionTime.exe"
-$installerUrl = "https://www.zhenwu.fun/downloads/$installerName"
-
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Release new version" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "[1/7] Version: $versionTime" -ForegroundColor Yellow
-Write-Host "[1/7] Publish time: $displayTime" -ForegroundColor Yellow
-Write-Host ""
-
-Write-Host "[2/7] Build local helper package..." -ForegroundColor Yellow
-Set-Location "$PSScriptRoot\local-helper"
-$env:ZHENWU_HELPER_VERSION_SUFFIX = $versionTime
-try {
-    & .\build-local-helper-package.ps1
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Value, $utf8NoBom)
 }
-finally {
-    Remove-Item Env:\ZHENWU_HELPER_VERSION_SUFFIX -ErrorAction SilentlyContinue
+
+function Run-Step {
+    param(
+        [Parameter(Mandatory = $true)][string]$Title,
+        [Parameter(Mandatory = $true)][scriptblock]$Script
+    )
+    Write-Host ""
+    Write-Host $Title -ForegroundColor Yellow
+    & $Script
 }
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Build failed" -ForegroundColor Red
-    exit 1
+
+function Get-PublishLabel {
+    return -join @(
+        [char]0x6700, # zui
+        [char]0x65B0, # xin
+        [char]0x53D1, # fa
+        [char]0x5E03  # bu
+    )
 }
-Write-Host "Build completed" -ForegroundColor Green
-Write-Host ""
 
-Write-Host "[3/7] Update backend download filename..." -ForegroundColor Yellow
-$backendFile = "$PSScriptRoot\nslg-backend.js"
-$backendContent = Get-Content $backendFile -Raw -Encoding UTF8
-$backendContent = $backendContent -replace 'zhenwu-local-helper-setup(?:-\d+)?\.exe', $installerName
-$backendContent | Set-Content $backendFile -Encoding UTF8 -NoNewline
-Write-Host "Backend download filename updated: $installerName" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "[4/7] Update frontend publish time and helper download URLs..." -ForegroundColor Yellow
-$indexFile = "$PSScriptRoot\index.html"
-$indexContent = Get-Content $indexFile -Raw -Encoding UTF8
-$indexContent = $indexContent -replace '最新发布\s*\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}', "最新发布 $displayTime"
-$indexContent | Set-Content $indexFile -Encoding UTF8 -NoNewline
-
-$ocrWatchFile = "$PSScriptRoot\ocr-watch-v2.js"
-$ocrWatchContent = Get-Content $ocrWatchFile -Raw -Encoding UTF8
-$ocrWatchContent = $ocrWatchContent -replace 'zhenwu-local-helper-setup(?:-\d+)?\.exe', $installerName
-$ocrWatchContent | Set-Content $ocrWatchFile -Encoding UTF8 -NoNewline
-
-$ocrSystemFile = "$PSScriptRoot\ocr-system.js"
-$ocrSystemContent = Get-Content $ocrSystemFile -Raw -Encoding UTF8
-$ocrSystemContent = $ocrSystemContent -replace 'zhenwu-local-helper-setup(?:-\d+)?\.exe', $installerName
-$ocrSystemContent = $ocrSystemContent -replace "const downloadUrl = 'https://api\.zhenwu\.fun/download/local-helper';", "const downloadUrl = apiBase.replace(/\/api\/?$/, '') + '/download/local-helper';"
-$ocrSystemContent = $ocrSystemContent -replace 'const downloadUrl = "https://api\.zhenwu\.fun/download/local-helper";', "const downloadUrl = apiBase.replace(/\/api\/?$/, '') + '/download/local-helper';"
-$ocrSystemContent | Set-Content $ocrSystemFile -Encoding UTF8 -NoNewline
-
-Write-Host "Frontend publish time and helper download URLs updated" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "[5/7] Commit changes..." -ForegroundColor Yellow
 Set-Location $PSScriptRoot
-git add local-helper/helper-ui.ps1 local-helper/build-local-helper-package.ps1 nslg-backend.js ocr-watch-v2.js ocr-system.js "downloads/$installerName" index.html
-$fullCommitMessage = "$CommitMessage (v$versionTime)"
-git commit -m $fullCommitMessage
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Commit failed" -ForegroundColor Red
-    exit 1
-}
-Write-Host "Commit completed: $fullCommitMessage" -ForegroundColor Green
-Write-Host ""
 
-Write-Host "[6/7] Push changes..." -ForegroundColor Yellow
-git push
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Push failed" -ForegroundColor Red
-    exit 1
-}
-Write-Host "Push completed" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "[7/7] Restart local backend..." -ForegroundColor Yellow
-$backendPid = Get-Content "$PSScriptRoot\backend.pid" -ErrorAction SilentlyContinue
-if ($backendPid) {
-    Stop-Process -Id $backendPid -Force -ErrorAction SilentlyContinue
-}
-Start-Sleep -Seconds 2
-$proc = Start-Process -FilePath 'node' -ArgumentList "$PSScriptRoot\nslg-backend.js" -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
-$proc.Id | Out-File "$PSScriptRoot\backend.pid" -Force
-Write-Host "Backend restarted, PID: $($proc.Id)" -ForegroundColor Green
-Write-Host ""
+$now = Get-Date
+$versionTime = $now.ToString("yyyyMMddHHmm")
+$displayTime = $now.ToString("yyyy.MM.dd HH:mm")
+$shortVersion = $now.ToString("MMddHHmm")
+$installerName = "zhenwu-local-helper-setup-$shortVersion.exe"
+$publishLabel = Get-PublishLabel
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Release completed" -ForegroundColor Green
+Write-Host "Zhenwu release script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Publish time: $displayTime" -ForegroundColor Gray
+Write-Host "Asset version: $versionTime" -ForegroundColor Gray
+
+Run-Step "[1/6] Update publish time and frontend cache version" {
+    $indexFile = Join-Path $PSScriptRoot "index.html"
+    $indexContent = Get-Content $indexFile -Raw -Encoding UTF8
+
+    $subText = "$publishLabel $displayTime"
+    $indexContent = [regex]::Replace(
+        $indexContent,
+        '<span class="sub">.*?</span>',
+        "<span class=""sub"">$subText</span>"
+    )
+    $indexContent = [regex]::Replace(
+        $indexContent,
+        'ocr-system\.js\?v=\d+',
+        "ocr-system.js?v=$versionTime"
+    )
+    $indexContent = [regex]::Replace(
+        $indexContent,
+        'ocr-watch-v2\.js\?v=\d+',
+        "ocr-watch-v2.js?v=$versionTime"
+    )
+
+    Write-Utf8NoBom -Path $indexFile -Value $indexContent
+    Write-Host "Updated publish time: $subText"
+    Write-Host "Updated cache version: $versionTime"
+}
+
+if ($BuildHelper) {
+    Run-Step "[2/6] Build local helper installer" {
+        $env:ZHENWU_HELPER_VERSION_SUFFIX = $shortVersion
+        try {
+            & (Join-Path $PSScriptRoot "local-helper\build-local-helper-package.ps1")
+        }
+        finally {
+            Remove-Item Env:\ZHENWU_HELPER_VERSION_SUFFIX -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Helper installer build failed"
+        }
+        Write-Host "Built: downloads\$installerName"
+    }
+} else {
+    Write-Host ""
+    Write-Host "[2/6] Skip helper build. Use -BuildHelper when needed." -ForegroundColor DarkGray
+}
+
+Run-Step "[3/6] Syntax checks" {
+    node --check nslg-backend.js
+    node --check ocr-system.js
+    node --check ocr-watch-v2.js
+    node --check local-helper.minimal.js
+}
+
+if ($SkipCommit) {
+    Write-Host ""
+    Write-Host "[4/6] Skip commit" -ForegroundColor DarkGray
+} else {
+    Run-Step "[4/6] Commit changes" {
+        git add -u
+        git reset -- local-helper.pid local-helper.state.json 2>$null
+        if ($BuildHelper -and (Test-Path (Join-Path $PSScriptRoot "downloads\$installerName"))) {
+            git add "downloads\$installerName"
+        }
+
+        $status = git diff --cached --name-only
+        if (-not $status) {
+            Write-Host "No staged changes to commit"
+            return
+        }
+
+        $fullCommitMessage = "$CommitMessage ($displayTime)"
+        git commit -m $fullCommitMessage
+        if ($LASTEXITCODE -ne 0) {
+            throw "Commit failed"
+        }
+        Write-Host "Committed: $fullCommitMessage"
+    }
+}
+
+if ($SkipPush -or $SkipCommit) {
+    Write-Host ""
+    Write-Host "[5/6] Skip push" -ForegroundColor DarkGray
+} else {
+    Run-Step "[5/6] Push to origin/main" {
+        git push origin main
+        if ($LASTEXITCODE -ne 0) {
+            throw "Push failed"
+        }
+    }
+}
+
+if ($SkipVerify -or $SkipPush -or $SkipCommit) {
+    Write-Host ""
+    Write-Host "[6/6] Skip production verification" -ForegroundColor DarkGray
+} else {
+    Run-Step "[6/6] Verify production page" {
+        $ok = $false
+        for ($i = 1; $i -le 18; $i++) {
+            Start-Sleep -Seconds 10
+            try {
+                $url = "https://www.zhenwu.fun/?releaseCheck=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+                $html = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20).Content
+                if ($html -match [regex]::Escape("$publishLabel $displayTime") -and $html -match "ocr-system\.js\?v=$versionTime") {
+                    $ok = $true
+                    break
+                }
+            } catch {
+            }
+        }
+
+        if (-not $ok) {
+            throw "Production page has not shown the new publish time yet"
+        }
+        Write-Host "Production updated: $publishLabel $displayTime"
+    }
+}
+
 Write-Host ""
-Write-Host "Version: v$versionTime" -ForegroundColor Gray
-Write-Host "Published: $displayTime" -ForegroundColor Gray
-Write-Host "Installer: $installerName" -ForegroundColor Gray
-Write-Host "Download: https://api.zhenwu.fun/download/local-helper" -ForegroundColor Cyan
-Write-Host "GitHub Pages deployment usually takes 1-3 minutes" -ForegroundColor Gray
-Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Release script finished" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Publish time: $displayTime" -ForegroundColor Gray
+Write-Host "Frontend version: $versionTime" -ForegroundColor Gray
+if ($BuildHelper) {
+    Write-Host "Helper installer: $installerName" -ForegroundColor Gray
+}
