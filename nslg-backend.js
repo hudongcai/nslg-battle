@@ -1169,11 +1169,15 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     if ((uRows[0].credit_balance || 0) <= 0) return res.json({ code: 402, message: '积分不足' });
     const helperTaskId = Number(req.body && req.body.helperTaskId);
     if (Number.isInteger(helperTaskId) && helperTaskId > 0) {
+      if (!req.helperClientId) return res.json({ code: 403, message: '自动监听必须使用本地助手身份' });
       const [taskRows] = await pool.query(
-        'SELECT status FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+        'SELECT status, helper_client_id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
         [helperTaskId, userId]
       );
       if (!taskRows.length) return res.json({ code: 404, message: '监听任务不存在' });
+      if (req.helperClientId && Number(taskRows[0].helper_client_id || 0) !== Number(req.helperClientId)) {
+        return res.json({ code: 403, message: '监听任务未绑定到当前本地助手' });
+      }
       if (taskRows[0].status !== 'running') return res.json({ code: 409, message: '监听任务已暂停' });
     }
     const cleanImage = image.replace(/^data:[^;]+;base64,/, '');
@@ -1799,8 +1803,13 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
       return res.json({ code: 400, message: '项目参数无效' });
     }
 
-    let sql = 'SELECT id, user_id, project_id, folder_path, status, pending_count, processed_count, failed_count, processed_files_json, pending_files_json, current_file, last_error, last_heartbeat, created_at, updated_at, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = ocr_watch_tasks.project_id AND br.status = 1) AS actual_processed FROM ocr_watch_tasks WHERE user_id = ?';
+    let sql = 'SELECT id, user_id, project_id, folder_path, status, pending_count, processed_count, failed_count, processed_files_json, pending_files_json, current_file, last_error, last_heartbeat, created_at, updated_at, helper_client_id, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = ocr_watch_tasks.project_id AND br.status = 1) AS actual_processed FROM ocr_watch_tasks WHERE user_id = ?';
     const params = [req.authUserId];
+
+    if (req.helperClientId) {
+      sql += ' AND helper_client_id = ?';
+      params.push(req.helperClientId);
+    }
 
     if (hasProjectFilter) {
       sql += ' AND project_id = ?';
@@ -1846,6 +1855,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
       currentFile: r.current_file || '',
       lastError: r.last_error || '',
       lastHeartbeat: r.last_heartbeat,
+      helperClientId: r.helper_client_id || null,
       createdAt: r.created_at,
       updatedAt: r.updated_at
     }));
@@ -1865,7 +1875,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
 // 2. 创建/更新任务
 app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
   try {
-    const { projectId, folderPath } = req.body || {};
+    const { projectId, folderPath, helperClientId } = req.body || {};
     const normalizedProjectId = Number(projectId);
 
     if (!Number.isInteger(normalizedProjectId) || normalizedProjectId <= 0) {
@@ -1873,6 +1883,14 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
     }
 
     const normalizedFolder = String(folderPath || '').trim().slice(0, 512);
+    const normalizedHelperClientId = Number(helperClientId) || null;
+    if (normalizedHelperClientId) {
+      const [helperRows] = await pool.query(
+        'SELECT id FROM local_helper_clients WHERE id = ? AND user_id = ? LIMIT 1',
+        [normalizedHelperClientId, req.authUserId]
+      );
+      if (!helperRows.length) return res.json({ code: 400, message: '本地助手设备无效，请重新激活助手' });
+    }
 
     // 检查是否已存在
     const [existing] = await pool.query(
@@ -1888,6 +1906,8 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
       if (normalizedFolder !== undefined) {
         updateFields.push('folder_path = ?');
         updateParams.push(normalizedFolder);
+        updateFields.push('helper_client_id = ?');
+        updateParams.push(normalizedHelperClientId);
         // 切换目录时，清空已处理文件列表
         updateFields.push('processed_files_json = NULL');
         updateFields.push('processed_count = 0');
@@ -1906,8 +1926,8 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
       // 创建
       const taskName = `监听任务-${normalizedProjectId}`;
       const [result] = await pool.query(
-        'INSERT INTO ocr_watch_tasks (user_id, project_id, task_name, folder_path, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())',
-        [req.authUserId, normalizedProjectId, taskName, normalizedFolder, 'idle']
+        'INSERT INTO ocr_watch_tasks (user_id, project_id, task_name, folder_path, helper_client_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+        [req.authUserId, normalizedProjectId, taskName, normalizedFolder, normalizedHelperClientId, 'idle']
       );
       res.json({ code: 200, data: { id: result.insertId } });
     }
@@ -1988,7 +2008,7 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
 });
 
 // 4. 助手进度上报
-app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
+app.post('/api/ocr-watch/tasks/:id/progress', requireOcrUploadActor, async (req, res) => {
   try {
     const taskId = Number(req.params.id);
     const { pendingCount, processedCount, processedFilesJson, pendingFiles, currentFile, lastError, lastHeartbeat } = req.body || {};
@@ -1997,10 +2017,17 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
       return res.json({ code: 400, message: '任务参数无效' });
     }
 
+    if (!req.helperClientId) {
+      return res.json({ code: 403, message: '进度上报必须使用本地助手身份' });
+    }
+
     const [existingTaskRows] = await pool.query(
-      'SELECT status, pending_count, processed_count, pending_files_json, current_file FROM ocr_watch_tasks WHERE id = ? LIMIT 1',
-      [taskId]
+      'SELECT status, pending_count, processed_count, pending_files_json, current_file, helper_client_id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+      [taskId, req.authUserId]
     );
+    if (req.helperClientId && existingTaskRows.length && Number(existingTaskRows[0].helper_client_id || 0) !== Number(req.helperClientId)) {
+      return res.json({ code: 403, message: '监听任务未绑定到当前本地助手' });
+    }
     if (!existingTaskRows.length) {
       return res.json({ code: 404, message: '监听任务不存在' });
     }
@@ -2104,11 +2131,12 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
 
     // 检查是否已有该设备的 token
     let [existing] = await pool.query(
-      'SELECT access_token FROM local_helper_clients WHERE user_id = ? AND device_id = ? LIMIT 1',
+      'SELECT id, access_token FROM local_helper_clients WHERE user_id = ? AND device_id = ? LIMIT 1',
       [req.authUserId, deviceId]
     );
 
     let helperToken;
+    let helperClientId = existing.length > 0 ? existing[0].id : null;
     if (existing.length > 0 && existing[0].access_token) {
       // 复用已有 token
       helperToken = existing[0].access_token;
@@ -2122,11 +2150,14 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
           'UPDATE local_helper_clients SET access_token = ?, token_expires_at = NULL, status = ?, updated_at = NOW() WHERE user_id = ? AND device_id = ?',
           [helperToken, 'online', req.authUserId, deviceId]
         );
+        const [clientRows] = await pool.query('SELECT id FROM local_helper_clients WHERE user_id = ? AND device_id = ? LIMIT 1', [req.authUserId, deviceId]);
+        helperClientId = clientRows[0]?.id || helperClientId;
       } else {
-        await pool.query(
+        const [insertResult] = await pool.query(
           'INSERT INTO local_helper_clients (user_id, device_id, device_name, access_token, token_expires_at, status, helper_version) VALUES (?, ?, ?, ?, NULL, ?, ?)',
           [req.authUserId, deviceId, deviceName, helperToken, 'online', '2.0']
         );
+        helperClientId = insertResult.insertId;
       }
     }
 
@@ -2135,6 +2166,7 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
       code: 200,
       data: {
         helperToken,
+        helperClientId,
         apiBase: req.protocol + '://' + req.get('host') + '/api',
         userId: req.authUserId,
         deviceId

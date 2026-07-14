@@ -326,10 +326,23 @@ async function saveOcrWatchFolder(folderPath) {
   if (!pid) return;
   var token = localStorage.getItem('nslg_token');
   try {
+    var helperClientId = null;
+    try {
+      var statusResp = await fetch('http://127.0.0.1:9999/status', { signal: AbortSignal.timeout(3000) });
+      var statusData = await statusResp.json();
+      helperClientId = statusData && statusData.helperClientId ? statusData.helperClientId : null;
+    } catch (e) {
+      console.warn('[OCR-Watch] 获取助手设备身份失败:', e.message);
+    }
+    if (!helperClientId) {
+      alert('本地助手设备身份未就绪，请重新启动或重新激活本地助手后再选择目录');
+      return;
+    }
+
     var resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ projectId: Number(pid), folderPath: folderPath })
+      body: JSON.stringify({ projectId: Number(pid), folderPath: folderPath, helperClientId: helperClientId })
     });
     var data = await resp.json();
     if (data.code === 200) {
@@ -424,8 +437,8 @@ async function selectOcrWatchFolder() {
     return;
   }
 
-  // 已运行但未配置：自动激活
-  if (!status.configured) {
+  // 已运行但未配置，或旧配置缺少助手设备身份：自动激活
+  if (!status.configured || !status.helperClientId) {
     console.log('[Helper] 助手未配置，正在自动激活...');
     const activated = await activateLocalHelper();
     if (!activated) {
@@ -712,7 +725,7 @@ async function checkLocalHelper() {
     const data = await resp.json();
     helperConnected = resp.ok && data.status === 'ok';
     console.log('[Helper] 检测结果: running=' + helperConnected + ' configured=' + data.configured);
-    return { running: helperConnected, configured: data.configured };
+    return { running: helperConnected, configured: data.configured, helperClientId: data.helperClientId || null };
   } catch (e) {
     console.log('[Helper] 检测失败:', e.message);
     helperConnected = false;

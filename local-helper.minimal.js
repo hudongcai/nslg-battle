@@ -529,10 +529,21 @@ function startHttpServer(config) {
             return;
           }
 
-          // 保存配置
-          config.helperToken = data.token;
-          config.apiBase = data.apiBase;
+          const apiBase = data.apiBase;
+          const helperConfigResp = await fetch(apiBase.replace(/\/$/, '') + '/ocr-watch/helper-config?deviceId=' + encodeURIComponent(config.deviceId || ('device-' + Date.now())), {
+            headers: { 'Authorization': 'Bearer ' + data.token }
+          });
+          const helperConfig = await helperConfigResp.json();
+          if (!helperConfigResp.ok || helperConfig.code !== 200 || !helperConfig.data || !helperConfig.data.helperToken) {
+            throw new Error(helperConfig.message || 'helper config failed');
+          }
+
+          // Save the dedicated helper identity. Do not keep the browser user token.
+          config.helperToken = helperConfig.data.helperToken;
+          config.helperClientId = helperConfig.data.helperClientId || null;
+          config.apiBase = helperConfig.data.apiBase || apiBase;
           if (data.deviceId) config.deviceId = data.deviceId;
+          if (helperConfig.data.deviceId) config.deviceId = helperConfig.data.deviceId;
           writeJson(CONFIG_PATH, config);
 
           console.log('✅ 本地助手已激活，Token 已保存');
