@@ -74,12 +74,6 @@ function initOCR() {
   // auto-watch polling moved to ocr-watch-v2.js
 
   // 页面加载时自动加载待处理任务
-  setTimeout(() => {
-    if (currentUser) {
-      loadPendingTasksFromBackend();
-    }
-  }, 500);
-
   // 检测 URL 参数 ?setup=1，自动触发首次配置
   checkSetupMode();
 }
@@ -233,6 +227,7 @@ function renderOCRQueue() {
   // auto-watch items (from ocr-watch-v2.js)
   const watchTask = window.ocrWatchTask;
   const watchTaskMatchesProject = watchTask && Number(watchTask.projectId) === Number(curPid);
+  const watchPaused = watchTaskMatchesProject && (watchTask.status === 'paused' || ocrPausedByUser);
   const watchPendingFiles = (watchTaskMatchesProject && Array.isArray(watchTask.pendingFiles))
     ? watchTask.pendingFiles.filter(name => String(name || '').trim())
     : [];
@@ -254,7 +249,7 @@ function renderOCRQueue() {
     if (watchCurrentFile) {
       watchQueueItems.push({
         name: watchCurrentFile,
-        status: watchTask.status === 'error' ? 'error' : 'processing',
+        status: watchTask.status === 'error' ? 'error' : (watchPaused ? 'paused' : 'processing'),
         error: watchTask.status === 'error' ? (watchTask.lastError || '处理失败') : '',
         source: 'auto'
       });
@@ -262,7 +257,7 @@ function renderOCRQueue() {
     // 待处理的文件
     watchPendingFiles.forEach(name => {
       if (name !== watchCurrentFile) {
-        watchQueueItems.push({ name, status: 'pending', error: '', source: 'auto' });
+        watchQueueItems.push({ name, status: watchPaused ? 'paused' : 'pending', error: '', source: 'auto' });
       }
     });
   }
@@ -276,6 +271,24 @@ function renderOCRQueue() {
   if (queueCount) queueCount.textContent = totalPending;
   if (queueArea) queueArea.style.display = 'block';
 
+  const btnPauseBatch = document.getElementById('btnPauseBatch');
+  if (btnPauseBatch) {
+    const hasManualActive = visibleItems.some(({ item }) => item.status === 'pending' || item.status === 'processing');
+    const hasAutoActive = watchQueueItems.some(item => item.status === 'pending' || item.status === 'processing' || item.status === 'paused');
+    btnPauseBatch.disabled = !(hasManualActive || hasAutoActive || ocrRunning || ocrPausedByUser);
+    if (watchPaused || ocrPausedByUser) {
+      btnPauseBatch.dataset.paused = '1';
+      btnPauseBatch.textContent = '▶ 继续';
+      btnPauseBatch.classList.add('is-paused');
+      if (queueArea) queueArea.classList.add('queue-paused');
+    } else if (!ocrPausedByUser) {
+      btnPauseBatch.dataset.paused = '0';
+      btnPauseBatch.textContent = '⏸ 暂停';
+      btnPauseBatch.classList.remove('is-paused');
+      if (queueArea) queueArea.classList.remove('queue-paused');
+    }
+  }
+
   if (queueList) {
     if (visibleItems.length === 0 && watchQueueItems.length === 0) {
       queueList.innerHTML = '<div style="text-align:center;padding:16px 12px;color:var(--text3);font-size:12px;">暂无解析任务，手动批量上传或战报自动解析产生的内容都会显示在这里</div>';
@@ -283,14 +296,17 @@ function renderOCRQueue() {
       const autoHtml = watchQueueItems.map(item => {
         const statusClass = item.status === 'pending' ? 'qi-pending'
           : item.status === 'processing' ? 'qi-processing'
+          : item.status === 'paused' ? 'qi-pending'
           : item.status === 'done' ? 'qi-done'
           : 'qi-error';
         const statusIcon = item.status === 'pending' ? '⏳'
           : item.status === 'processing' ? '⚙️'
+          : item.status === 'paused' ? '⏸'
           : item.status === 'done' ? '✅'
           : '❌';
         const statusText = item.status === 'pending' ? '等待中'
           : item.status === 'processing' ? '处理中...'
+          : item.status === 'paused' ? '已暂停'
           : item.status === 'done' ? (item.time ? '完成 ' + item.time : '已完成')
           : (item.error || '自动解析失败');
         return `<div class="queue-item">
@@ -785,7 +801,6 @@ async function loadPendingTasksFromBackend() {
 async function startBatchProcess() {
   if (ocrRunning) return;
   // 先从后端拉取待处理任务（自动监听提交的任务）
-  await loadPendingTasksFromBackend();
 
   // 妫€鏌ョН鍒嗭細寰呭鐞嗗紶鏁颁笉鑳借秴杩囧墿浣欑Н鍒嗭紝瀹為檯鎸夋垚鍔熷紶鏁版墸锛堝け璐ヤ笉鎵ｏ級
   const fileCount = ocrQueue.filter(i => i.status === 'pending').length;
@@ -806,7 +821,15 @@ async function startBatchProcess() {
   const btnStart = document.getElementById('btnStartBatch');
   const btnPause = document.getElementById('btnPauseBatch');
   if (btnStart) btnStart.disabled = true;
-  if (btnPause) { btnPause.disabled = false; btnPause.textContent = '⏸ 暂停'; }
+  if (btnPause) {
+    btnPause.disabled = false;
+    btnPause.textContent = '⏸ 暂停';
+    btnPause.dataset.paused = '0';
+    btnPause.classList.remove('is-paused');
+    console.log('[OCR] 战报解析列表暂停按钮已启用');
+  }
+  const queueAreaStart = document.getElementById('queueArea');
+  if (queueAreaStart) queueAreaStart.classList.remove('queue-paused');
 
   let processing = 0;
   let idx = 0;
@@ -1076,7 +1099,14 @@ async function startBatchProcess() {
     // 鈹€鈹€ 鎵瑰鐞嗗叏閮ㄧ粨鏉?鈹€鈹€
     ocrRunning = false;
     if (btnStart) btnStart.disabled = false;
-    if (btnPause) { btnPause.disabled = true; btnPause.textContent = '⏸ 暂停'; }
+    if (btnPause) {
+      btnPause.disabled = true;
+      btnPause.textContent = '⏸ 暂停';
+      btnPause.dataset.paused = '0';
+      btnPause.classList.remove('is-paused');
+    }
+    const queueAreaDone = document.getElementById('queueArea');
+    if (queueAreaDone) queueAreaDone.classList.remove('queue-paused');
     throttledRenderAll();
     updateOCRProgress();
     updateOCRStatus('ok', 'OCR 就绪');
@@ -1086,33 +1116,71 @@ async function startBatchProcess() {
   processNext();
 }
 
-function toggleBatchPause() {
+async function toggleBatchPause() {
   const btn = document.getElementById('btnPauseBatch');
   console.log('[OCR] toggleBatchPause called, current ocrPaused:', ocrPaused, 'ocrRunning:', ocrRunning);
+
   if (!ocrPaused) {
-    // ——暂停：立即中止正在进行的 OCR 请求——
+    console.log('[OCR] 执行暂停：手动队列 + 自动监听');
     ocrPaused = true;
     ocrPausedByUser = true;
     if (batchAbortController) batchAbortController.abort();
-    if (btn) btn.textContent = '▶ 继续';
+    if (window.ocrWatchTask) window.ocrWatchTask.status = 'paused';
+
+    if (btn) {
+      btn.textContent = '▶ 继续';
+      btn.dataset.paused = '1';
+      btn.classList.add('is-paused');
+    }
+
+    const queueAreaPause = document.getElementById('queueArea');
+    if (queueAreaPause) queueAreaPause.classList.add('queue-paused');
+    renderOCRQueue();
+
+    if (typeof updateOcrWatchUI === 'function') {
+      try { updateOcrWatchUI(); } catch (e) {}
+    }
+
+    if (typeof pauseOcrWatchTask === 'function') {
+      try { await pauseOcrWatchTask(); } catch (e) { console.warn('[OCR] pause auto watch failed:', e.message); }
+    }
+
     updateOCRStatus('ok', '已暂停');
     console.log('[OCR] 已设置暂停状态');
-  } else {
-    // ——继续：重新启动批处理（已处理完的项保持 done，从第一个 pending 继续）——
-    ocrPaused = false;
-    ocrPausedByUser = false;
-    // 重新创建 AbortController，避免使用已 aborted 的 controller
-    batchAbortController = new AbortController();
-    if (btn) btn.textContent = '⏸ 暂停';
-    updateOCRStatus('work', '继续处理中...');
-    console.log('[OCR] 已取消暂停，准备继续');
-    if (!ocrRunning) {
-      console.log('[OCR] ocrRunning=false，重新启动 startBatchProcess');
-      startBatchProcess();
-    }
+    return;
+  }
+
+  console.log('[OCR] 执行继续：手动队列 + 自动监听');
+  ocrPaused = false;
+  ocrPausedByUser = false;
+  batchAbortController = new AbortController();
+  if (window.ocrWatchTask) window.ocrWatchTask.status = 'running';
+
+  if (btn) {
+    btn.textContent = '⏸ 暂停';
+    btn.dataset.paused = '0';
+    btn.classList.remove('is-paused');
+  }
+
+  const queueAreaResume = document.getElementById('queueArea');
+  if (queueAreaResume) queueAreaResume.classList.remove('queue-paused');
+  renderOCRQueue();
+
+  if (typeof updateOcrWatchUI === 'function') {
+    try { updateOcrWatchUI(); } catch (e) {}
+  }
+
+  if (typeof startOcrWatchTask === 'function') {
+    try { await startOcrWatchTask(); } catch (e) { console.warn('[OCR] resume auto watch failed:', e.message); }
+  }
+
+  updateOCRStatus('work', '继续处理中...');
+  console.log('[OCR] 已取消暂停，准备继续');
+  if (!ocrRunning) {
+    console.log('[OCR] ocrRunning=false，重新启动 startBatchProcess');
+    startBatchProcess();
   }
 }
-
 function updateOCRProgress() {
   const curPid = normalizeQueueProjectId(window.currentProjectId);
 
@@ -1451,3 +1519,14 @@ async function manualRefreshHelperStatus(btn) {
     }
   }
 }
+
+// Inline buttons in index.html call these names directly.
+window.initOCR = initOCR;
+window.renderOCRQueue = renderOCRQueue;
+window.removeQueueItem = removeQueueItem;
+window.clearQueue = clearQueue;
+window.startBatchProcess = startBatchProcess;
+window.toggleBatchPause = toggleBatchPause;
+window.updateOCRProgress = updateOCRProgress;
+window.showPointsInsufficientModal = showPointsInsufficientModal;
+window.closePointsInsufficientModal = closePointsInsufficientModal;

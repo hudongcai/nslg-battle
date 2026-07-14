@@ -116,6 +116,7 @@ async function initDB() {
     await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN current_file VARCHAR(512) DEFAULT ''`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN pending_count INT DEFAULT 0`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN processed_count INT DEFAULT 0`).catch(()=>{});
+    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN failed_count INT DEFAULT 0`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN last_heartbeat DATETIME NULL`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN last_error VARCHAR(500) DEFAULT ''`).catch(()=>{});
     // OCR 待处理任务表
@@ -1166,6 +1167,15 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     if (!uRows.length) return res.json({ code: 401, message: '用户不存在' });
     const userId = uRows[0].id;
     if ((uRows[0].credit_balance || 0) <= 0) return res.json({ code: 402, message: '积分不足' });
+    const helperTaskId = Number(req.body && req.body.helperTaskId);
+    if (Number.isInteger(helperTaskId) && helperTaskId > 0) {
+      const [taskRows] = await pool.query(
+        'SELECT status FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+        [helperTaskId, userId]
+      );
+      if (!taskRows.length) return res.json({ code: 404, message: '监听任务不存在' });
+      if (taskRows[0].status !== 'running') return res.json({ code: 409, message: '监听任务已暂停' });
+    }
     const cleanImage = image.replace(/^data:[^;]+;base64,/, '');
 
     const { heroNames, tacticNames, playerNames, allianceNames } = await getCachedDicts(projectId);
@@ -1234,29 +1244,18 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     await pool.query('UPDATE users SET credit_balance = credit_balance - 1 WHERE id = ?', [userId]);
     await pool.query('INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) SELECT ?, -1, credit_balance, ?, ?, ?, NOW() FROM users WHERE id = ?', [userId, 'consume', `OCR识别: ${imageName || '战报'}`, userId, userId]);
 
-    if (req.body && req.body.helperTaskId) {
-      const taskId = Number(req.body.helperTaskId);
-      if (Number.isInteger(taskId) && taskId > 0) {
-        const [taskRows] = await pool.query('SELECT stats_json FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1', [taskId, userId]);
-        if (taskRows.length) {
-          const currentStats = parseTaskStats(taskRows[0].stats_json);
-          currentStats.uploaded += 1;
-          currentStats.parsed += 1;
-          currentStats.pending = Math.max(0, currentStats.discovered - currentStats.uploaded);
-          await pool.query(
-            `UPDATE ocr_watch_tasks
-             SET status = 'running',
-                 helper_client_id = COALESCE(?, helper_client_id),
-                 last_heartbeat_at = NOW(),
-                 last_upload_at = NOW(),
-                 last_error = NULL,
-                 stats_json = ?,
-                 updated_at = NOW()
-             WHERE id = ?`,
-            [req.helperClientId || null, JSON.stringify(currentStats), taskId]
-          );
-        }
-      }
+    if (Number.isInteger(helperTaskId) && helperTaskId > 0) {
+      await pool.query(
+        `UPDATE ocr_watch_tasks
+         SET pending_count = GREATEST(pending_count - 1, 0),
+             processed_count = processed_count + 1,
+             current_file = '',
+             last_error = '',
+             last_heartbeat = NOW(),
+             updated_at = NOW()
+         WHERE id = ? AND user_id = ? AND status = 'running'`,
+        [helperTaskId, userId]
+      );
     }
     record.id = newId; record.cloudId = newId; record.projectId = projectId;
     record.attackerName = record.leftPlayer || ''; record.enemyName = record.rightPlayer || '';
@@ -1800,7 +1799,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
       return res.json({ code: 400, message: '项目参数无效' });
     }
 
-    let sql = 'SELECT id, user_id, project_id, folder_path, status, pending_count, processed_count, processed_files_json, pending_files_json, current_file, last_error, last_heartbeat, created_at, updated_at, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = ocr_watch_tasks.project_id AND br.status = 1) AS actual_processed FROM ocr_watch_tasks WHERE user_id = ?';
+    let sql = 'SELECT id, user_id, project_id, folder_path, status, pending_count, processed_count, failed_count, processed_files_json, pending_files_json, current_file, last_error, last_heartbeat, created_at, updated_at, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = ocr_watch_tasks.project_id AND br.status = 1) AS actual_processed FROM ocr_watch_tasks WHERE user_id = ?';
     const params = [req.authUserId];
 
     if (hasProjectFilter) {
@@ -1811,14 +1810,38 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
     sql += ' ORDER BY updated_at DESC, id DESC';
 
     const [rows] = await pool.query(sql, params);
+    const projectIds = [...new Set(rows.map(r => r.project_id).filter(Boolean))];
+    const processedFilesByProject = new Map();
+    if (projectIds.length) {
+      const placeholders = projectIds.map(() => '?').join(',');
+      const [fileRows] = await pool.query(
+        `SELECT bg.project_id, bg.original_name
+         FROM battle_gallery bg
+         INNER JOIN battle_records br ON bg.battle_id = br.id
+         WHERE bg.uploaded_by = ?
+           AND bg.project_id IN (${placeholders})
+           AND bg.original_name != ''
+           AND bg.status = 1
+           AND br.left_general_1 IS NOT NULL
+           AND br.left_general_1 != ''`,
+        [req.authUserId, ...projectIds]
+      );
+      fileRows.forEach(row => {
+        const key = String(row.project_id);
+        if (!processedFilesByProject.has(key)) processedFilesByProject.set(key, []);
+        processedFilesByProject.get(key).push(row.original_name);
+      });
+    }
+
     const data = rows.map(r => ({
       id: r.id,
       projectId: r.project_id,
       folderPath: r.folder_path || '',
       status: r.status,
       pendingCount: r.pending_count || 0,
+      failedCount: r.failed_count || 0,
       processedCount: Number(r.actual_processed) || 0,
-      processedFilesJson: safeJsonParse(r.processed_files_json, []),
+      processedFilesJson: processedFilesByProject.get(String(r.project_id)) || [],
       pendingFiles: safeJsonParse(r.pending_files_json, []),
       currentFile: r.current_file || '',
       lastError: r.last_error || '',
@@ -1869,6 +1892,7 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
         updateFields.push('processed_files_json = NULL');
         updateFields.push('processed_count = 0');
         updateFields.push('pending_count = 0');
+        updateFields.push('failed_count = 0');
       }
 
       updateParams.push(existing[0].id);
@@ -1924,6 +1948,19 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
     const updateFields = ['status = ?', 'updated_at = NOW()'];
     const updateParams = [nextStatus];
 
+    if (nextStatus === 'running') {
+      await pool.query(
+        `UPDATE ocr_watch_tasks
+         SET status = 'idle',
+             pending_count = 0,
+             pending_files_json = JSON_ARRAY(),
+             current_file = '',
+             updated_at = NOW()
+         WHERE user_id = ? AND id <> ?`,
+        [req.authUserId, taskId]
+      );
+    }
+
     // 开始时清空错误信息、心跳和待处理数量
     if (nextStatus === 'running') {
       updateFields.push('last_error = ?');
@@ -1959,6 +1996,11 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
     const updateFields = ['updated_at = NOW()'];
     const updateParams = [];
 
+    if (pendingCount !== undefined) {
+      updateFields.push('pending_count = ?');
+      updateParams.push(Math.max(0, Number(pendingCount) || 0));
+    }
+
     // pendingCount 不从客户端接收，由后端自动计算
     // if (pendingCount !== undefined) {
     //   updateFields.push('pending_count = ?');
@@ -1981,9 +2023,11 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
     }
 
     // pending_count 从 ocr_pending_tasks 表实时查询
-    updateFields.push('pending_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ? AND status = ?)');
-    updateParams.push(taskId);
-    updateParams.push('pending');
+    if (pendingCount === undefined) updateFields.push('pending_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ? AND status = ?)');
+    if (pendingCount === undefined) {
+      updateParams.push(taskId);
+      updateParams.push('pending');
+    }
 
     if (currentFile !== undefined) {
       updateFields.push('current_file = ?');

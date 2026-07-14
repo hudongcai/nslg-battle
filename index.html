@@ -6,6 +6,60 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>真武团的三谋队伍克制分析工具</title>
+<script>
+window.setQueuePauseVisual = function(paused) {
+  var btn = document.getElementById('btnPauseBatch');
+  var area = document.getElementById('queueArea');
+  if (btn) {
+    btn.dataset.paused = paused ? '1' : '0';
+    btn.textContent = paused ? '▶ 继续' : '⏸ 暂停';
+    btn.classList.toggle('is-paused', !!paused);
+  }
+  if (area) area.classList.toggle('queue-paused', !!paused);
+};
+window.handleQueuePauseState = async function(shouldPause, btn) {
+  window.setQueuePauseVisual(shouldPause);
+  try {
+    if (window.ocrWatchTask) window.ocrWatchTask.status = shouldPause ? 'paused' : 'running';
+    if (typeof updateOcrWatchUI === 'function') updateOcrWatchUI();
+    if (typeof renderOCRQueue === 'function') renderOCRQueue();
+    window.setQueuePauseVisual(shouldPause);
+    if (shouldPause && typeof pauseOcrWatchTask === 'function') await pauseOcrWatchTask();
+    if (!shouldPause && typeof startOcrWatchTask === 'function') await startOcrWatchTask();
+    if (typeof toggleBatchPause === 'function') {
+      var internalPaused = typeof ocrPaused !== 'undefined' ? !!ocrPaused : null;
+      if (internalPaused !== shouldPause) await toggleBatchPause();
+    }
+  } catch (e) {
+    console.warn('[OCR] queue pause click failed:', e);
+  } finally {
+    window.setQueuePauseVisual(shouldPause);
+  }
+};
+window.handleQueuePauseClick = async function(btn) {
+  var isPausedNow = !!(btn && (btn.dataset.paused === '1' || /继续/.test(btn.textContent || '')));
+  return window.handleQueuePauseState(!isPausedNow, btn);
+};
+document.addEventListener('click', function(e) {
+  var btn = e.target && e.target.closest ? e.target.closest('#btnPauseBatch') : null;
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  console.log('[OCR] 战报解析列表暂停按钮点击', {
+    disabled: btn.disabled,
+    text: btn.textContent,
+    paused: btn.dataset.paused || '0'
+  });
+  if (btn.disabled) {
+    console.warn('[OCR] 暂停按钮当前是禁用状态，点击不会执行暂停');
+    return;
+  }
+  var shouldPause = !(btn.dataset.paused === '1' || /继续/.test(btn.textContent || ''));
+  window.setQueuePauseVisual(shouldPause);
+  window.handleQueuePauseState(shouldPause, btn);
+}, true);
+</script>
 <style>
 :root{--bg:#0c0f1a;--bg2:#121729;--bg3:#1a2038;--bg4:#232a45;--accent:#f0b429;--accent2:#ffd166;--accent-dim:rgba(240,180,41,.12);--red:#ff6b6b;--green:#51cf66;--blue:#74c0fc;--orange:#ff922b;--cyan:#66d9e8;--purple:#d4a5ff;--text:#e8eaed;--text2:#8b95a8;--text3:#505b6e;--border:#252d44;--card:#151a2e;--radius:10px;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -150,6 +204,10 @@ td.num{text-align:right;font-family:'Consolas',monospace;}
 .queue-item .qi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .qi-icon{width:20px;text-align:center;flex-shrink:0;}
 .qi-pending{color:var(--text2);}.qi-processing{color:var(--accent);}.qi-done{color:var(--green);}.qi-error{color:var(--red);}
+#queueArea.queue-paused{border-color:rgba(255,209,102,.65)!important;box-shadow:0 0 0 1px rgba(255,209,102,.18) inset;}
+#queueArea.queue-paused #btnPauseBatch,.btn.is-paused{background:linear-gradient(135deg,#ffd166,#f59e0b)!important;color:#111827!important;border-color:#ffd166!important;}
+#queueArea.queue-paused .qi-processing,#queueArea.queue-paused .qi-pending{color:#ffd166!important;}
+#queueArea.queue-paused .qi-processing::after,#queueArea.queue-paused .qi-pending::after{content:'（已暂停）';}
 .qi-del{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:rgba(255,82,82,.12);color:var(--red);font-size:13px;cursor:pointer;transition:all .2s;flex-shrink:0;}
 .qi-del:hover{background:rgba(255,82,82,.25);transform:scale(1.15);}
 .points-insufficient-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);z-index:10002;display:flex;align-items:center;justify-content:center;animation:fadeIn .25s;}
@@ -772,7 +830,7 @@ document.addEventListener('click', function(e) {
       <div id="queueArea" style="display:block;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:12px;font-weight:bold;color:var(--accent);">战报解析列表 (<span id="queueCount">0</span>)</span>
-          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch" onclick="toggleBatchPause()" disabled>⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
+          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="batchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
         <div class="queue-list" id="queueList"></div>
@@ -2172,8 +2230,8 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script src="user-system.js?v=202607041930"></script>
   <script src="project-system.js?v=20260619001"></script>
   <script src="role-system.js?v=202605110001"></script>
-  <script src="ocr-system.js?v=202607091030"></script>
-  <script src="ocr-watch-v2.js?v=202607111951"></script>
+  <script src="ocr-system.js?v=202607140315"></script>
+  <script src="ocr-watch-v2.js?v=202607140315"></script>
   <script src="data-perm.js?v=202605111120"></script>
   <script src="points-mall.js?v=202607021"></script>
   <script src="ocr-dict-system.js?v=20260619002"></script>

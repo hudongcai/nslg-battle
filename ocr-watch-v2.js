@@ -218,10 +218,9 @@ async function loadOcrWatchTask(projectId) {
         if (typeof renderDataTable === 'function') {
           try { renderDataTable(); } catch(e) {}
         }
-      }
-      // notify queue list to refresh - reload pending tasks from backend
-      if (typeof loadPendingTasksFromBackend === 'function') {
-        try { await loadPendingTasksFromBackend(); } catch(e) {}
+        if (typeof updateUserNavPoints === 'function') {
+          try { await updateUserNavPoints(); } catch(e) {}
+        }
       }
       if (typeof renderOCRQueue === 'function') renderOCRQueue();
     }
@@ -354,6 +353,17 @@ async function ocrWatchControl(action) {
 
   // 乐观更新UI：立即更新按钮状态，不等后端响应
   const btnToggle = document.getElementById('btnOcrWatchToggle');
+  if (window.ocrWatchTask) {
+    if (action === 'pause') {
+      window.ocrWatchTask.status = 'paused';
+    } else if (action === 'start' || action === 'resume') {
+      window.ocrWatchTask.status = 'running';
+    } else if (action === 'stop') {
+      window.ocrWatchTask.status = 'idle';
+    }
+    if (typeof updateOcrWatchUI === 'function') updateOcrWatchUI();
+    if (typeof renderOCRQueue === 'function') renderOCRQueue();
+  }
   if (btnToggle) {
     if (action === 'pause') {
       btnToggle.textContent = '▶ 继续监听';
@@ -419,7 +429,16 @@ async function selectOcrWatchFolder() {
   // 已运行且已配置：直接调用文件夹选择接口
   try {
     const HELPER_API = 'http://127.0.0.1:9999';
-    var resp = await fetch(HELPER_API + '/select-folder', {
+    var currentFolder = '';
+    var inputBeforeSelect = document.getElementById('ocrWatchFolder');
+    if (inputBeforeSelect && inputBeforeSelect.value) {
+      currentFolder = inputBeforeSelect.value;
+    } else if (window.ocrWatchTask && window.ocrWatchTask.folderPath) {
+      currentFolder = window.ocrWatchTask.folderPath;
+    }
+    var selectUrl = HELPER_API + '/select-folder'
+      + (currentFolder ? ('?initialPath=' + encodeURIComponent(currentFolder)) : '');
+    var resp = await fetch(selectUrl, {
       method: 'GET',
       signal: AbortSignal.timeout(120000)
     });
@@ -446,15 +465,15 @@ async function startOcrWatchTask() {
     await loadOcrWatchTask(window.currentProjectId);
   }
   if (!window.ocrWatchTask) { console.warn('[OCR-Watch] start: 无任务'); return; }
-  ocrWatchControl('start');
+  return await ocrWatchControl('start');
 }
 async function pauseOcrWatchTask() {
   if (!window.ocrWatchTask) { console.warn('[OCR-Watch] pause: 无任务'); return; }
-  ocrWatchControl('pause');
+  return await ocrWatchControl('pause');
 }
 async function stopOcrWatchTask() {
   if (!window.ocrWatchTask) { console.warn('[OCR-Watch] stop: 无任务'); return; }
-  ocrWatchControl('stop');
+  return await ocrWatchControl('stop');
 }
 
 // 切换开始/暂停

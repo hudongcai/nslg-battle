@@ -119,7 +119,7 @@ async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
-  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + '/battles/ocr-tasks', {
+  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + '/battles/ocr-upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -129,12 +129,18 @@ async function uploadFile(config, task, filePath, fileName) {
       image: base64,
       projectId: task.projectId || null,
       imageName: fileName,
+      source: 'auto-watch',
       helperTaskId: task.id
     })
   });
 
   const data = await resp.json();
-  if (!resp.ok || data.code !== 200) throw new Error(data.message || ('Upload failed: HTTP ' + resp.status));
+  if (!resp.ok || data.code !== 200) {
+    const err = new Error(data.message || ('Upload failed: HTTP ' + resp.status));
+    err.code = data.code || resp.status;
+    throw err;
+  }
+  return data.data || null;
 }
 
 // 更新进度
@@ -169,17 +175,23 @@ async function processTask(config, state, task) {
     return;
   }
 
-  // 获取本地已处理文件
-  let processedFiles = new Set(state.processedByTask[taskKey] || []);
+  // MySQL is authoritative. Local cache is only a fallback when the server cannot be reached.
+  let processedFiles = new Set();
+  let loadedServerProcessedFiles = false;
 
   // 从后端获取已成功解析的文件列表（防止重复提交）
   try {
     const data = await apiFetch(config, `/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(task.projectId || '')}`);
     if (Array.isArray(data.data)) {
+      loadedServerProcessedFiles = true;
       data.data.forEach(name => processedFiles.add(name));
     }
   } catch (e) {
     console.warn(`[${taskKey}] 查询已解析文件失败，仅使用本地缓存:`, e.message);
+  }
+
+  if (!loadedServerProcessedFiles) {
+    processedFiles = new Set(state.processedByTask[taskKey] || []);
   }
 
   // 获取所有文件
@@ -191,6 +203,7 @@ async function processTask(config, state, task) {
   if (newFiles.length === 0) {
     // update heartbeat (no new files) - clear pending/current
     await updateProgress(config, task, {
+      pendingCount: 0,
       pendingFiles: [],
       currentFile: '',
       processedCount: processedFiles.size,
@@ -202,6 +215,7 @@ async function processTask(config, state, task) {
 
   // report pending files before processing
   await updateProgress(config, task, {
+    pendingCount: newFiles.length,
     pendingFiles: newFiles.slice(),
     currentFile: '',
     processedCount: processedFiles.size,
@@ -217,6 +231,28 @@ async function processTask(config, state, task) {
   for (let i = 0; i < newFiles.length; i++) {
     const fileName = newFiles[i];
     const fullPath = path.join(folderPath, fileName);
+
+    // Check status before starting each file so pause stops the next image.
+    try {
+      const tasks = await listTasks(config);
+      const currentTask = tasks.find(t => String(t.id) === taskKey);
+      if (!currentTask || currentTask.status !== 'running') {
+        console.log(`[${taskKey}] task status is ${currentTask ? currentTask.status : 'deleted'}, stop before next file`);
+        state.processedByTask[taskKey] = Array.from(processedFiles);
+        writeJson(STATE_PATH, state);
+        await updateProgress(config, task, {
+          pendingCount: newFiles.slice(i).length,
+          pendingFiles: newFiles.slice(i),
+          currentFile: '',
+          processedCount: processedFiles.size,
+          processedFilesJson: Array.from(processedFiles),
+          lastHeartbeat: new Date().toISOString()
+        });
+        return;
+      }
+    } catch (checkErr) {
+      console.warn(`[${taskKey}] status check before file failed:`, checkErr.message);
+    }
 
     // check file size (max 5MB)
     const stats = fs.statSync(fullPath);
@@ -238,6 +274,7 @@ async function processTask(config, state, task) {
     // report current file before upload
     const remaining = newFiles.slice(i + 1);
     await updateProgress(config, task, {
+      pendingCount: remaining.length + 1,
       pendingFiles: newFiles.slice(i),
       currentFile: fileName,
       lastHeartbeat: new Date().toISOString()
@@ -248,9 +285,25 @@ async function processTask(config, state, task) {
       processedFiles.add(fileName);
       successCount++;
       console.log(`[${taskKey}] ok ${fileName}`);
+      await updateProgress(config, task, {
+        pendingCount: remaining.length,
+        pendingFiles: remaining,
+        currentFile: '',
+        processedCount: processedFiles.size,
+        processedFilesJson: Array.from(processedFiles),
+        lastError: '',
+        lastHeartbeat: new Date().toISOString()
+      });
     } catch (e) {
       console.error(`[${taskKey}] fail ${fileName}:`, e.message);
       lastError = `${fileName}: ${e.message}`;
+      await updateProgress(config, task, {
+        pendingCount: remaining.length,
+        pendingFiles: remaining,
+        currentFile: '',
+        lastError,
+        lastHeartbeat: new Date().toISOString()
+      });
     }
 
     // 每个文件处理完后检查任务状态（支持用户暂停/停止）
@@ -276,6 +329,7 @@ async function processTask(config, state, task) {
 
   // update progress - clear pending/current, all done
   await updateProgress(config, task, {
+    pendingCount: 0,
     pendingFiles: [],
     currentFile: '',
     processedCount: processedFiles.size,
@@ -437,6 +491,7 @@ function startHttpServer(config) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
@@ -498,7 +553,9 @@ function startHttpServer(config) {
     }
 
     // /select-folder - 弹出文件夹选择器
-    if (req.url === '/select-folder' && req.method === 'GET') {
+    const reqUrl = new URL(req.url, 'http://127.0.0.1');
+
+    if (reqUrl.pathname === '/select-folder' && req.method === 'GET') {
       const { execSync } = require('child_process');
       const os = require('os');
 
@@ -517,8 +574,14 @@ function startHttpServer(config) {
           fs.unlinkSync(resultPath);
         }
 
+        const initialPath = String(reqUrl.searchParams.get('initialPath') || config.lastFolderPath || '').trim();
+        const safeInitialPath = initialPath && fs.existsSync(initialPath) ? initialPath.replace(/"/g, '') : '';
+
         // 调用 fpicker.exe
-        const cmdArgs = `"${exePath}" "${resultPath}"`;
+        let cmdArgs = `"${exePath}" "${resultPath}"`;
+        if (safeInitialPath) {
+          cmdArgs += ` "${safeInitialPath}"`;
+        }
         execSync(`cmd /c start "FolderPicker" /min /wait ${cmdArgs}`, { timeout: 120000 });
 
         // 读取结果
@@ -529,6 +592,11 @@ function startHttpServer(config) {
             folderPath = raw;
           }
           fs.unlinkSync(resultPath);
+        }
+
+        if (folderPath) {
+          config.lastFolderPath = folderPath;
+          writeJson(CONFIG_PATH, config);
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -561,6 +629,7 @@ function startHttpServer(config) {
           const config = readJson(CONFIG_PATH, { apiBase: DEFAULT_API_BASE, helperToken: '', clientId: null, deviceId: '', taskFolders: {} });
           if (!config.taskFolders) config.taskFolders = {};
           config.taskFolders[String(taskId)] = folderPath;
+          config.lastFolderPath = folderPath;
           writeJson(CONFIG_PATH, config);
 
           res.writeHead(200, { 'Content-Type': 'application/json' });

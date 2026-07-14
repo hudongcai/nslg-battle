@@ -205,7 +205,7 @@ function Invoke-HelperApi {
     if (-not $Anonymous) {
         $token = [string]$config.helperToken
         if ([string]::IsNullOrWhiteSpace($token)) {
-            throw '助手尚未连接，请先粘贴网页中的连接码。'
+            throw '助手尚未连接。请先在网页登录并打开自动监听；若自动连接失败，再使用备用连接码。'
         }
         $headers['Authorization'] = "Bearer $token"
     }
@@ -869,7 +869,7 @@ function Refresh-UiTasks {
                 Set-Status $deviceText ([System.Drawing.Color]::FromArgb(55, 125, 34))
             }
         } else {
-            Set-Status '助手尚未连接，请先粘贴网页中的连接码。' ([System.Drawing.Color]::DimGray)
+            Set-Status '助手尚未连接。请在网页登录后打开自动监听，网页会自动连接本助手。' ([System.Drawing.Color]::DimGray)
         }
     } catch {
         Set-Status $_.Exception.Message ([System.Drawing.Color]::Firebrick)
@@ -1099,51 +1099,80 @@ $form.Add_Shown({
     }
 })
 
-# 统一使用连接码输入界面（不再区分首次运行和正常界面）
+# 主界面：默认使用网页自动激活，连接码仅作为备用入口
 $config = Read-HelperConfig
 
-# === 连接码输入界面 ===
-$form.Size = New-Object System.Drawing.Size(520, 400)
+$form.Size = New-Object System.Drawing.Size(560, 430)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = '真武本地助手'
-$title.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
-$title.Location = New-Object System.Drawing.Point(30, 25)
+$title.Font = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold)
+$title.Location = New-Object System.Drawing.Point(30, 24)
 $title.AutoSize = $true
 $form.Controls.Add($title)
 
-$guide = New-Object System.Windows.Forms.Label
-$guide.Text = "① 点击下方按钮打开配置网页`n② 在网页中生成并复制连接码`n③ 将连接码粘贴到下方输入框"
-$guide.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$guide.ForeColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-$guide.Location = New-Object System.Drawing.Point(30, 65)
-$guide.Size = New-Object System.Drawing.Size(460, 90)
-$form.Controls.Add($guide)
+$summary = New-Object System.Windows.Forms.Label
+$summary.Text = "网页会自动连接本地助手。通常不需要复制连接码。`n请在网页中登录账号、选择项目和监听目录，然后开始监听。"
+$summary.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$summary.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 55)
+$summary.Location = New-Object System.Drawing.Point(32, 64)
+$summary.Size = New-Object System.Drawing.Size(490, 56)
+$form.Controls.Add($summary)
 
 $openWebButton = New-Object System.Windows.Forms.Button
-$openWebButton.Text = '🌐 打开配置网页'
+$openWebButton.Text = '打开网页配置自动监听'
 $openWebButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$openWebButton.Location = New-Object System.Drawing.Point(30, 170)
-$openWebButton.Size = New-Object System.Drawing.Size(460, 40)
+$openWebButton.Location = New-Object System.Drawing.Point(32, 132)
+$openWebButton.Size = New-Object System.Drawing.Size(235, 42)
 $openWebButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $openWebButton.ForeColor = [System.Drawing.Color]::White
 $openWebButton.FlatStyle = 'Flat'
 $openWebButton.Add_Click({
-    Start-Process 'https://www.zhenwu.fun/?setup=1'
+    $config = Read-HelperConfig
+    $apiBase = Get-ApiBase $config
+    if ($apiBase -match 'localhost|127\.0\.0\.1') {
+        Start-Process ($apiBase -replace '/api/?$', '/')
+    } else {
+        Start-Process 'https://www.zhenwu.fun/?setup=1'
+    }
 })
 $form.Controls.Add($openWebButton)
 
-$codeLabel = New-Object System.Windows.Forms.Label
-$codeLabel.Text = '连接码:'
-$codeLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$codeLabel.Location = New-Object System.Drawing.Point(30, 235)
-$codeLabel.AutoSize = $true
-$form.Controls.Add($codeLabel)
+$checkStatusButton = New-Object System.Windows.Forms.Button
+$checkStatusButton.Text = '检查助手状态'
+$checkStatusButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$checkStatusButton.Location = New-Object System.Drawing.Point(285, 132)
+$checkStatusButton.Size = New-Object System.Drawing.Size(235, 42)
+$checkStatusButton.Add_Click({ Show-HelperStatus })
+$form.Controls.Add($checkStatusButton)
+
+$hint = New-Object System.Windows.Forms.Label
+$hint.Text = '提示：监听目录请在网页里选择。这个窗口可以关闭，助手会留在托盘后台运行。'
+$hint.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$hint.ForeColor = [System.Drawing.Color]::FromArgb(95, 95, 95)
+$hint.Location = New-Object System.Drawing.Point(32, 190)
+$hint.Size = New-Object System.Drawing.Size(490, 24)
+$form.Controls.Add($hint)
+
+$advancedGroup = New-Object System.Windows.Forms.GroupBox
+$advancedGroup.Text = '手动连接码（备用）'
+$advancedGroup.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$advancedGroup.Location = New-Object System.Drawing.Point(30, 228)
+$advancedGroup.Size = New-Object System.Drawing.Size(500, 92)
+$form.Controls.Add($advancedGroup)
+
+$advancedHint = New-Object System.Windows.Forms.Label
+$advancedHint.Text = '只有网页自动连接失败时，才需要在这里粘贴连接码。'
+$advancedHint.Font = New-Object System.Drawing.Font('Segoe UI', 8)
+$advancedHint.ForeColor = [System.Drawing.Color]::DimGray
+$advancedHint.Location = New-Object System.Drawing.Point(12, 22)
+$advancedHint.Size = New-Object System.Drawing.Size(470, 18)
+$advancedGroup.Controls.Add($advancedHint)
 
 $script:LinkCodeBox = New-Object System.Windows.Forms.TextBox
 $script:LinkCodeBox.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$script:LinkCodeBox.Location = New-Object System.Drawing.Point(30, 260)
-$script:LinkCodeBox.Size = New-Object System.Drawing.Size(340, 30)
+$script:LinkCodeBox.Location = New-Object System.Drawing.Point(12, 48)
+$script:LinkCodeBox.Size = New-Object System.Drawing.Size(350, 30)
 $script:LinkCodeBox.Add_KeyDown({
     param($sender, $e)
     if ($e.Control -and $e.KeyCode -eq 'A') {
@@ -1151,31 +1180,44 @@ $script:LinkCodeBox.Add_KeyDown({
         $e.SuppressKeyPress = $true
     }
 })
-$form.Controls.Add($script:LinkCodeBox)
+$advancedGroup.Controls.Add($script:LinkCodeBox)
 
 $connectButton = New-Object System.Windows.Forms.Button
-$connectButton.Text = '连接'
-$connectButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$connectButton.Location = New-Object System.Drawing.Point(380, 258)
-$connectButton.Size = New-Object System.Drawing.Size(110, 34)
-$form.Controls.Add($connectButton)
+$connectButton.Text = '手动连接'
+$connectButton.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$connectButton.Location = New-Object System.Drawing.Point(374, 46)
+$connectButton.Size = New-Object System.Drawing.Size(108, 30)
+$advancedGroup.Controls.Add($connectButton)
 
 $script:StatusLabel = New-Object System.Windows.Forms.Label
-$script:StatusLabel.Text = '状态: 等待连接...'
+$script:StatusLabel.Text = '状态: 等待网页自动连接...'
 $script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $script:StatusLabel.ForeColor = [System.Drawing.Color]::DimGray
-$script:StatusLabel.Location = New-Object System.Drawing.Point(30, 310)
-$script:StatusLabel.Size = New-Object System.Drawing.Size(460, 30)
+$script:StatusLabel.Location = New-Object System.Drawing.Point(32, 338)
+$script:StatusLabel.Size = New-Object System.Drawing.Size(490, 30)
 $form.Controls.Add($script:StatusLabel)
+
+# Hidden grid kept for legacy launch/bind helpers that still use Refresh-UiTasks.
+$script:TaskGrid = New-Object System.Windows.Forms.DataGridView
+$script:TaskGrid.Visible = $false
+$script:TaskGrid.AllowUserToAddRows = $false
+$script:TaskGrid.RowHeadersVisible = $false
+$script:TaskGrid.Columns.Add('id', 'ID') | Out-Null
+$script:TaskGrid.Columns.Add('projectId', '项目') | Out-Null
+$script:TaskGrid.Columns.Add('name', '任务') | Out-Null
+$script:TaskGrid.Columns.Add('status', '状态') | Out-Null
+$script:TaskGrid.Columns.Add('folderPath', '目录') | Out-Null
+$script:TaskGrid.Columns.Add('uploaded', '成功') | Out-Null
+$script:TaskGrid.Columns.Add('pending', '待处理') | Out-Null
+$script:TaskGrid.Columns.Add('updatedAt', '更新时间') | Out-Null
+$form.Controls.Add($script:TaskGrid)
 
 if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
     Ensure-DeviceId $config
     Save-HelperConfig $config
-    $script:LinkCodeBox.Text = '已保存连接码，无需重新输入'
     $connectButton.Text = '重新连接'
     Set-Status ("已连接 · 设备标识: " + $config.deviceId) ([System.Drawing.Color]::FromArgb(55, 125, 34))
 }
-
 $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $folderDialog.Description = '请选择会持续新增截图的文件夹。'
 $folderDialog.ShowNewFolderButton = $false
@@ -1193,10 +1235,7 @@ if (-not [string]::IsNullOrWhiteSpace($script:LaunchLinkCode)) {
 if ($script:LaunchAction -eq 'open') {
     try {
         Apply-LaunchApiBase
-        $config = Read-HelperConfig
-        if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
-            Start-HelperWorker
-        }
+        Start-HelperWorker
         Show-StartupReadyMessage
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -1214,10 +1253,7 @@ if ($script:LaunchAction -eq 'open') {
 if ($script:LaunchAction -eq 'bind-folder') {
     try {
         Apply-LaunchApiBase
-        $config = Read-HelperConfig
-        if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
-            Start-HelperWorker -ForceRestart
-        }
+        Start-HelperWorker -ForceRestart
         Invoke-DirectFolderBind $script:LaunchTaskId
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -1290,11 +1326,9 @@ $timer.Start()
 # 启动 Worker
 try {
     $config = Read-HelperConfig
-    if (-not [string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
-        Ensure-DeviceId $config
-        Save-HelperConfig $config
-        Start-HelperWorker
-    }
+    Ensure-DeviceId $config
+    Save-HelperConfig $config
+    Start-HelperWorker
 } catch {}
 
 # 处理启动参数中的连接码
