@@ -335,8 +335,21 @@ async function saveOcrWatchFolder(folderPath) {
       console.warn('[OCR-Watch] 获取助手设备身份失败:', e.message);
     }
     if (!helperClientId) {
-      alert('本地助手设备身份未就绪，请重新启动或重新激活本地助手后再选择目录');
-      return;
+      console.log('[OCR-Watch] 助手设备身份缺失，尝试自动重新激活');
+      var activated = await activateLocalHelper();
+      if (activated) {
+        try {
+          var retryStatusResp = await fetch('http://127.0.0.1:9999/status', { signal: AbortSignal.timeout(3000) });
+          var retryStatusData = await retryStatusResp.json();
+          helperClientId = retryStatusData && retryStatusData.helperClientId ? retryStatusData.helperClientId : null;
+        } catch (e2) {
+          console.warn('[OCR-Watch] 重新读取助手设备身份失败:', e2.message);
+        }
+      }
+      if (!helperClientId) {
+        alert('本地助手设备身份未就绪，请重新启动或重新安装最新版本地助手后再选择目录');
+        return;
+      }
     }
 
     var resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks', {
