@@ -1896,6 +1896,7 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
         updateFields.push('pending_files_json = JSON_ARRAY()');
         updateFields.push('current_file = ""');
         updateFields.push('last_error = ""');
+        updateFields.push('status = "idle"');
       }
 
       updateParams.push(existing[0].id);
@@ -2063,6 +2064,10 @@ app.post('/api/ocr-watch/tasks/:id/progress', async (req, res) => {
     if (lastError !== undefined) {
       updateFields.push('last_error = ?');
       updateParams.push(String(lastError).slice(0, 500));
+      if (/目录不存在/.test(String(lastError))) {
+        updateFields.push('status = "error"');
+        updateFields.push('current_file = ""');
+      }
     }
 
     if (lastHeartbeat !== undefined) {

@@ -156,9 +156,16 @@ async function updateProgress(config, task, payload) {
 async function processTask(config, state, task) {
   const taskKey = String(task.id);
 
-  // 优先使用本地配置的文件夹路径，否则使用数据库中的路径
+  // The browser saves the user's selected folder to MySQL. Treat that as authoritative.
   const localFolder = config.taskFolders && config.taskFolders[taskKey];
-  const folderPath = localFolder || task.folderPath;
+  const folderPath = task.folderPath || localFolder;
+
+  if (task.folderPath && localFolder !== task.folderPath) {
+    if (!config.taskFolders) config.taskFolders = {};
+    config.taskFolders[taskKey] = task.folderPath;
+    config.lastFolderPath = task.folderPath;
+    writeJson(CONFIG_PATH, config);
+  }
 
   // 检查目录是否设置
   if (!folderPath || folderPath.trim() === '') {
