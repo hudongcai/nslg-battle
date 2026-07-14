@@ -1884,6 +1884,9 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
 
     const normalizedFolder = String(folderPath || '').trim().slice(0, 512);
     const normalizedHelperClientId = Number(helperClientId) || null;
+    if (!normalizedHelperClientId) {
+      return res.json({ code: 400, message: '本地助手设备身份未就绪，请重新激活或安装最新版助手' });
+    }
     if (normalizedHelperClientId) {
       const [helperRows] = await pool.query(
         'SELECT id FROM local_helper_clients WHERE id = ? AND user_id = ? LIMIT 1',
@@ -1954,7 +1957,7 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
 
     // 检查任务是否存在
     const [task] = await pool.query(
-      'SELECT id, folder_path, status FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+      'SELECT id, folder_path, status, helper_client_id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
       [taskId, req.authUserId]
     );
 
@@ -1965,6 +1968,10 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
     // 检查目录是否已设置
     if (!task[0].folder_path && actionMap[action] === 'running') {
       return res.json({ code: 400, message: '请先设置监听目录' });
+    }
+
+    if (!task[0].helper_client_id && actionMap[action] === 'running') {
+      return res.json({ code: 400, message: '监听任务未绑定本地助手，请重新选择监听目录' });
     }
 
     // 状态转换逻辑
@@ -2140,6 +2147,10 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
     if (existing.length > 0 && existing[0].access_token) {
       // 复用已有 token
       helperToken = existing[0].access_token;
+      await pool.query(
+        'UPDATE local_helper_clients SET status = ?, token_expires_at = NULL, updated_at = NOW() WHERE id = ?',
+        ['online', existing[0].id]
+      );
     } else {
       // 生成新的永久 token
       helperToken = randomToken('helper-auth-');
@@ -2167,7 +2178,7 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
       data: {
         helperToken,
         helperClientId,
-        apiBase: req.protocol + '://' + req.get('host') + '/api',
+        apiBase: ((req.get('host') || '').includes('api.zhenwu.fun') ? 'https://api.zhenwu.fun/api' : (req.protocol + '://' + req.get('host') + '/api')),
         userId: req.authUserId,
         deviceId
       }

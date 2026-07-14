@@ -69,8 +69,10 @@ function Normalize-HelperConfig($config) {
 
     Ensure-ConfigProperty $config 'apiBase' $script:DefaultApiBase
     Ensure-ConfigProperty $config 'helperToken' ''
+    Ensure-ConfigProperty $config 'helperClientId' $null
     Ensure-ConfigProperty $config 'clientId' $null
     Ensure-ConfigProperty $config 'deviceId' ''
+    Ensure-ConfigProperty $config 'lastFolderPath' ''
     Ensure-ConfigProperty $config 'taskFolders' @{}
 
     if ([string]::IsNullOrWhiteSpace([string]$config.apiBase)) {
@@ -925,26 +927,30 @@ function Show-StartupReadyMessage {
 
 function Show-HelperStatus {
     try {
-        # 检查 HTTP 服务状态
+        $statusData = $null
         $httpStatus = '❌ 未运行'
-        $httpColor = 'Red'
         try {
-            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9999/ping' -Method GET -TimeoutSec 2 -UseBasicParsing
+            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9999/status' -Method GET -TimeoutSec 2 -UseBasicParsing
             if ($response.StatusCode -eq 200) {
+                $statusData = $response.Content | ConvertFrom-Json
                 $httpStatus = '✅ 正常运行'
-                $httpColor = 'Green'
             }
         } catch {}
 
-        # 检查配置状态
         $config = Read-HelperConfig
         $tokenStatus = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { '❌ 未配置' } else { '✅ 已配置' }
-        $tokenColor = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { 'Red' } else { 'Green' }
+        $helperClientId = if ($statusData -and $statusData.helperClientId) { $statusData.helperClientId } else { $config.helperClientId }
+        $deviceId = if ($statusData -and $statusData.deviceId) { $statusData.deviceId } else { $config.deviceId }
+        $identityStatus = if ([string]::IsNullOrWhiteSpace([string]$helperClientId)) { '❌ 未就绪' } else { "✅ 已就绪 (#$helperClientId)" }
+        $apiBase = if ($statusData -and $statusData.apiBase) { $statusData.apiBase } else { $config.apiBase }
+        $lastFolderPath = if ($statusData -and $statusData.lastFolderPath) { $statusData.lastFolderPath } else { $config.lastFolderPath }
+        $folderStatus = '未选择'
+        if (-not [string]::IsNullOrWhiteSpace([string]$lastFolderPath)) {
+            $exists = if ($statusData -and $null -ne $statusData.folderExists) { [bool]$statusData.folderExists } else { Test-Path -LiteralPath ([string]$lastFolderPath) }
+            $folderStatus = if ($exists) { "✅ 存在：$lastFolderPath" } else { "❌ 不存在：$lastFolderPath" }
+        }
 
-        # 检查后台进程（通过实际进程检测，而不是依赖 UI 启动时保存的进程对象）
         $workerStatus = '❌ 未启动'
-        $workerColor = 'Red'
-        $helperJsPath = Join-Path $PSScriptRoot 'local-helper.js'
         $runningWorker = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
             try {
                 $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
@@ -955,10 +961,8 @@ function Show-HelperStatus {
         }
         if ($runningWorker) {
             $workerStatus = '✅ 运行中'
-            $workerColor = 'Green'
         }
 
-        # 获取版本信息（从 version.json 读取打包时间）
         $versionJsonPath = Join-Path $PSScriptRoot 'version.json'
         $versionTime = '未知'
         if (Test-Path $versionJsonPath) {
@@ -975,18 +979,24 @@ function Show-HelperStatus {
             }
         }
 
-        # 构建状态消息
+        $overallReady = ($httpStatus -like '✅*') -and ($workerStatus -like '✅*') -and ($tokenStatus -like '✅*') -and ($identityStatus -like '✅*')
+        $overallStatus = if ($overallReady) { '✅ 自动监听基础条件已就绪' } else { '❌ 自动监听基础条件未就绪' }
+
         $statusMessage = @"
 版本时间: $versionTime
+
+总体状态: $overallStatus
 
 HTTP 服务 (端口 9999): $httpStatus
 后台进程: $workerStatus
 Token 配置: $tokenStatus
+设备身份: $identityStatus
+设备编号: $deviceId
 
-API 地址: $($config.apiBase)
+API 地址: $apiBase
+最近目录: $folderStatus
 "@
 
-        # 显示状态对话框
         $result = [System.Windows.Forms.MessageBox]::Show(
             $statusMessage,
             '助手状态检查',

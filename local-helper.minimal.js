@@ -70,6 +70,42 @@ function writeJson(fp, value) {
   fs.writeFileSync(fp, JSON.stringify(value, null, 2), 'utf8');
 }
 
+function getRuntimeConfig(config) {
+  const latest = readJson(CONFIG_PATH, null);
+  if (latest && typeof latest === 'object') {
+    return latest;
+  }
+  return config || {};
+}
+
+function buildHelperStatus(config) {
+  const current = getRuntimeConfig(config);
+  const taskFolders = current.taskFolders && typeof current.taskFolders === 'object' ? current.taskFolders : {};
+  const folderPaths = Object.keys(taskFolders).map(key => taskFolders[key]).filter(Boolean);
+  const lastFolderPath = current.lastFolderPath || folderPaths[folderPaths.length - 1] || '';
+  return {
+    status: 'ok',
+    version: '2.0',
+    configured: !!current.helperToken,
+    identityReady: !!current.helperClientId,
+    helperClientId: current.helperClientId || null,
+    deviceId: current.deviceId || '',
+    apiBase: normalizeApiBase(current.apiBase),
+    running: true,
+    lastFolderPath,
+    folderExists: lastFolderPath ? fs.existsSync(lastFolderPath) : null,
+    taskFolders
+  };
+}
+
+function normalizeApiBase(apiBase) {
+  const value = String(apiBase || DEFAULT_API_BASE).trim() || DEFAULT_API_BASE;
+  if (/^http:\/\/api\.zhenwu\.fun\/api\/?$/i.test(value)) {
+    return 'https://api.zhenwu.fun/api';
+  }
+  return value;
+}
+
 function removeFileQuietly(fp) {
   try {
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
@@ -86,7 +122,7 @@ async function apiFetch(config, pathname, options = {}) {
   const headers = Object.assign({}, options.headers || {});
   if (config.helperToken) headers['Authorization'] = 'Bearer ' + config.helperToken;
 
-  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + pathname, Object.assign({}, options, { headers }));
+  const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + pathname, Object.assign({}, options, { headers }));
   const data = await resp.json();
   if (!resp.ok || data.code >= 400) throw new Error(data.message || ('HTTP ' + resp.status));
   return data;
@@ -119,7 +155,7 @@ async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
-  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + '/battles/ocr-upload', {
+  const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + '/battles/ocr-upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -508,13 +544,7 @@ function startHttpServer(config) {
     // /ping - 检测本地助手是否运行
     if (req.url === '/ping' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        status: 'ok', 
-        version: '2.0',
-        configured: !!(config.helperToken),
-        helperClientId: config.helperClientId || null,
-        deviceId: config.deviceId || ''
-      }));
+      res.end(JSON.stringify(buildHelperStatus(config)));
       return;
     }
 
@@ -532,7 +562,9 @@ function startHttpServer(config) {
           }
 
           const apiBase = data.apiBase;
-          const helperConfigResp = await fetch(apiBase.replace(/\/$/, '') + '/ocr-watch/helper-config?deviceId=' + encodeURIComponent(config.deviceId || ('device-' + Date.now())), {
+          const currentConfig = getRuntimeConfig(config);
+          const deviceId = currentConfig.deviceId || data.deviceId || ('device-' + Date.now());
+          const helperConfigResp = await fetch(apiBase.replace(/\/$/, '') + '/ocr-watch/helper-config?deviceId=' + encodeURIComponent(deviceId), {
             headers: { 'Authorization': 'Bearer ' + data.token }
           });
           const helperConfig = await helperConfigResp.json();
@@ -541,12 +573,13 @@ function startHttpServer(config) {
           }
 
           // Save the dedicated helper identity. Do not keep the browser user token.
-          config.helperToken = helperConfig.data.helperToken;
-          config.helperClientId = helperConfig.data.helperClientId || null;
-          config.apiBase = helperConfig.data.apiBase || apiBase;
-          if (data.deviceId) config.deviceId = data.deviceId;
-          if (helperConfig.data.deviceId) config.deviceId = helperConfig.data.deviceId;
-          writeJson(CONFIG_PATH, config);
+          currentConfig.helperToken = helperConfig.data.helperToken;
+          currentConfig.helperClientId = helperConfig.data.helperClientId || null;
+          currentConfig.apiBase = normalizeApiBase(helperConfig.data.apiBase || apiBase);
+          if (data.deviceId) currentConfig.deviceId = data.deviceId;
+          if (helperConfig.data.deviceId) currentConfig.deviceId = helperConfig.data.deviceId;
+          Object.assign(config, currentConfig);
+          writeJson(CONFIG_PATH, currentConfig);
 
           console.log('✅ 本地助手已激活，Token 已保存');
           
@@ -554,8 +587,9 @@ function startHttpServer(config) {
           res.end(JSON.stringify({
             status: 'ok',
             message: '激活成功',
-            helperClientId: config.helperClientId || null,
-            deviceId: config.deviceId || ''
+            identityReady: !!currentConfig.helperClientId,
+            helperClientId: currentConfig.helperClientId || null,
+            deviceId: currentConfig.deviceId || ''
           }));
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -568,13 +602,7 @@ function startHttpServer(config) {
     // /status - 获取当前状态
     if (req.url === '/status' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        configured: !!(config.helperToken),
-        helperClientId: config.helperClientId || null,
-        deviceId: config.deviceId || '',
-        apiBase: config.apiBase || '',
-        running: true
-      }));
+      res.end(JSON.stringify(buildHelperStatus(config)));
       return;
     }
 
@@ -652,11 +680,12 @@ function startHttpServer(config) {
           }
 
           // 更新配置文件
-          const config = readJson(CONFIG_PATH, { apiBase: DEFAULT_API_BASE, helperToken: '', clientId: null, deviceId: '', taskFolders: {} });
-          if (!config.taskFolders) config.taskFolders = {};
-          config.taskFolders[String(taskId)] = folderPath;
-          config.lastFolderPath = folderPath;
-          writeJson(CONFIG_PATH, config);
+          const currentConfig = getRuntimeConfig(config);
+          if (!currentConfig.taskFolders) currentConfig.taskFolders = {};
+          currentConfig.taskFolders[String(taskId)] = folderPath;
+          currentConfig.lastFolderPath = folderPath;
+          Object.assign(config, currentConfig);
+          writeJson(CONFIG_PATH, currentConfig);
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ code: 200, message: 'Task bound successfully' }));

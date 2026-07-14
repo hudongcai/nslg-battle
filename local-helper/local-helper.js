@@ -70,6 +70,42 @@ function writeJson(fp, value) {
   fs.writeFileSync(fp, JSON.stringify(value, null, 2), 'utf8');
 }
 
+function getRuntimeConfig(config) {
+  const latest = readJson(CONFIG_PATH, null);
+  if (latest && typeof latest === 'object') {
+    return latest;
+  }
+  return config || {};
+}
+
+function buildHelperStatus(config) {
+  const current = getRuntimeConfig(config);
+  const taskFolders = current.taskFolders && typeof current.taskFolders === 'object' ? current.taskFolders : {};
+  const folderPaths = Object.keys(taskFolders).map(key => taskFolders[key]).filter(Boolean);
+  const lastFolderPath = current.lastFolderPath || folderPaths[folderPaths.length - 1] || '';
+  return {
+    status: 'ok',
+    version: '2.0',
+    configured: !!current.helperToken,
+    identityReady: !!current.helperClientId,
+    helperClientId: current.helperClientId || null,
+    deviceId: current.deviceId || '',
+    apiBase: normalizeApiBase(current.apiBase),
+    running: true,
+    lastFolderPath,
+    folderExists: lastFolderPath ? fs.existsSync(lastFolderPath) : null,
+    taskFolders
+  };
+}
+
+function normalizeApiBase(apiBase) {
+  const value = String(apiBase || DEFAULT_API_BASE).trim() || DEFAULT_API_BASE;
+  if (/^http:\/\/api\.zhenwu\.fun\/api\/?$/i.test(value)) {
+    return 'https://api.zhenwu.fun/api';
+  }
+  return value;
+}
+
 function removeFileQuietly(fp) {
   try {
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
@@ -86,7 +122,7 @@ async function apiFetch(config, pathname, options = {}) {
   const headers = Object.assign({}, options.headers || {});
   if (config.helperToken) headers['Authorization'] = 'Bearer ' + config.helperToken;
 
-  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + pathname, Object.assign({}, options, { headers }));
+  const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + pathname, Object.assign({}, options, { headers }));
   const data = await resp.json();
   if (!resp.ok || data.code >= 400) throw new Error(data.message || ('HTTP ' + resp.status));
   return data;
@@ -119,7 +155,7 @@ async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
-  const resp = await fetch((config.apiBase || DEFAULT_API_BASE).replace(/\/$/, '') + '/battles/ocr-tasks', {
+  const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + '/battles/ocr-upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -129,12 +165,18 @@ async function uploadFile(config, task, filePath, fileName) {
       image: base64,
       projectId: task.projectId || null,
       imageName: fileName,
+      source: 'auto-watch',
       helperTaskId: task.id
     })
   });
 
   const data = await resp.json();
-  if (!resp.ok || data.code !== 200) throw new Error(data.message || ('Upload failed: HTTP ' + resp.status));
+  if (!resp.ok || data.code !== 200) {
+    const err = new Error(data.message || ('Upload failed: HTTP ' + resp.status));
+    err.code = data.code || resp.status;
+    throw err;
+  }
+  return data.data || null;
 }
 
 // 更新进度
@@ -150,23 +192,34 @@ async function updateProgress(config, task, payload) {
 async function processTask(config, state, task) {
   const taskKey = String(task.id);
 
+  // The browser saves the user's selected folder to MySQL. Treat that as authoritative.
+  const localFolder = config.taskFolders && config.taskFolders[taskKey];
+  const folderPath = task.folderPath || localFolder;
+
+  if (task.folderPath && localFolder !== task.folderPath) {
+    if (!config.taskFolders) config.taskFolders = {};
+    config.taskFolders[taskKey] = task.folderPath;
+    config.lastFolderPath = task.folderPath;
+    writeJson(CONFIG_PATH, config);
+  }
+
   // 检查目录是否设置
-  if (!task.folderPath || task.folderPath.trim() === '') {
+  if (!folderPath || folderPath.trim() === '') {
     return;
   }
 
   // 检查目录是否存在
-  if (!fs.existsSync(task.folderPath)) {
-    console.warn(`[${taskKey}] 目录不存在: ${task.folderPath}`);
+  if (!fs.existsSync(folderPath)) {
+    console.warn(`[${taskKey}] 目录不存在: ${folderPath}`);
     await updateProgress(config, task, {
-      lastError: `目录不存在: ${task.folderPath}`,
+      lastError: `目录不存在: ${folderPath}`,
       lastHeartbeat: new Date().toISOString()
     });
     return;
   }
 
-  // 获取本地已处理文件
-  let processedFiles = new Set(state.processedByTask[taskKey] || []);
+  // MySQL is authoritative. If the server cannot be reached, do not guess from local cache.
+  let processedFiles = new Set();
 
   // 从后端获取已成功解析的文件列表（防止重复提交）
   try {
@@ -175,11 +228,16 @@ async function processTask(config, state, task) {
       data.data.forEach(name => processedFiles.add(name));
     }
   } catch (e) {
-    console.warn(`[${taskKey}] 查询已解析文件失败，仅使用本地缓存:`, e.message);
+    console.warn(`[${taskKey}] 查询已解析文件失败，跳过本轮扫描，避免错误覆盖进度:`, e.message);
+    await updateProgress(config, task, {
+      lastError: `查询已解析文件失败: ${e.message}`,
+      lastHeartbeat: new Date().toISOString()
+    });
+    return;
   }
 
   // 获取所有文件
-  const files = listImages(task.folderPath);
+  const files = listImages(folderPath);
 
   // 找出新文件
   const newFiles = files.filter(name => !processedFiles.has(name));
@@ -187,6 +245,7 @@ async function processTask(config, state, task) {
   if (newFiles.length === 0) {
     // update heartbeat (no new files) - clear pending/current
     await updateProgress(config, task, {
+      pendingCount: 0,
       pendingFiles: [],
       currentFile: '',
       processedCount: processedFiles.size,
@@ -198,6 +257,7 @@ async function processTask(config, state, task) {
 
   // report pending files before processing
   await updateProgress(config, task, {
+    pendingCount: newFiles.length,
     pendingFiles: newFiles.slice(),
     currentFile: '',
     processedCount: processedFiles.size,
@@ -212,7 +272,29 @@ async function processTask(config, state, task) {
 
   for (let i = 0; i < newFiles.length; i++) {
     const fileName = newFiles[i];
-    const fullPath = path.join(task.folderPath, fileName);
+    const fullPath = path.join(folderPath, fileName);
+
+    // Check status before starting each file so pause stops the next image.
+    try {
+      const tasks = await listTasks(config);
+      const currentTask = tasks.find(t => String(t.id) === taskKey);
+      if (!currentTask || currentTask.status !== 'running') {
+        console.log(`[${taskKey}] task status is ${currentTask ? currentTask.status : 'deleted'}, stop before next file`);
+        state.processedByTask[taskKey] = Array.from(processedFiles);
+        writeJson(STATE_PATH, state);
+        await updateProgress(config, task, {
+          pendingCount: newFiles.slice(i).length,
+          pendingFiles: newFiles.slice(i),
+          currentFile: '',
+          processedCount: processedFiles.size,
+          processedFilesJson: Array.from(processedFiles),
+          lastHeartbeat: new Date().toISOString()
+        });
+        return;
+      }
+    } catch (checkErr) {
+      console.warn(`[${taskKey}] status check before file failed:`, checkErr.message);
+    }
 
     // check file size (max 5MB)
     const stats = fs.statSync(fullPath);
@@ -234,6 +316,7 @@ async function processTask(config, state, task) {
     // report current file before upload
     const remaining = newFiles.slice(i + 1);
     await updateProgress(config, task, {
+      pendingCount: remaining.length + 1,
       pendingFiles: newFiles.slice(i),
       currentFile: fileName,
       lastHeartbeat: new Date().toISOString()
@@ -244,9 +327,25 @@ async function processTask(config, state, task) {
       processedFiles.add(fileName);
       successCount++;
       console.log(`[${taskKey}] ok ${fileName}`);
+      await updateProgress(config, task, {
+        pendingCount: remaining.length,
+        pendingFiles: remaining,
+        currentFile: '',
+        processedCount: processedFiles.size,
+        processedFilesJson: Array.from(processedFiles),
+        lastError: '',
+        lastHeartbeat: new Date().toISOString()
+      });
     } catch (e) {
       console.error(`[${taskKey}] fail ${fileName}:`, e.message);
       lastError = `${fileName}: ${e.message}`;
+      await updateProgress(config, task, {
+        pendingCount: remaining.length,
+        pendingFiles: remaining,
+        currentFile: '',
+        lastError,
+        lastHeartbeat: new Date().toISOString()
+      });
     }
 
     // 每个文件处理完后检查任务状态（支持用户暂停/停止）
@@ -272,6 +371,7 @@ async function processTask(config, state, task) {
 
   // update progress - clear pending/current, all done
   await updateProgress(config, task, {
+    pendingCount: 0,
     pendingFiles: [],
     currentFile: '',
     processedCount: processedFiles.size,
@@ -433,6 +533,7 @@ function startHttpServer(config) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
@@ -443,11 +544,7 @@ function startHttpServer(config) {
     // /ping - 检测本地助手是否运行
     if (req.url === '/ping' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        status: 'ok', 
-        version: '2.0',
-        configured: !!(config.helperToken)
-      }));
+      res.end(JSON.stringify(buildHelperStatus(config)));
       return;
     }
 
@@ -464,16 +561,36 @@ function startHttpServer(config) {
             return;
           }
 
-          // 保存配置
-          config.helperToken = data.token;
-          config.apiBase = data.apiBase;
-          if (data.deviceId) config.deviceId = data.deviceId;
-          writeJson(CONFIG_PATH, config);
+          const apiBase = data.apiBase;
+          const currentConfig = getRuntimeConfig(config);
+          const deviceId = currentConfig.deviceId || data.deviceId || ('device-' + Date.now());
+          const helperConfigResp = await fetch(apiBase.replace(/\/$/, '') + '/ocr-watch/helper-config?deviceId=' + encodeURIComponent(deviceId), {
+            headers: { 'Authorization': 'Bearer ' + data.token }
+          });
+          const helperConfig = await helperConfigResp.json();
+          if (!helperConfigResp.ok || helperConfig.code !== 200 || !helperConfig.data || !helperConfig.data.helperToken) {
+            throw new Error(helperConfig.message || 'helper config failed');
+          }
+
+          // Save the dedicated helper identity. Do not keep the browser user token.
+          currentConfig.helperToken = helperConfig.data.helperToken;
+          currentConfig.helperClientId = helperConfig.data.helperClientId || null;
+          currentConfig.apiBase = normalizeApiBase(helperConfig.data.apiBase || apiBase);
+          if (data.deviceId) currentConfig.deviceId = data.deviceId;
+          if (helperConfig.data.deviceId) currentConfig.deviceId = helperConfig.data.deviceId;
+          Object.assign(config, currentConfig);
+          writeJson(CONFIG_PATH, currentConfig);
 
           console.log('✅ 本地助手已激活，Token 已保存');
           
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', message: '激活成功' }));
+          res.end(JSON.stringify({
+            status: 'ok',
+            message: '激活成功',
+            identityReady: !!currentConfig.helperClientId,
+            helperClientId: currentConfig.helperClientId || null,
+            deviceId: currentConfig.deviceId || ''
+          }));
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: e.message }));
@@ -485,16 +602,14 @@ function startHttpServer(config) {
     // /status - 获取当前状态
     if (req.url === '/status' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        configured: !!(config.helperToken),
-        apiBase: config.apiBase || '',
-        running: true
-      }));
+      res.end(JSON.stringify(buildHelperStatus(config)));
       return;
     }
 
     // /select-folder - 弹出文件夹选择器
-    if (req.url === '/select-folder' && req.method === 'GET') {
+    const reqUrl = new URL(req.url, 'http://127.0.0.1');
+
+    if (reqUrl.pathname === '/select-folder' && req.method === 'GET') {
       const { execSync } = require('child_process');
       const os = require('os');
 
@@ -513,8 +628,14 @@ function startHttpServer(config) {
           fs.unlinkSync(resultPath);
         }
 
+        const initialPath = String(reqUrl.searchParams.get('initialPath') || config.lastFolderPath || '').trim();
+        const safeInitialPath = initialPath && fs.existsSync(initialPath) ? initialPath.replace(/"/g, '') : '';
+
         // 调用 fpicker.exe
-        const cmdArgs = `"${exePath}" "${resultPath}"`;
+        let cmdArgs = `"${exePath}" "${resultPath}"`;
+        if (safeInitialPath) {
+          cmdArgs += ` "${safeInitialPath}"`;
+        }
         execSync(`cmd /c start "FolderPicker" /min /wait ${cmdArgs}`, { timeout: 120000 });
 
         // 读取结果
@@ -527,6 +648,11 @@ function startHttpServer(config) {
           fs.unlinkSync(resultPath);
         }
 
+        if (folderPath) {
+          config.lastFolderPath = folderPath;
+          writeJson(CONFIG_PATH, config);
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ code: 200, data: { path: folderPath } }));
       } catch (e) {
@@ -536,6 +662,38 @@ function startHttpServer(config) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ code: 500, data: { path: null }, message: e.message }));
       }
+      return;
+    }
+
+    // /bind-task - 绑定任务到文件夹
+    if (req.url === '/bind-task' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        try {
+          const { taskId, folderPath } = JSON.parse(body);
+
+          if (!taskId || !folderPath) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ code: 400, message: 'taskId and folderPath are required' }));
+            return;
+          }
+
+          // 更新配置文件
+          const currentConfig = getRuntimeConfig(config);
+          if (!currentConfig.taskFolders) currentConfig.taskFolders = {};
+          currentConfig.taskFolders[String(taskId)] = folderPath;
+          currentConfig.lastFolderPath = folderPath;
+          Object.assign(config, currentConfig);
+          writeJson(CONFIG_PATH, currentConfig);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 200, message: 'Task bound successfully' }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 500, message: e.message }));
+        }
+      });
       return;
     }
 

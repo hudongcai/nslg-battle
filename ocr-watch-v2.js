@@ -67,6 +67,7 @@ function replaceOcrWatchPanel() {
       </div>
     </div>
     <div style="font-size:11px;color:var(--red);margin-top:6px;" id="ocrWatchError"></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6;" id="ocrWatchDiagnostics"></div>
   </div>`;
 
   parent.insertAdjacentHTML('afterbegin', newHtml);
@@ -117,6 +118,7 @@ async function loadOcrWatchTask(projectId) {
       var prev = window.ocrWatchTask;
       window.ocrWatchTask = data.data;
       updateOcrWatchUI();
+      getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(){});
 
       // 当已处理数量变化时，记录完成的文件并刷新数据底表
       var newCount = data.data ? data.data.processedCount : 0;
@@ -321,36 +323,48 @@ function updateOcrWatchUI() {
 }
 
 // ======= 操作 =======
+async function getLocalHelperStatus(timeoutMs = 3000) {
+  try {
+    var resp = await fetch('http://127.0.0.1:9999/status', { signal: AbortSignal.timeout(timeoutMs) });
+    var data = await resp.json();
+    return Object.assign({ running: resp.ok, configured: false, identityReady: false }, data || {});
+  } catch (e) {
+    return { running: false, configured: false, identityReady: false, error: e.message };
+  }
+}
+
+async function ensureLocalHelperIdentity() {
+  var status = await getLocalHelperStatus();
+  if (!status.running) return { ok: false, status, message: '本地助手未运行，请先启动或安装本地助手' };
+  if (status.helperClientId) return { ok: true, status, helperClientId: status.helperClientId };
+
+  console.log('[OCR-Watch] 助手设备身份缺失，尝试自动重新激活');
+  var activated = await activateLocalHelper();
+  if (!activated || !activated.helperClientId) {
+    status = await getLocalHelperStatus();
+    return { ok: false, status, message: '本地助手设备身份未就绪，请重新启动或重新安装最新版本地助手后再选择目录' };
+  }
+
+  status = await getLocalHelperStatus();
+  var helperClientId = status.helperClientId || activated.helperClientId || null;
+  if (!helperClientId) {
+    return { ok: false, status, message: '本地助手设备身份未就绪，请重新启动或重新安装最新版本地助手后再选择目录' };
+  }
+  return { ok: true, status, helperClientId };
+}
+
 async function saveOcrWatchFolder(folderPath) {
   var pid = window.currentProjectId;
   if (!pid) return;
   var token = localStorage.getItem('nslg_token');
   try {
-    var helperClientId = null;
-    try {
-      var statusResp = await fetch('http://127.0.0.1:9999/status', { signal: AbortSignal.timeout(3000) });
-      var statusData = await statusResp.json();
-      helperClientId = statusData && statusData.helperClientId ? statusData.helperClientId : null;
-    } catch (e) {
-      console.warn('[OCR-Watch] 获取助手设备身份失败:', e.message);
+    var identity = await ensureLocalHelperIdentity();
+    if (!identity.ok) {
+      updateOcrWatchDiagnostics(identity.status);
+      alert(identity.message);
+      return;
     }
-    if (!helperClientId) {
-      console.log('[OCR-Watch] 助手设备身份缺失，尝试自动重新激活');
-      var activated = await activateLocalHelper();
-      if (activated) {
-        try {
-          var retryStatusResp = await fetch('http://127.0.0.1:9999/status', { signal: AbortSignal.timeout(3000) });
-          var retryStatusData = await retryStatusResp.json();
-          helperClientId = retryStatusData && retryStatusData.helperClientId ? retryStatusData.helperClientId : null;
-        } catch (e2) {
-          console.warn('[OCR-Watch] 重新读取助手设备身份失败:', e2.message);
-        }
-      }
-      if (!helperClientId) {
-        alert('本地助手设备身份未就绪，请重新启动或重新安装最新版本地助手后再选择目录');
-        return;
-      }
-    }
+    var helperClientId = identity.helperClientId;
 
     var resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks', {
       method: 'POST',
@@ -454,7 +468,7 @@ async function selectOcrWatchFolder() {
   if (!status.configured || !status.helperClientId) {
     console.log('[Helper] 助手未配置，正在自动激活...');
     const activated = await activateLocalHelper();
-    if (!activated) {
+    if (!activated || !activated.helperClientId) {
       alert('助手激活失败，请检查网络连接');
       return;
     }
@@ -727,23 +741,45 @@ function triggerDownloadHelper() {
   }, 300);
 }
 
+function yesNo(ok, yesText, noText) {
+  return ok ? ('✅ ' + yesText) : ('❌ ' + noText);
+}
+
+function updateOcrWatchDiagnostics(helperStatus) {
+  var el = document.getElementById('ocrWatchDiagnostics');
+  if (!el) return;
+  var task = window.ocrWatchTask || null;
+  var helperClientId = helperStatus && helperStatus.helperClientId ? Number(helperStatus.helperClientId) : null;
+  var taskHelperId = task && task.helperClientId ? Number(task.helperClientId) : null;
+  var hasTask = !!(task && task.id);
+  var hasFolder = !!(task && task.folderPath);
+  var boundOk = !!(hasTask && helperClientId && taskHelperId && helperClientId === taskHelperId);
+  var folderExists = helperStatus ? helperStatus.folderExists : null;
+  var heartbeat = task && task.lastHeartbeat ? task.lastHeartbeat : '暂无';
+  var apiBase = helperStatus && helperStatus.apiBase ? helperStatus.apiBase : '-';
+  var parts = [
+    'HTTP服务: ' + yesNo(helperStatus && helperStatus.running, '正常', '未运行'),
+    'Token: ' + yesNo(helperStatus && helperStatus.configured, '已配置', '未配置'),
+    '设备身份: ' + yesNo(!!helperClientId, '已就绪' + (helperClientId ? ' #' + helperClientId : ''), '未就绪'),
+    '监听任务: ' + yesNo(hasTask, '已创建', '未创建'),
+    '绑定设备: ' + (hasTask ? yesNo(boundOk, '匹配当前助手', '未绑定/不匹配') : '❌ 无任务'),
+    '监听目录: ' + (hasFolder ? task.folderPath : '未选择'),
+    '目录访问: ' + (folderExists === null ? '未检查' : yesNo(folderExists, '存在', '不存在')),
+    '任务状态: ' + (task ? (task.status || '-') : '-'),
+    '最近心跳: ' + heartbeat,
+    'API: ' + apiBase
+  ];
+  el.textContent = parts.join(' ｜ ');
+}
+
 // 检测本地助手是否运行
 async function checkLocalHelper() {
   console.log('[Helper] 开始检测本地助手...');
-  try {
-    const resp = await fetch(HELPER_API + '/ping', {
-      method: 'GET',
-      signal: AbortSignal.timeout(3000)
-    });
-    const data = await resp.json();
-    helperConnected = resp.ok && data.status === 'ok';
-    console.log('[Helper] 检测结果: running=' + helperConnected + ' configured=' + data.configured);
-    return { running: helperConnected, configured: data.configured, helperClientId: data.helperClientId || null };
-  } catch (e) {
-    console.log('[Helper] 检测失败:', e.message);
-    helperConnected = false;
-    return { running: false, configured: false };
-  }
+  const data = await getLocalHelperStatus();
+  helperConnected = !!data.running && data.status === 'ok';
+  console.log('[Helper] 检测结果: running=' + helperConnected + ' configured=' + data.configured + ' helperClientId=' + (data.helperClientId || 'null'));
+  updateOcrWatchDiagnostics(data);
+  return Object.assign({}, data, { running: helperConnected });
 }
 
 // 激活本地助手
@@ -766,15 +802,16 @@ async function activateLocalHelper() {
     });
 
     const data = await resp.json();
-    if (resp.ok && data.status === 'ok') {
-      console.log('[Helper] 激活成功');
+    if (resp.ok && data.status === 'ok' && data.helperClientId) {
+      console.log('[Helper] 激活成功，设备身份=' + data.helperClientId);
       helperConnected = true;
-      return true;
+      return data;
     }
-    return false;
+    console.warn('[Helper] 激活未拿到设备身份:', data);
+    return null;
   } catch (e) {
     console.error('[Helper] 激活失败:', e.message);
-    return false;
+    return null;
   }
 }
 
@@ -794,7 +831,7 @@ async function ensureLocalHelperConnected() {
   // 无论是否已配置，都尝试重新激活（确保 token 是最新的）
   console.log('[Helper] 正在更新本地助手配置...');
   const activated = await activateLocalHelper();
-  if (!activated) {
+  if (!activated || !activated.helperClientId) {
     alert('本地助手配置更新失败，请检查网络连接或重新启动本地助手');
     return false;
   }
