@@ -551,7 +551,12 @@ function startHttpServer(config) {
           console.log('✅ 本地助手已激活，Token 已保存');
           
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', message: '激活成功' }));
+          res.end(JSON.stringify({
+            status: 'ok',
+            message: '激活成功',
+            helperClientId: config.helperClientId || null,
+            deviceId: config.deviceId || ''
+          }));
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: e.message }));
