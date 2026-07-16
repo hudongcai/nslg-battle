@@ -90,6 +90,7 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
 
         string tempDir = Path.Combine(Path.GetTempPath(), "ZhenwuLocalHelperSetup_" + Guid.NewGuid().ToString("N"));
+        string installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZhenwuLocalHelper");
 
         try
         {
@@ -151,6 +152,21 @@ internal static class Program
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information
             );
+
+            // 在用户点击"确定"后启动本地助手
+            string vbsPath = Path.Combine(installDir, "start-local-helper.vbs");
+            if (File.Exists(vbsPath))
+            {
+                var startPsi = new ProcessStartInfo
+                {
+                    FileName = "cscript.exe",
+                    Arguments = "\"" + vbsPath + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = installDir
+                };
+                Process.Start(startPsi);
+            }
         }
         catch (Exception ex)
         {

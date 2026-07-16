@@ -220,32 +220,28 @@ function renderOCRQueue() {
   const queueCount = document.getElementById('queueCount');
   const queueList = document.getElementById('queueList');
   const queueArea = document.getElementById('queueArea');
+  const autoQueueCount = document.getElementById('autoQueueCount');
+  const autoQueueList = document.getElementById('autoQueueList');
+  const autoQueueArea = document.getElementById('autoQueueArea');
   const curPid = normalizeQueueProjectId(window.currentProjectId);
-  const visibleItems = ocrQueue.map((item, idx) => ({ item, idx }))
-    .filter(({ item }) => normalizeQueueProjectId(item.projectId) === curPid);
 
-  // auto-watch items (from ocr-watch-v2.js)
+  const manualItems = ocrQueue.map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => normalizeQueueProjectId(item.projectId) === curPid && !item.isAutoTask);
+
   const watchTask = window.ocrWatchTask;
   const watchTaskMatchesProject = watchTask && Number(watchTask.projectId) === Number(curPid);
-  const watchPaused = watchTaskMatchesProject && (watchTask.status === 'paused' || ocrPausedByUser);
+  const watchPaused = watchTaskMatchesProject && watchTask.status === 'paused';
   const watchPendingFiles = (watchTaskMatchesProject && Array.isArray(watchTask.pendingFiles))
     ? watchTask.pendingFiles.filter(name => String(name || '').trim())
     : [];
   const watchCurrentFile = watchTaskMatchesProject ? String(watchTask.currentFile || '').trim() : '';
   const watchCompletedFiles = Array.isArray(window.autoCompletedFiles) ? window.autoCompletedFiles : [];
   const watchQueueItems = [];
+
   if (watchTaskMatchesProject) {
-    // 已完成的文件
     watchCompletedFiles.forEach(item => {
-      watchQueueItems.push({
-        name: item.name,
-        time: item.time,
-        status: 'done',
-        error: '',
-        source: 'auto'
-      });
+      watchQueueItems.push({ name: item.name, time: item.time, status: 'done', error: '', source: 'auto' });
     });
-    // 正在处理的文件
     if (watchCurrentFile) {
       watchQueueItems.push({
         name: watchCurrentFile,
@@ -254,7 +250,6 @@ function renderOCRQueue() {
         source: 'auto'
       });
     }
-    // 待处理的文件
     watchPendingFiles.forEach(name => {
       if (name !== watchCurrentFile) {
         watchQueueItems.push({ name, status: watchPaused ? 'paused' : 'pending', error: '', source: 'auto' });
@@ -262,26 +257,21 @@ function renderOCRQueue() {
     });
   }
 
-  // 统计实际渲染的待处理任务数量
-  const autoPendingCount = watchQueueItems.filter(item => item.status === 'pending').length;
-  const dbPendingCount = visibleItems.filter(({ item }) => item.status === 'pending').length;
-  // 如果本地助手在运行，显示本地助手的pending；否则显示数据库的pending
-  // 但如果本地助手pending为0而数据库有pending，说明状态未同步，显示数据库的
-  const totalPending = (watchTaskMatchesProject && autoPendingCount > 0) ? autoPendingCount : dbPendingCount;
-  if (queueCount) queueCount.textContent = totalPending;
+  if (queueCount) queueCount.textContent = manualItems.filter(({ item }) => item.status === 'pending').length;
   if (queueArea) queueArea.style.display = 'block';
+  if (autoQueueCount) autoQueueCount.textContent = watchQueueItems.length;
+  if (autoQueueArea) autoQueueArea.style.display = 'block';
 
   const btnPauseBatch = document.getElementById('btnPauseBatch');
   if (btnPauseBatch) {
-    const hasManualActive = visibleItems.some(({ item }) => item.status === 'pending' || item.status === 'processing');
-    const hasAutoActive = watchQueueItems.some(item => item.status === 'pending' || item.status === 'processing' || item.status === 'paused');
-    btnPauseBatch.disabled = !(hasManualActive || hasAutoActive || ocrRunning || ocrPausedByUser);
-    if (watchPaused || ocrPausedByUser) {
+    const hasManualActive = manualItems.some(({ item }) => item.status === 'pending' || item.status === 'processing');
+    btnPauseBatch.disabled = !(hasManualActive || ocrRunning || ocrPausedByUser);
+    if (ocrPausedByUser || ocrPaused) {
       btnPauseBatch.dataset.paused = '1';
       btnPauseBatch.textContent = '▶ 继续';
       btnPauseBatch.classList.add('is-paused');
       if (queueArea) queueArea.classList.add('queue-paused');
-    } else if (!ocrPausedByUser) {
+    } else {
       btnPauseBatch.dataset.paused = '0';
       btnPauseBatch.textContent = '⏸ 暂停';
       btnPauseBatch.classList.remove('is-paused');
@@ -289,11 +279,50 @@ function renderOCRQueue() {
     }
   }
 
+  const btnAutoPause = document.getElementById('btnAutoPauseBatch');
+  if (btnAutoPause) {
+    const hasAutoActive = watchQueueItems.some(item => item.status === 'pending' || item.status === 'processing' || item.status === 'paused');
+    btnAutoPause.disabled = !(hasAutoActive || watchTaskMatchesProject);
+    btnAutoPause.dataset.paused = watchPaused ? '1' : '0';
+    btnAutoPause.textContent = watchPaused ? '▶ 继续' : '⏸ 暂停';
+    btnAutoPause.classList.toggle('is-paused', !!watchPaused);
+    if (autoQueueArea) autoQueueArea.classList.toggle('queue-paused', !!watchPaused);
+  }
+
   if (queueList) {
-    if (visibleItems.length === 0 && watchQueueItems.length === 0) {
-      queueList.innerHTML = '<div style="text-align:center;padding:16px 12px;color:var(--text3);font-size:12px;">暂无解析任务，手动批量上传或战报自动解析产生的内容都会显示在这里</div>';
+    if (manualItems.length === 0) {
+      queueList.innerHTML = '<div style="text-align:center;padding:16px 12px;color:var(--text3);font-size:12px;">暂无手动解析任务，批量上传后的图片会显示在这里</div>';
     } else {
-      const autoHtml = watchQueueItems.map(item => {
+      queueList.innerHTML = manualItems.map(({ item, idx }) => {
+        const statusClass = item.status === 'pending' ? 'qi-pending'
+          : item.status === 'processing' ? 'qi-processing'
+          : item.status === 'done' ? 'qi-done' : 'qi-error';
+        const statusIcon = item.status === 'pending' ? '⏳'
+          : item.status === 'processing' ? '⚙️'
+          : item.status === 'done' ? '✅' : '❌';
+        const statusText = item.status === 'pending' ? '等待中'
+          : item.status === 'processing' ? '处理中...'
+          : item.status === 'done' ? '已完成'
+          : (item.error || '失败');
+        const canDelete = item.status === 'pending' || item.status === 'error';
+        const delBtn = canDelete
+          ? `<span class="qi-del" title="删除" onclick="removeQueueItem(${idx})">×</span>`
+          : '';
+        return `<div class="queue-item">
+          <span class="qi-icon">${statusIcon}</span>
+          <span class="qi-name">[手动] ${escHtml(item.name)}</span>
+          <span class="${statusClass}">${escHtml(statusText)}</span>
+          ${delBtn}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  if (autoQueueList) {
+    if (watchQueueItems.length === 0) {
+      autoQueueList.innerHTML = '<div style="text-align:center;padding:16px 12px;color:var(--text3);font-size:12px;">暂无自动解析任务，监听目录发现的新图片会显示在这里</div>';
+    } else {
+      autoQueueList.innerHTML = watchQueueItems.map(item => {
         const statusClass = item.status === 'pending' ? 'qi-pending'
           : item.status === 'processing' ? 'qi-processing'
           : item.status === 'paused' ? 'qi-pending'
@@ -315,38 +344,12 @@ function renderOCRQueue() {
           <span class="${statusClass}">${escHtml(statusText)}</span>
         </div>`;
       }).join('');
-      const manualHtml = visibleItems.map(({ item, idx }) => {
-      const statusClass = item.status === 'pending' ? 'qi-pending'
-        : item.status === 'processing' ? 'qi-processing'
-        : item.status === 'done' ? 'qi-done' : 'qi-error';
-      const statusIcon = item.status === 'pending' ? '⏳'
-        : item.status === 'processing' ? '⚙️'
-        : item.status === 'done' ? '✅' : '❌';
-      const statusText = item.status === 'pending' ? '等待中'
-        : item.status === 'processing' ? '处理中...'
-        : item.status === 'done' ? '已完成'
-        : (item.error || '失败');
-      const canDelete = item.status === 'pending' || item.status === 'error';
-      const delBtn = canDelete
-        ? `<span class="qi-del" title="删除" onclick="removeQueueItem(${idx})">✕</span>`
-        : '';
-      const prefix = item.isAutoTask ? '[自动]' : '[手动]';
-      return `<div class="queue-item">
-        <span class="qi-icon">${statusIcon}</span>
-        <span class="qi-name">${prefix} ${escHtml(item.name)}</span>
-        <span class="${statusClass}">${statusText}</span>
-        ${delBtn}
-      </div>`;
-    }).join('');
-      queueList.innerHTML = autoHtml + manualHtml;
     }
   }
 
-  // 更新进度条（统计手动+自动）
   updateOCRProgress();
+  updateAutoOCRProgress(watchQueueItems);
 }
-
-// 鍒犻櫎鍗曚釜闃熷垪椤?
 function removeQueueItem(idx) {
   const item = ocrQueue[idx];
   if (!item) return;
@@ -361,11 +364,24 @@ function removeQueueItem(idx) {
 async function clearQueue() {
   const curPid = normalizeQueueProjectId(window.currentProjectId);
   if (!curPid) {
-    console.warn('[OCR] 清空队列失败: 当前项目ID无效');
+    console.warn('[OCR] 清空手动队列失败: 当前项目ID无效');
     return;
   }
 
-  // 调用后端API删除数据库中的任务
+  ocrQueue = ocrQueue.filter(q => q.isAutoTask || q.status === 'processing' || normalizeQueueProjectId(q.projectId) !== curPid);
+  try { localStorage.removeItem('ocr-batch-progress'); } catch(e) {}
+
+  renderOCRQueue();
+  updateOCRStatus('ok', '手动队列已清空');
+}
+
+async function clearAutoQueue() {
+  const curPid = normalizeQueueProjectId(window.currentProjectId);
+  if (!curPid) {
+    console.warn('[OCR] 清空自动队列失败: 当前项目ID无效');
+    return;
+  }
+
   try {
     const token = typeof getToken === 'function' ? getToken() : '';
     const _base = (typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : (window.cloudSync?.BASE_URL ? window.cloudSync.BASE_URL + '/api' : '/api'));
@@ -379,32 +395,30 @@ async function clearQueue() {
     });
     const data = await resp.json();
     if (data.code !== 200) {
-      console.warn('[OCR] 清空队列失败:', data.message);
-      updateOCRStatus('error', '清空失败: ' + (data.message || '未知错误'));
+      console.warn('[OCR] 清空自动队列失败:', data.message);
+      updateOCRStatus('error', '自动队列清空失败: ' + (data.message || '未知错误'));
       return;
     }
-    console.log('[OCR] 已从数据库删除', data.data.deletedCount, '个待处理任务');
+    console.log('[OCR] 已清空自动待处理任务', data.data && data.data.deletedCount);
   } catch (e) {
-    console.error('[OCR] 清空队列请求失败:', e);
-    updateOCRStatus('error', '清空失败: ' + e.message);
+    console.error('[OCR] 清空自动队列请求失败:', e);
+    updateOCRStatus('error', '自动队列清空失败: ' + e.message);
     return;
   }
 
-  // 清空前端队列（仅保留正在处理的任务）
-  ocrQueue = ocrQueue.filter(q => q.status === 'processing' || normalizeQueueProjectId(q.projectId) !== curPid);
-
-  // 清空自动监听已完成文件列表
-  if (Array.isArray(window.autoCompletedFiles)) {
-    window.autoCompletedFiles = [];
+  ocrQueue = ocrQueue.filter(q => !q.isAutoTask || q.status === 'processing' || normalizeQueueProjectId(q.projectId) !== curPid);
+  if (Array.isArray(window.autoCompletedFiles)) window.autoCompletedFiles = [];
+  if (window.ocrWatchTask && Number(window.ocrWatchTask.projectId) === Number(curPid)) {
+    window.ocrWatchTask.pendingFiles = [];
+    window.ocrWatchTask.currentFile = '';
+  }
+  if (typeof loadOcrWatchTask === 'function') {
+    try { await loadOcrWatchTask(); } catch (e) { console.warn('[OCR] reload auto task failed:', e.message); }
   }
 
-  // 清空本地进度缓存
-  try { localStorage.removeItem('ocr-batch-progress'); } catch(e) {}
-
   renderOCRQueue();
-  updateOCRStatus('ok', '队列已清空');
+  updateOCRStatus('ok', '自动队列已清空');
 }
-
 
 // ========== 鏂囦欢澶硅嚜鍔ㄧ洃鍚?==========
 let folderWatchHandle = null;
@@ -801,9 +815,10 @@ async function loadPendingTasksFromBackend() {
 async function startBatchProcess() {
   if (ocrRunning) return;
   // 先从后端拉取待处理任务（自动监听提交的任务）
+  await loadPendingTasksFromBackend();
 
   // 妫€鏌ョН鍒嗭細寰呭鐞嗗紶鏁颁笉鑳借秴杩囧墿浣欑Н鍒嗭紝瀹為檯鎸夋垚鍔熷紶鏁版墸锛堝け璐ヤ笉鎵ｏ級
-  const fileCount = ocrQueue.filter(i => i.status === 'pending').length;
+  const fileCount = ocrQueue.filter(i => i.status === 'pending' && !i.isAutoTask).length;
   if (fileCount > 0 && currentUser) {
     const pts = await getUserPoints(currentUser.phone);
     if (pts < fileCount) {
@@ -1061,8 +1076,8 @@ async function startBatchProcess() {
           }
           // 鍏朵粬寮傚父 鈫?淇濆瓨鏈湴閿欒璁板綍锛屾爣璁板け璐ョ户缁?
           try {
-            if (!base64) base64 = await readFileAsBase64(item.file);
-            if (typeof dbAddLocal === 'function') {
+            if (!item.isAutoTask && !base64) base64 = await readFileAsBase64(item.file);
+            if (!item.isAutoTask && typeof dbAddLocal === 'function') {
               const errRec = {
                 imageBase64: base64,
                 imageName: item.name,
@@ -1121,11 +1136,10 @@ async function toggleBatchPause() {
   console.log('[OCR] toggleBatchPause called, current ocrPaused:', ocrPaused, 'ocrRunning:', ocrRunning);
 
   if (!ocrPaused) {
-    console.log('[OCR] 执行暂停：手动队列 + 自动监听');
+    console.log('[OCR] 执行暂停：手动队列');
     ocrPaused = true;
     ocrPausedByUser = true;
     if (batchAbortController) batchAbortController.abort();
-    if (window.ocrWatchTask) window.ocrWatchTask.status = 'paused';
 
     if (btn) {
       btn.textContent = '▶ 继续';
@@ -1137,24 +1151,15 @@ async function toggleBatchPause() {
     if (queueAreaPause) queueAreaPause.classList.add('queue-paused');
     renderOCRQueue();
 
-    if (typeof updateOcrWatchUI === 'function') {
-      try { updateOcrWatchUI(); } catch (e) {}
-    }
-
-    if (typeof pauseOcrWatchTask === 'function') {
-      try { await pauseOcrWatchTask(); } catch (e) { console.warn('[OCR] pause auto watch failed:', e.message); }
-    }
-
     updateOCRStatus('ok', '已暂停');
     console.log('[OCR] 已设置暂停状态');
     return;
   }
 
-  console.log('[OCR] 执行继续：手动队列 + 自动监听');
+  console.log('[OCR] 执行继续：手动队列');
   ocrPaused = false;
   ocrPausedByUser = false;
   batchAbortController = new AbortController();
-  if (window.ocrWatchTask) window.ocrWatchTask.status = 'running';
 
   if (btn) {
     btn.textContent = '⏸ 暂停';
@@ -1166,14 +1171,6 @@ async function toggleBatchPause() {
   if (queueAreaResume) queueAreaResume.classList.remove('queue-paused');
   renderOCRQueue();
 
-  if (typeof updateOcrWatchUI === 'function') {
-    try { updateOcrWatchUI(); } catch (e) {}
-  }
-
-  if (typeof startOcrWatchTask === 'function') {
-    try { await startOcrWatchTask(); } catch (e) { console.warn('[OCR] resume auto watch failed:', e.message); }
-  }
-
   updateOCRStatus('work', '继续处理中...');
   console.log('[OCR] 已取消暂停，准备继续');
   if (!ocrRunning) {
@@ -1183,50 +1180,57 @@ async function toggleBatchPause() {
 }
 function updateOCRProgress() {
   const curPid = normalizeQueueProjectId(window.currentProjectId);
-
-  // 手动队列统计（只统计当前项目）
-  const manualItems = ocrQueue.filter(q => normalizeQueueProjectId(q.projectId) === curPid);
+  const manualItems = ocrQueue.filter(q => normalizeQueueProjectId(q.projectId) === curPid && !q.isAutoTask);
   const manualDone = manualItems.filter(q => q.status === 'done').length;
   const manualTotal = manualItems.length;
-
-  // 自动监听统计（只统计当前项目）
-  const watchTask = window.ocrWatchTask;
-  const watchTaskMatchesProject = watchTask && Number(watchTask.projectId) === Number(curPid);
-  let autoDone = 0;
-  let autoTotal = 0;
-
-  if (watchTaskMatchesProject) {
-    const pendingFiles = Array.isArray(watchTask.pendingFiles)
-      ? watchTask.pendingFiles.filter(name => String(name || '').trim())
-      : [];
-    const currentFile = String(watchTask.currentFile || '').trim();
-    const recentDone = Array.isArray(window.autoCompletedFiles) ? window.autoCompletedFiles.length : 0;
-    autoDone = recentDone;
-    autoTotal = recentDone + pendingFiles.filter(name => name !== currentFile).length + (currentFile ? 1 : 0);
-  }
-
-  // 合并统计（本地助手和数据库是同一批文件，二选一，不能相加）
-  const totalDone = watchTaskMatchesProject ? autoDone : manualDone;
-  const totalAll = watchTaskMatchesProject ? autoTotal : manualTotal;
-  const pct = totalAll > 0 ? (totalDone / totalAll * 100) : 0;
+  const pct = manualTotal > 0 ? (manualDone / manualTotal * 100) : 0;
 
   const bar = document.getElementById('batchProgress');
   if (bar) {
     bar.style.width = pct + '%';
     const txt = bar.querySelector('.progress-text');
     if (txt) {
-      if (totalAll === 0) {
+      if (manualTotal === 0) {
         txt.textContent = '准备就绪';
-      } else if (totalDone === totalAll) {
-        txt.textContent = `已完成 (${totalDone}/${totalAll})`;
+      } else if (manualDone === manualTotal) {
+        txt.textContent = `已完成 (${manualDone}/${manualTotal})`;
+      } else if (ocrPaused || ocrPausedByUser) {
+        txt.textContent = `已暂停 (${manualDone}/${manualTotal})`;
       } else {
-        txt.textContent = `处理中 (${totalDone}/${totalAll})`;
+        txt.textContent = `处理中 (${manualDone}/${manualTotal})`;
       }
     }
   }
   saveBatchProgress();
 }
 
+function updateAutoOCRProgress(watchQueueItems) {
+  const items = Array.isArray(watchQueueItems) ? watchQueueItems : [];
+  const total = items.length;
+  const done = items.filter(item => item.status === 'done').length;
+  const paused = items.some(item => item.status === 'paused');
+  const errored = items.some(item => item.status === 'error');
+  const pct = total > 0 ? (done / total * 100) : 0;
+
+  const bar = document.getElementById('autoBatchProgress');
+  if (bar) {
+    bar.style.width = pct + '%';
+    const txt = bar.querySelector('.progress-text');
+    if (txt) {
+      if (total === 0) {
+        txt.textContent = '准备就绪';
+      } else if (done === total) {
+        txt.textContent = `已完成 (${done}/${total})`;
+      } else if (paused) {
+        txt.textContent = `已暂停 (${done}/${total})`;
+      } else if (errored) {
+        txt.textContent = `有失败 (${done}/${total})`;
+      } else {
+        txt.textContent = `处理中 (${done}/${total})`;
+      }
+    }
+  }
+}
 function updateOCRStatus(status, text) {
   const dot = document.getElementById('ocrDot');
   const txt = document.getElementById('ocrText');
@@ -1526,8 +1530,10 @@ window.initOCR = initOCR;
 window.renderOCRQueue = renderOCRQueue;
 window.removeQueueItem = removeQueueItem;
 window.clearQueue = clearQueue;
+window.clearAutoQueue = clearAutoQueue;
 window.startBatchProcess = startBatchProcess;
 window.toggleBatchPause = toggleBatchPause;
 window.updateOCRProgress = updateOCRProgress;
+window.updateAutoOCRProgress = updateAutoOCRProgress;
 window.showPointsInsufficientModal = showPointsInsufficientModal;
 window.closePointsInsufficientModal = closePointsInsufficientModal;

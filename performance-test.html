@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>性能测试工具 - NSLG战报分析系统</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .test-section {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-left: 4px solid #667eea;
+    }
+    .test-section h2 {
+      color: #667eea;
+      font-size: 18px;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    .btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-success { background: #10b981; }
+    .btn-success:hover { background: #059669; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    .result {
+      background: white;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+      border: 1px solid #e5e7eb;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .metric:last-child { border-bottom: none; }
+    .metric-label {
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .metric-value {
+      color: #111827;
+      font-weight: 600;
+      font-size: 16px;
+    }
+    .metric-value.good { color: #10b981; }
+    .metric-value.warning { color: #f59e0b; }
+    .metric-value.bad { color: #ef4444; }
+    .status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    .status.running { background: #dbeafe; color: #1e40af; }
+    .status.success { background: #d1fae5; color: #065f46; }
+    .status.error { background: #fee2e2; color: #991b1b; }
+    .log {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .log-time { color: #9ca3af; }
+    .log-info { color: #60a5fa; }
+    .log-success { color: #34d399; }
+    .log-warning { color: #fbbf24; }
+    .log-error { color: #f87171; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      border: 2px solid #e5e7eb;
+      transition: all 0.3s;
+    }
+    .card:hover {
+      border-color: #667eea;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+    }
+    .card-title {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #111827;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transition: width 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 性能测试工具</h1>
+    <div class="subtitle">NSLG战报分析系统 - 实时性能监控与测试</div>
+
+    <!-- 快速概览 -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">页面加载时间</div>
+        <div class="card-value" id="loadTime">-</div>
+      </div>
+      <div class="card">
+        <div class="card-title">脚本并行加载</div>
+        <div class="card-value" id="deferCount">-</div>
+      </div>
+      <div class="card">
+        <div class="card-title">缓存状态</div>
+        <div class="card-value" id="cacheStatus">-</div>
+      </div>
+    </div>
+
+    <!-- 页面加载测试 -->
+    <div class="test-section">
+      <h2>
+        📄 页面加载测试
+        <span class="status running" id="pageLoadStatus" style="display:none;">测试中...</span>
+      </h2>
+      <button class="btn" onclick="testPageLoad()">开始测试</button>
+      <button class="btn btn-success" onclick="window.open('http://localhost:3000', '_blank')">打开主页</button>
+      <div class="result" id="pageLoadResult" style="display:none;"></div>
+    </div>
+
+    <!-- API响应测试 -->
+    <div class="test-section">
+      <h2>
+        ⚡ API响应测试
+        <span class="status running" id="apiStatus" style="display:none;">测试中...</span>
+      </h2>
+      <button class="btn" onclick="testAPIResponse()">测试API响应</button>
+      <button class="btn" onclick="testResourceLoading()">测试资源加载</button>
+      <div class="result" id="apiResult" style="display:none;"></div>
+    </div>
+
+    <!-- 服务器状态 -->
+    <div class="test-section">
+      <h2>🖥️ 服务器状态</h2>
+      <button class="btn" onclick="checkServerStatus()">检查服务器</button>
+      <button class="btn btn-success" onclick="startAutoMonitor()">启动自动监控</button>
+      <button class="btn btn-danger" onclick="stopAutoMonitor()">停止监控</button>
+      <div class="result" id="serverResult" style="display:none;"></div>
+    </div>
+
+    <!-- 实时日志 -->
+    <div class="test-section">
+      <h2>📊 实时日志</h2>
+      <button class="btn" onclick="clearLog()">清空日志</button>
+      <button class="btn" onclick="exportLog()">导出日志</button>
+      <div class="log" id="logContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    let autoMonitorInterval = null;
+    const logs = [];
+
+    function log(message, type = 'info') {
+      const time = new Date().toLocaleTimeString();
+      const logClass = `log-${type}`;
+      const logEl = document.getElementById('logContainer');
+      const logLine = `<div><span class="log-time">[${time}]</span> <span class="${logClass}">${message}</span></div>`;
+      logEl.innerHTML = logLine + logEl.innerHTML;
+      logs.push({ time, message, type });
+
+      // 限制日志数量
+      if (logEl.children.length > 100) {
+        logEl.removeChild(logEl.lastChild);
+      }
+    }
+
+    function clearLog() {
+      document.getElementById('logContainer').innerHTML = '';
+      logs.length = 0;
+      log('日志已清空', 'info');
+    }
+
+    function exportLog() {
+      const text = logs.map(l => `[${l.time}] ${l.message}`).join('\n');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `performance-log-${Date.now()}.txt`;
+      a.click();
+      log('日志已导出', 'success');
+    }
+
+    async function testPageLoad() {
+      const status = document.getElementById('pageLoadStatus');
+      const result = document.getElementById('pageLoadResult');
+
+      status.style.display = 'inline-block';
+      status.className = 'status running';
+      status.textContent = '测试中...';
+      result.style.display = 'none';
+
+      log('开始页面加载测试...', 'info');
+
+      try {
+        const startTime = performance.now();
+        const response = await fetch('http://localhost:3000/');
+        const html = await response.text();
+        const loadTime = Math.round(performance.now() - startTime);
+
+        // 分析HTML
+        const deferCount = (html.match(/defer/g) || []).length;
+        const hasCache = html.includes('max-age');
+        const htmlSize = (html.length / 1024).toFixed(2);
+        const scriptTags = (html.match(/<script/g) || []).length;
+
+        const timeClass = loadTime < 500 ? 'good' : loadTime < 2000 ? 'warning' : 'bad';
+
+        result.innerHTML = `
+          <div class="metric">
+            <span class="metric-label">HTML响应时间</span>
+            <span class="metric-value ${timeClass}">${loadTime}ms</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">HTML大小</span>
+            <span class="metric-value">${htmlSize} KB</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">脚本标签数量</span>
+            <span class="metric-value">${scriptTags} 个</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Defer脚本</span>
+            <span class="metric-value ${deferCount > 10 ? 'good' : 'warning'}">${deferCount} 个</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">缓存策略</span>
+            <span class="metric-value ${hasCache ? 'good' : 'bad'}">${hasCache ? '已优化' : '未优化'}</span>
+          </div>
+        `;
+        result.style.display = 'block';
+
+        status.className = 'status success';
+        status.textContent = '测试完成';
+
+        document.getElementById('loadTime').textContent = loadTime + 'ms';
+        document.getElementById('deferCount').textContent = deferCount + ' 个';
+        document.getElementById('cacheStatus').textContent = hasCache ? '✓' : '✗';
+
+        log(`页面加载完成: ${loadTime}ms, Defer: ${deferCount}个`, 'success');
+      } catch (error) {
+        status.className = 'status error';
+        status.textContent = '测试失败';
+        result.innerHTML = `<div class="metric-value bad">错误: ${error.message}</div>`;
+        result.style.display = 'block';
+        log(`页面加载测试失败: ${error.message}`, 'error');
+      }
+    }
+
+    async function testAPIResponse() {
+      const status = document.getElementById('apiStatus');
+      const result = document.getElementById('apiResult');
+
+      status.style.display = 'inline-block';
+      status.className = 'status running';
+      status.textContent = '测试中...';
+
+      log('开始API响应测试...', 'info');
+
+      const endpoints = [
+        { url: 'http://localhost:3000/', name: '首页' },
+        { url: 'http://localhost:3000/cloud-sync.js', name: 'cloud-sync.js' },
+        { url: 'http://localhost:3000/data-system.js', name: 'data-system.js' },
+        { url: 'http://localhost:3000/node_modules/xlsx/dist/xlsx.full.min.js', name: 'xlsx库' }
+      ];
+
+      let html = '<div style="font-size:14px;margin-bottom:10px;font-weight:600;">API响应时间:</div>';
+      let allSuccess = true;
+
+      for (const endpoint of endpoints) {
+        try {
+          const start = performance.now();
+          const response = await fetch(endpoint.url);
+          const time = Math.round(performance.now() - start);
+          const size = response.headers.get('content-length');
+          const sizeKB = size ? (parseInt(size) / 1024).toFixed(1) : '-';
+
+          const timeClass = time < 200 ? 'good' : time < 1000 ? 'warning' : 'bad';
+
+          html += `
+            <div class="metric">
+              <span class="metric-label">${endpoint.name} ${sizeKB !== '-' ? '(' + sizeKB + ' KB)' : ''}</span>
+              <span class="metric-value ${timeClass}">${time}ms</span>
+            </div>
+          `;
+          log(`${endpoint.name}: ${time}ms`, time < 1000 ? 'success' : 'warning');
+        } catch (error) {
+          html += `
+            <div class="metric">
+              <span class="metric-label">${endpoint.name}</span>
+              <span class="metric-value bad">失败</span>
+            </div>
+          `;
+          allSuccess = false;
+          log(`${endpoint.name} 测试失败: ${error.message}`, 'error');
+        }
+      }
+
+      result.innerHTML = html;
+      result.style.display = 'block';
+
+      status.className = allSuccess ? 'status success' : 'status error';
+      status.textContent = allSuccess ? '测试完成' : '部分失败';
+    }
+
+    async function testResourceLoading() {
+      log('开始资源加载测试...', 'info');
+      const result = document.getElementById('apiResult');
+
+      try {
+        const response = await fetch('http://localhost:3000/');
+        const html = await response.text();
+
+        // 提取所有script标签
+        const scriptMatches = html.match(/<script[^>]*src="([^"]+)"[^>]*>/g) || [];
+        const scripts = scriptMatches.map(tag => {
+          const match = tag.match(/src="([^"]+)"/);
+          return match ? match[1] : null;
+        }).filter(Boolean);
+
+        let html_result = '<div style="font-size:14px;margin-bottom:10px;font-weight:600;">资源加载测试 (并行加载):</div>';
+
+        const results = await Promise.all(
+          scripts.slice(0, 8).map(async (src) => {
+            try {
+              const start = performance.now();
+              const url = src.startsWith('http') ? src : `http://localhost:3000/${src}`;
+              await fetch(url);
+              return { src, time: Math.round(performance.now() - start), success: true };
+            } catch (error) {
+              return { src, time: 0, success: false, error: error.message };
+            }
+          })
+        );
+
+        results.forEach(r => {
+          const name = r.src.split('/').pop().split('?')[0];
+          if (r.success) {
+            const timeClass = r.time < 200 ? 'good' : r.time < 500 ? 'warning' : 'bad';
+            html_result += `
+              <div class="metric">
+                <span class="metric-label">${name}</span>
+                <span class="metric-value ${timeClass}">${r.time}ms</span>
+              </div>
+            `;
+            log(`${name}: ${r.time}ms`, 'success');
+          } else {
+            html_result += `
+              <div class="metric">
+                <span class="metric-label">${name}</span>
+                <span class="metric-value bad">失败</span>
+              </div>
+            `;
+            log(`${name} 加载失败`, 'error');
+          }
+        });
+
+        result.innerHTML = html_result;
+        result.style.display = 'block';
+
+        log('资源加载测试完成', 'success');
+      } catch (error) {
+        log(`资源加载测试失败: ${error.message}`, 'error');
+      }
+    }
+
+    async function checkServerStatus() {
+      const result = document.getElementById('serverResult');
+      log('检查服务器状态...', 'info');
+
+      try {
+        const start = performance.now();
+        const response = await fetch('http://localhost:3000/');
+        const responseTime = Math.round(performance.now() - start);
+
+        const isHealthy = response.ok && responseTime < 2000;
+        const statusClass = isHealthy ? 'good' : 'bad';
+
+        result.innerHTML = `
+          <div class="metric">
+            <span class="metric-label">服务器状态</span>
+            <span class="metric-value ${statusClass}">${response.ok ? '运行中' : '异常'}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">响应时间</span>
+            <span class="metric-value ${responseTime < 500 ? 'good' : 'warning'}">${responseTime}ms</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">HTTP状态码</span>
+            <span class="metric-value">${response.status}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">端口</span>
+            <span class="metric-value">3000</span>
+          </div>
+        `;
+        result.style.display = 'block';
+
+        log(`服务器状态: ${response.ok ? '正常' : '异常'}, 响应时间: ${responseTime}ms`, response.ok ? 'success' : 'error');
+      } catch (error) {
+        result.innerHTML = `<div class="metric-value bad">服务器无法访问: ${error.message}</div>`;
+        result.style.display = 'block';
+        log(`服务器检查失败: ${error.message}`, 'error');
+      }
+    }
+
+    function startAutoMonitor() {
+      if (autoMonitorInterval) {
+        log('自动监控已在运行', 'warning');
+        return;
+      }
+
+      log('启动自动监控 (每30秒检查一次)', 'success');
+      autoMonitorInterval = setInterval(async () => {
+        try {
+          const start = performance.now();
+          const response = await fetch('http://localhost:3000/');
+          const time = Math.round(performance.now() - start);
+
+          if (response.ok) {
+            log(`监控检查: 正常 (${time}ms)`, time < 1000 ? 'success' : 'warning');
+          } else {
+            log(`监控检查: 异常 (状态码: ${response.status})`, 'error');
+          }
+        } catch (error) {
+          log(`监控检查: 服务器不可达`, 'error');
+        }
+      }, 30000);
+    }
+
+    function stopAutoMonitor() {
+      if (autoMonitorInterval) {
+        clearInterval(autoMonitorInterval);
+        autoMonitorInterval = null;
+        log('自动监控已停止', 'info');
+      } else {
+        log('自动监控未运行', 'warning');
+      }
+    }
+
+    // 页面加载时自动检查
+    window.addEventListener('load', () => {
+      log('性能测试工具已就绪', 'success');
+      setTimeout(() => {
+        testPageLoad();
+        checkServerStatus();
+      }, 500);
+    });
+  </script>
+</body>
+</html>

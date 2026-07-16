@@ -57,12 +57,3 @@ Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $
 
 Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'register-protocol.ps1') } 'Failed to register the local helper protocol.'
 Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'create-shortcuts.ps1') } 'Failed to create the desktop shortcut.'
-
-if (-not $Silent) {
-    [System.Windows.Forms.MessageBox]::Show(
-        "已经安装完成",
-        '真武本地助手',
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Information
-    ) | Out-Null
-}

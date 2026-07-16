@@ -1058,6 +1058,9 @@ def health():
 @app.post('/ocr')
 def paddle_ocr(req: OcrRequest):
     img_arr = None
+    b64 = None
+    img_bytes = None
+    img = None
     try:
         _maybe_gc()
 
@@ -1106,7 +1109,16 @@ def paddle_ocr(req: OcrRequest):
         # 显式释放大对象，辅助 GC
         if img_arr is not None:
             del img_arr
-        del b64, img_bytes, img
+        if img is not None:
+            del img
+        if img_bytes is not None:
+            del img_bytes
+        if b64 is not None:
+            del b64
+        try:
+            gc.collect()
+        except Exception:
+            pass
 
 
 # ── 图片预上传缓存接口 ─────────────────────────────────────────────

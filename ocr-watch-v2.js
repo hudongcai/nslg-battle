@@ -1,10 +1,44 @@
-﻿/**
+/**
  * 战报自动监听 v2.1 - 统一队列渲染
  */
 
 window.ocrWatchTask = null;
 window.autoCompletedFiles = [];  // 记录最近完成的自动解析文件
 let ocrWatchTimer = null;
+
+function isOcrWatchActiveContext() {
+  return !!window.currentProjectId;
+}
+
+function compactOcrWatchTask(task) {
+  if (!task) return null;
+  var compact = { ...task };
+  delete compact.processedFilesJson;
+  delete compact.processedFiles;
+
+  // 统一字段名：支持 pending_count 和 pendingCount
+  if (compact.pendingCount !== undefined && compact.pending_count === undefined) {
+    compact.pending_count = compact.pendingCount;
+  }
+  if (compact.pending_count !== undefined && compact.pendingCount === undefined) {
+    compact.pendingCount = compact.pending_count;
+  }
+
+  // 保留前50个待处理文件（避免数据过大）
+  if (Array.isArray(compact.pendingFiles)) {
+    compact.pendingFiles = compact.pendingFiles.slice(0, 50);
+  }
+  return compact;
+}
+
+function stopOcrWatchPolling() {
+  if (ocrWatchTimer) {
+    clearInterval(ocrWatchTimer);
+    ocrWatchTimer = null;
+  }
+  window.ocrWatchTask = null;
+}
+window.stopOcrWatchPolling = stopOcrWatchPolling;
 
 // 根据当前页面域名自动确定 API 地址（与 cloud-sync.js 保持一致）
 function ocrWatchApiBase() {
@@ -35,7 +69,7 @@ function replaceOcrWatchPanel() {
   <div style="padding:8px 0;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
       <span style="font-size:14px;font-weight:700;color:var(--accent);">⚡ 战报自动监听</span>
-      <span style="font-size:11px;color:var(--text3);">每个项目独立 · 自动处理 · 统一在战报解析列表中显示</span>
+      <span style="font-size:11px;color:var(--text3);">每个项目独立 · 自动处理 · 显示在自动战报解析列表</span>
     </div>
     <div style="margin-bottom:12px;">
       <button class="btn btn-sm btn-secondary" onclick="downloadLocalHelperPackage()" style="margin-right:8px;">📦 下载本地助手</button>
@@ -105,6 +139,7 @@ function replaceOcrWatchPanel() {
 // ======= 数据加载 =======
 async function loadOcrWatchTask(projectId) {
   if (!projectId) return;
+  if (String(window.currentProjectId || '') !== String(projectId)) return;
   const token = localStorage.getItem('nslg_token');
   if (!token) return;
 
@@ -115,8 +150,9 @@ async function loadOcrWatchTask(projectId) {
     const data = await resp.json();
     if (data.code === 200) {
       console.log('[OCR-Watch] 加载任务: status=' + (data.data ? data.data.status : 'null') + ' heartbeat=' + (data.data ? data.data.lastHeartbeat : 'null') + ' processedCount=' + (data.data ? data.data.processedCount : 'null'));
+      if (String(window.currentProjectId || '') !== String(projectId)) return;
       var prev = window.ocrWatchTask;
-      window.ocrWatchTask = data.data;
+      window.ocrWatchTask = compactOcrWatchTask(data.data);
       updateOcrWatchUI();
       getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(){});
 
@@ -225,6 +261,16 @@ async function loadOcrWatchTask(projectId) {
         }
       }
       if (typeof renderOCRQueue === 'function') renderOCRQueue();
+      if (data.data && data.data.status === 'running' && Number(data.data.pendingCount || 0) > 0) {
+        try {
+          if (typeof loadPendingTasksFromBackend === 'function') await loadPendingTasksFromBackend();
+          if (typeof startBatchProcess === 'function' && !window.ocrRunning) {
+            await startBatchProcess();
+          }
+        } catch (autoErr) {
+          console.warn('[OCR-Watch] 自动拉取待处理任务失败:', autoErr.message || autoErr);
+        }
+      }
     }
   } catch (e) {
     console.error('[OCR-Watch] 加载任务失败:', e.message);
@@ -265,7 +311,10 @@ function updateOcrWatchUI() {
     effectiveStatus = 'error';
   }
 
-  console.log('[OCR-Watch] UI update: rawStatus=' + task.status + ' effective=' + effectiveStatus + ' heartbeat=' + (task.lastHeartbeat || 'null') + ' heartbeatAge=' + heartbeatAge + 'ms taskKeys=' + Object.keys(task).join(','));
+  if (!window.__ocrWatchLastUiLog || Date.now() - window.__ocrWatchLastUiLog > 30000) {
+    window.__ocrWatchLastUiLog = Date.now();
+    console.log('[OCR-Watch] UI update: status=' + task.status + ' effective=' + effectiveStatus + ' heartbeatAge=' + heartbeatAge + 'ms');
+  }
 
   // 状态：区分"真正空闲"和"心跳超时离线"
   var statusMap = { running: '✅ 运行中', paused: '⏸️ 已暂停', idle: '💤 空闲', error: '❌ 错误' };
@@ -564,16 +613,32 @@ async function toggleOcrWatchTask() {
 // ======= 初始化 =======
 function initOcrWatch() {
   if (ocrWatchTimer) clearInterval(ocrWatchTimer);
+  ocrWatchTimer = null;
+  if (!isOcrWatchActiveContext()) {
+    window.ocrWatchTask = null;
+    return;
+  }
   var pid = window.currentProjectId;
-  if (pid) loadOcrWatchTask(pid);
-  // 改进2：轮询间隔从5秒降到3秒，提升实时性
+  if (pid) {
+    loadOcrWatchTask(pid);
+    // 首次加载时也检测本地助手状态
+    getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(){});
+  }
+  // 降低轮询频率，从3秒改为10秒，减少渲染压力
   ocrWatchTimer = setInterval(function() {
-    if (window.currentProjectId) loadOcrWatchTask(window.currentProjectId);
-  }, 3000);
+    if (isOcrWatchActiveContext()) {
+      loadOcrWatchTask(window.currentProjectId);
+      // 每次轮询都检测本地助手是否在线
+      getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(err) {
+        // 本地助手无法连接时，显示离线状态
+        updateOcrWatchDiagnostics({ running: false, configured: false, helperClientId: null });
+      });
+    }
+  }, 10000);  // 3000 → 10000 (降低刷新频率)
 }
 
 // 页面加载后自动替换旧面板
-replaceOcrWatchPanel();
+if (window.currentProjectId) replaceOcrWatchPanel();
 
 // ========== 本地助手自动连接 ==========
 const HELPER_API = 'http://127.0.0.1:9999';

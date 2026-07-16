@@ -3,7 +3,7 @@
 <head>
 <link rel="icon" href="data:,">
 <meta charset="utf-8">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Cache-Control" content="max-age=3600">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>真武团的三谋队伍克制分析工具</title>
 <script>
@@ -20,16 +20,11 @@ window.setQueuePauseVisual = function(paused) {
 window.handleQueuePauseState = async function(shouldPause, btn) {
   window.setQueuePauseVisual(shouldPause);
   try {
-    if (window.ocrWatchTask) window.ocrWatchTask.status = shouldPause ? 'paused' : 'running';
-    if (typeof updateOcrWatchUI === 'function') updateOcrWatchUI();
-    if (typeof renderOCRQueue === 'function') renderOCRQueue();
-    window.setQueuePauseVisual(shouldPause);
-    if (shouldPause && typeof pauseOcrWatchTask === 'function') await pauseOcrWatchTask();
-    if (!shouldPause && typeof startOcrWatchTask === 'function') await startOcrWatchTask();
     if (typeof toggleBatchPause === 'function') {
       var internalPaused = typeof ocrPaused !== 'undefined' ? !!ocrPaused : null;
       if (internalPaused !== shouldPause) await toggleBatchPause();
     }
+    if (typeof renderOCRQueue === 'function') renderOCRQueue();
   } catch (e) {
     console.warn('[OCR] queue pause click failed:', e);
   } finally {
@@ -59,6 +54,63 @@ document.addEventListener('click', function(e) {
   window.setQueuePauseVisual(shouldPause);
   window.handleQueuePauseState(shouldPause, btn);
 }, true);
+window.setAutoQueuePauseVisual = function(paused) {
+  var btn = document.getElementById('btnAutoPauseBatch');
+  var area = document.getElementById('autoQueueArea');
+  if (btn) {
+    btn.dataset.paused = paused ? '1' : '0';
+    btn.textContent = paused ? '▶ 继续' : '⏸ 暂停';
+    btn.classList.toggle('is-paused', !!paused);
+  }
+  if (area) area.classList.toggle('queue-paused', !!paused);
+};
+window.handleAutoQueuePauseClick = async function(btn) {
+  var isPausedNow = !!(btn && (btn.dataset.paused === '1' || /继续/.test(btn.textContent || '')));
+  var shouldPause = !isPausedNow;
+  window.setAutoQueuePauseVisual(shouldPause);
+  try {
+    if (window.ocrWatchTask) window.ocrWatchTask.status = shouldPause ? 'paused' : 'running';
+    if (typeof updateOcrWatchUI === 'function') updateOcrWatchUI();
+    if (typeof renderOCRQueue === 'function') renderOCRQueue();
+    if (shouldPause && typeof pauseOcrWatchTask === 'function') await pauseOcrWatchTask();
+    if (!shouldPause && typeof startOcrWatchTask === 'function') await startOcrWatchTask();
+  } catch (e) {
+    console.warn('[OCR] auto queue pause click failed:', e);
+  } finally {
+    window.setAutoQueuePauseVisual(shouldPause);
+    if (typeof renderOCRQueue === 'function') renderOCRQueue();
+  }
+};
+window.normalizeOcrSplitLayout = function() {
+  var root = document.getElementById('tab-data');
+  if (!root || root.dataset.ocrSplitNormalized === '1') return;
+  var cards = Array.prototype.slice.call(root.children).filter(function(el) {
+    return el && el.classList && el.classList.contains('card');
+  });
+  if (cards.length < 4) return;
+  var manualPanel = document.createElement('div');
+  manualPanel.className = 'ocr-column-panel ocr-column-manual';
+  var autoPanel = document.createElement('div');
+  autoPanel.className = 'ocr-column-panel ocr-column-auto';
+
+  cards[0].classList.add('ocr-top-card');
+  cards[1].classList.add('ocr-top-card');
+  cards[2].classList.add('ocr-list-card');
+  cards[3].classList.add('ocr-list-card');
+
+  root.insertBefore(manualPanel, cards[0]);
+  root.insertBefore(autoPanel, cards[1]);
+  manualPanel.appendChild(cards[0]);
+  manualPanel.appendChild(cards[2]);
+  autoPanel.appendChild(cards[1]);
+  autoPanel.appendChild(cards[3]);
+  root.dataset.ocrSplitNormalized = '1';
+};
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', window.normalizeOcrSplitLayout);
+} else {
+  window.normalizeOcrSplitLayout();
+}
 </script>
 <style>
 :root{--bg:#0c0f1a;--bg2:#121729;--bg3:#1a2038;--bg4:#232a45;--accent:#f0b429;--accent2:#ffd166;--accent-dim:rgba(240,180,41,.12);--red:#ff6b6b;--green:#51cf66;--blue:#74c0fc;--orange:#ff922b;--cyan:#66d9e8;--purple:#d4a5ff;--text:#e8eaed;--text2:#8b95a8;--text3:#505b6e;--border:#252d44;--card:#151a2e;--radius:10px;}
@@ -140,6 +192,33 @@ body{font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;background:var
 .helperTaskPanelWrap::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(240,180,41,.045),rgba(116,192,252,.02));pointer-events:none;z-index:0;}
 .helperTaskPanelWrap > *{position:relative;z-index:1;}
 .browser-watch-card{margin-top:8px;padding:12px 14px;background:linear-gradient(180deg,rgba(11,15,26,.92),rgba(10,14,24,.84));border-radius:10px;border:1px solid rgba(255,255,255,.07);box-shadow:0 8px 18px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.03);}
+.ocr-split-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-bottom:16px;}
+.ocr-column{display:flex;flex-direction:column;gap:16px;min-width:0;}
+.ocr-column .card{margin:0;min-width:0;}
+.ocr-queue-title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;}
+.ocr-queue-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+#tab-data.ocr-split-enabled{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;}
+#tab-data.ocr-split-enabled > .card{margin:0;min-width:0;}
+#tab-data.ocr-split-enabled > .card:nth-of-type(1){grid-column:1;grid-row:1;}
+#tab-data.ocr-split-enabled > .card:nth-of-type(2){grid-column:2;grid-row:1;}
+#tab-data.ocr-split-enabled > .card:nth-of-type(3){grid-column:1;grid-row:2;}
+#tab-data.ocr-split-enabled > .card:nth-of-type(4){grid-column:2;grid-row:2;}
+#tab-data.ocr-split-enabled > .card:nth-of-type(n+5){grid-column:1 / -1;}
+.ocr-column-panel{display:grid;grid-template-rows:240px 220px;gap:14px;min-width:0;padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,.07);background:linear-gradient(180deg,rgba(22,29,52,.96),rgba(14,18,31,.92));box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 12px 28px rgba(0,0,0,.16);}
+.ocr-column-manual{grid-column:1;grid-row:1;}
+.ocr-column-auto{grid-column:2;grid-row:1;}
+.ocr-column-panel > .card{margin:0!important;min-width:0;min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden;background:linear-gradient(180deg,rgba(24,31,56,.98),rgba(18,23,41,.96));}
+.ocr-column-panel .ocr-top-card{height:240px;}
+.ocr-column-panel .ocr-list-card{height:220px;}
+.ocr-column-panel .upload-zone{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px 14px;}
+.ocr-column-panel #queueArea,.ocr-column-panel #autoQueueArea{height:100%;min-height:0;display:flex!important;flex-direction:column;}
+.ocr-column-panel .queue-list{flex:1;min-height:0;max-height:none;overflow-y:auto;}
+.ocr-column-panel .progress-wrap{flex:0 0 28px;}
+#tab-data.ocr-split-enabled > .ocr-column-panel + .card,#tab-data.ocr-split-enabled > .ocr-column-panel ~ .card{grid-column:1 / -1;}
+#autoQueueArea.queue-paused{border-color:rgba(255,209,102,.65)!important;box-shadow:0 0 0 1px rgba(255,209,102,.18) inset;}
+#autoQueueArea.queue-paused .qi-processing,#autoQueueArea.queue-paused .qi-pending{color:#ffd166!important;}
+#autoQueueArea.queue-paused .qi-processing::after,#autoQueueArea.queue-paused .qi-pending::after{content:'（已暂停）';}
+@media(max-width:1100px){.ocr-split-grid,#tab-data.ocr-split-enabled{grid-template-columns:1fr;}#tab-data.ocr-split-enabled > .card:nth-of-type(n),.ocr-column-manual,.ocr-column-auto,#tab-data.ocr-split-enabled > .ocr-column-panel + .card,#tab-data.ocr-split-enabled > .ocr-column-panel ~ .card{grid-column:1;grid-row:auto;}.ocr-column-panel{grid-template-rows:minmax(220px,auto) 220px;}}
 @media(max-width:720px){.helper-action-grid,.helper-status-grid,.helper-stats-grid,.helper-control-grid{grid-template-columns:1fr 1fr;}.helper-meta-grid{grid-template-columns:1fr;}}
 @media(max-width:460px){.helper-action-grid,.helper-status-grid,.helper-stats-grid,.helper-control-grid{grid-template-columns:1fr;}}
 input,select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px 10px;font-size:12px;outline:none;transition:all .2s;}
@@ -726,7 +805,7 @@ document.addEventListener('click', function(e) {
 <div class="main" id="mainApp" style="display:none">
 
   <!-- Tab 1: 战报导入 -->
-  <div id="tab-data" class="tab-content">
+  <div id="tab-data" class="tab-content ocr-split-enabled">
     <div class="card">
       <h3>📤 手动批量上传</h3>
       <div class="upload-zone" id="uploadZone" onclick="checkCreditsBeforeUpload()">
@@ -829,11 +908,21 @@ document.addEventListener('click', function(e) {
     <div class="card">
       <div id="queueArea" style="display:block;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span style="font-size:12px;font-weight:bold;color:var(--accent);">战报解析列表 (<span id="queueCount">0</span>)</span>
+          <span style="font-size:12px;font-weight:bold;color:var(--accent);">手动战报解析列表 (<span id="queueCount">0</span>)</span>
           <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnStartBatch" onclick="startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnPauseBatch">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearQueue()">🗑 清空</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="batchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
         <div class="queue-list" id="queueList"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div id="autoQueueArea" style="display:block;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:12px;font-weight:bold;color:var(--accent);">自动战报解析列表 (<span id="autoQueueCount">0</span>)</span>
+          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnAutoStartBatch" onclick="typeof startOcrWatchTask==='function'&&startOcrWatchTask()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnAutoPauseBatch" onclick="handleAutoQueuePauseClick(this)">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearAutoQueue()">🗑 清空</button></div>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" id="autoBatchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
+        <div class="queue-list" id="autoQueueList"></div>
       </div>
     </div>
     <div class="card">
@@ -2222,20 +2311,20 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
     </div>
   </div>
 </div>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="cloud-sync.js?v=20260619"></script>
-  <script src="data-system.js?v=20260621004"></script>
-  <script src="counter-analysis.js?v=20260621019"></script>
-  <script src="counter-analysis-enhanced.js?v=202605190002"></script>
-  <script src="user-system.js?v=202607041930"></script>
-  <script src="project-system.js?v=20260619001"></script>
-  <script src="role-system.js?v=202605110001"></script>
-  <script src="ocr-system.js?v=202607142349"></script>
-  <script src="ocr-watch-v2.js?v=202607142349"></script>
-  <script src="data-perm.js?v=202605111120"></script>
-  <script src="points-mall.js?v=202607021"></script>
-  <script src="ocr-dict-system.js?v=20260619002"></script>
-  <script src="ocr-region-editor.js?v=20260620001"></script>
+  <script defer src="node_modules/xlsx/dist/xlsx.full.min.js"></script>
+  <script defer src="cloud-sync.js?v=202607160115"></script>
+  <script defer src="data-system.js?v=202607160300"></script>
+  <script defer src="counter-analysis.js?v=20260621019"></script>
+  <script defer src="counter-analysis-enhanced.js?v=202605190002"></script>
+  <script defer src="user-system.js?v=202607160115"></script>
+  <script defer src="project-system.js?v=202607160230"></script>
+  <script defer src="role-system.js?v=202607160100"></script>
+  <script defer src="ocr-system.js?v=202607150130"></script>
+  <script defer src="ocr-watch-v2.js?v=202607160230"></script>
+  <script defer src="data-perm.js?v=202607160140"></script>
+  <script defer src="points-mall.js?v=202607021"></script>
+  <script defer src="ocr-dict-system.js?v=20260619002"></script>
+  <script defer src="ocr-region-editor.js?v=20260620001"></script>
 <script>
 // ========== 防抖工具（性能优化）==========
 var _debounceTimers={};
@@ -2347,6 +2436,28 @@ async function appInit(){
   document.body.addEventListener('dragover',function(e){if(e.dataTransfer&&e.dataTransfer.files.length>0)e.preventDefault();});
   document.body.addEventListener('drop',function(e){if(e.dataTransfer&&e.dataTransfer.files.length>0){e.preventDefault();if(document.getElementById('tab-data')&&document.getElementById('tab-data').classList.contains('active'))handleBatchUpload(e.dataTransfer.files);}});
 }
+function prepareProjectDirectoryShell(){
+  window.currentProjectId = null;
+  if(typeof window.stopOcrWatchPolling === 'function') window.stopOcrWatchPolling();
+  var tabs = document.querySelectorAll('.tab-content');
+  tabs.forEach(function(tab){
+    tab.style.setProperty('display', 'none', 'important');
+    tab.classList.remove('active');
+  });
+  var projectTab = document.getElementById('tab-project');
+  if(projectTab){
+    projectTab.style.setProperty('display', 'block', 'important');
+    projectTab.classList.add('active');
+  }
+  var projectSubNav = document.getElementById('projectSubNav');
+  var projectBar = document.getElementById('projectBar');
+  var systemSubNav = document.getElementById('systemSubNav');
+  if(projectSubNav) projectSubNav.style.display = 'none';
+  if(projectBar) projectBar.style.display = 'none';
+  if(systemSubNav) systemSubNav.style.display = 'none';
+  try { localStorage.setItem('lastTab', 'project'); } catch(e) {}
+}
+window.prepareProjectDirectoryShell = prepareProjectDirectoryShell;
 // 同步预判：有 session 直接显示主界面，避免登录页闪烁
 (function(){
   var hasSession = !!localStorage.getItem('sm_session');
@@ -2354,6 +2465,7 @@ async function appInit(){
     var m = document.getElementById('mainApp');
     var h = document.querySelector('.header');
     var n = document.getElementById('topNav');
+    prepareProjectDirectoryShell();
     if (m) m.style.display = '';
     if (h) h.style.display = '';
     if (n) n.style.display = '';
@@ -2362,7 +2474,13 @@ async function appInit(){
     if (l) l.style.display = 'flex';
   }
 })();
-appInit();
+// 等待所有 defer 脚本加载完成后再初始化
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', appInit);
+} else {
+  // DOMContentLoaded 已触发，直接调用
+  appInit();
+}
 </script>
 <script>
 (function() {

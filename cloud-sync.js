@@ -585,7 +585,7 @@ async function syncCloudToLocal() {
   if (!currentUser) return false;
   const token = getToken();
   if (!token) return false;
-  if (typeof openDB === 'function') {
+  if (false && typeof openDB === 'function') {
     try { await openDB(); } catch(e) { console.warn('[Sync] openDB 失败:', e); }
   }
   try {

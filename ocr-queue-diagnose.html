@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>自动解析队列诊断工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .section {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-left: 4px solid #667eea;
+    }
+    .section h2 {
+      color: #667eea;
+      font-size: 18px;
+      margin-bottom: 15px;
+    }
+    .btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    .btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+    }
+    .info-box {
+      background: white;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+      border: 1px solid #e5e7eb;
+    }
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .info-item:last-child { border-bottom: none; }
+    .info-label {
+      color: #6b7280;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .info-value {
+      color: #111827;
+      font-size: 14px;
+      font-family: monospace;
+    }
+    .status-good { color: #10b981; font-weight: 600; }
+    .status-warning { color: #f59e0b; font-weight: 600; }
+    .status-bad { color: #ef4444; font-weight: 600; }
+    pre {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 15px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.6;
+      margin-top: 10px;
+    }
+    .file-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .file-item {
+      padding: 8px 12px;
+      background: white;
+      margin: 5px 0;
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .file-status {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .status-pending { background: #fef3c7; color: #92400e; }
+    .status-processing { background: #dbeafe; color: #1e40af; }
+    .status-done { background: #d1fae5; color: #065f46; }
+    .status-error { background: #fee2e2; color: #991b1b; }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .alert-info { background: #dbeafe; color: #1e40af; border-left: 4px solid #3b82f6; }
+    .alert-warning { background: #fef3c7; color: #92400e; border-left: 4px solid #f59e0b; }
+    .alert-success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 自动解析队列诊断工具</h1>
+    <div class="subtitle">检查自动战报解析任务状态</div>
+
+    <div class="alert alert-info">
+      <strong>使用说明：</strong> 确保已打开主系统页面，并进入了某个项目。然后点击下方按钮诊断。
+    </div>
+
+    <div class="section">
+      <h2>诊断操作</h2>
+      <button class="btn" onclick="diagnose()">🔍 开始诊断</button>
+      <button class="btn" onclick="openMainPage()">📄 打开主页面</button>
+      <button class="btn" onclick="refreshData()">🔄 刷新数据</button>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <script>
+    let mainWindow = null;
+
+    function openMainPage() {
+      mainWindow = window.open('http://localhost:3000', 'nslg-main');
+      if (mainWindow) {
+        alert('主页面已打开，请等待加载完成后再诊断');
+      } else {
+        alert('无法打开主页面，请检查浏览器弹窗设置');
+      }
+    }
+
+    function getMainWindow() {
+      // 尝试获取主窗口
+      if (mainWindow && !mainWindow.closed) {
+        return mainWindow;
+      }
+
+      // 如果是在同一个域名下，可以尝试使用 opener
+      if (window.opener && !window.opener.closed) {
+        return window.opener;
+      }
+
+      return null;
+    }
+
+    function diagnose() {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<div class="section"><h2>正在诊断...</h2></div>';
+
+      try {
+        const win = getMainWindow();
+
+        if (!win) {
+          resultsDiv.innerHTML = `
+            <div class="section">
+              <h2>❌ 诊断失败</h2>
+              <div class="alert alert-warning">
+                <strong>无法访问主窗口</strong><br>
+                请执行以下操作：<br>
+                1. 打开主系统页面 (http://localhost:3000)<br>
+                2. 在主系统页面的控制台中输入以下命令获取诊断信息
+              </div>
+              <h3 style="margin-top:20px;">手动诊断命令：</h3>
+              <pre>// 1. 查看监听任务
+console.log('ocrWatchTask:', window.ocrWatchTask);
+
+// 2. 查看已完成文件
+console.log('autoCompletedFiles:', window.autoCompletedFiles);
+
+// 3. 查看当前项目ID
+console.log('currentProjectId:', window.currentProjectId);
+
+// 4. 详细诊断
+const task = window.ocrWatchTask;
+if (task) {
+  console.log('任务ID:', task.id);
+  console.log('项目ID:', task.projectId);
+  console.log('监听目录:', task.folderPath);
+  console.log('状态:', task.status);
+  console.log('当前文件:', task.currentFile);
+  console.log('待处理文件:', task.pendingFiles);
+  console.log('待处理数量:', task.pending_count);
+} else {
+  console.log('没有活动的监听任务');
+}</pre>
+            </div>
+          `;
+          return;
+        }
+
+        // 获取数据
+        const ocrWatchTask = win.window.ocrWatchTask;
+        const autoCompletedFiles = win.window.autoCompletedFiles || [];
+        const currentProjectId = win.window.currentProjectId;
+
+        // 生成诊断报告
+        let html = '';
+
+        // 基本信息
+        html += '<div class="section">';
+        html += '<h2>✅ 基本信息</h2>';
+        html += '<div class="info-box">';
+        html += `<div class="info-item">
+          <span class="info-label">当前项目ID</span>
+          <span class="info-value">${currentProjectId || '未进入项目'}</span>
+        </div>`;
+        html += `<div class="info-item">
+          <span class="info-label">监听任务状态</span>
+          <span class="info-value ${ocrWatchTask ? 'status-good' : 'status-warning'}">
+            ${ocrWatchTask ? '已启动' : '未启动'}
+          </span>
+        </div>`;
+        html += `<div class="info-item">
+          <span class="info-label">已完成文件数</span>
+          <span class="info-value">${autoCompletedFiles.length} 个</span>
+        </div>`;
+        html += '</div>';
+        html += '</div>';
+
+        if (!currentProjectId) {
+          html += '<div class="alert alert-warning">';
+          html += '<strong>⚠️ 未进入项目</strong><br>';
+          html += '请在主页面中进入某个项目，然后再次诊断';
+          html += '</div>';
+          resultsDiv.innerHTML = html;
+          return;
+        }
+
+        if (!ocrWatchTask) {
+          html += '<div class="alert alert-warning">';
+          html += '<strong>⚠️ 监听任务未启动</strong><br>';
+          html += '请在主页面的"战报导入"tab中：<br>';
+          html += '1. 点击"📂 选择监听目录"<br>';
+          html += '2. 选择包含战报图片的文件夹<br>';
+          html += '3. 点击"▶ 启动监听"';
+          html += '</div>';
+          resultsDiv.innerHTML = html;
+          return;
+        }
+
+        // 监听任务详情
+        html += '<div class="section">';
+        html += '<h2>📋 监听任务详情</h2>';
+        html += '<div class="info-box">';
+        html += `<div class="info-item">
+          <span class="info-label">任务ID</span>
+          <span class="info-value">${ocrWatchTask.id || '-'}</span>
+        </div>`;
+        html += `<div class="info-item">
+          <span class="info-label">监听目录</span>
+          <span class="info-value">${ocrWatchTask.folderPath || '-'}</span>
+        </div>`;
+        html += `<div class="info-item">
+          <span class="info-label">任务状态</span>
+          <span class="info-value ${
+            ocrWatchTask.status === 'running' ? 'status-good' :
+            ocrWatchTask.status === 'paused' ? 'status-warning' : 'status-bad'
+          }">${ocrWatchTask.status}</span>
+        </div>`;
+        html += `<div class="info-item">
+          <span class="info-label">当前处理文件</span>
+          <span class="info-value">${ocrWatchTask.currentFile || '无'}</span>
+        </div>`;
+        html += `<div class="info-item">
+          <span class="info-label">待处理数量</span>
+          <span class="info-value">${ocrWatchTask.pending_count || 0} 个</span>
+        </div>`;
+        html += '</div>';
+        html += '</div>';
+
+        // 文件列表
+        const pendingFiles = ocrWatchTask.pendingFiles || [];
+        const totalFiles = autoCompletedFiles.length + (ocrWatchTask.currentFile ? 1 : 0) + pendingFiles.length;
+
+        html += '<div class="section">';
+        html += `<h2>📁 文件列表 (共 ${totalFiles} 个)</h2>`;
+
+        if (totalFiles === 0) {
+          html += '<div class="alert alert-info">';
+          html += '<strong>暂无文件</strong><br>';
+          html += '监听目录中没有待处理的图片文件，或所有文件已处理完成';
+          html += '</div>';
+        } else {
+          html += '<div class="file-list">';
+
+          // 已完成
+          autoCompletedFiles.forEach(item => {
+            html += `<div class="file-item">
+              <span class="file-status status-done">✅ 已完成</span>
+              <span>${item.name}</span>
+              <span style="margin-left:auto;color:#6b7280;font-size:11px;">${item.time || ''}</span>
+            </div>`;
+          });
+
+          // 当前处理
+          if (ocrWatchTask.currentFile) {
+            const status = ocrWatchTask.status === 'error' ? 'error' :
+                          ocrWatchTask.status === 'paused' ? 'pending' : 'processing';
+            const icon = status === 'error' ? '❌ 失败' :
+                        status === 'pending' ? '⏸ 暂停' : '⚙️ 处理中';
+            html += `<div class="file-item">
+              <span class="file-status status-${status}">${icon}</span>
+              <span>${ocrWatchTask.currentFile}</span>
+            </div>`;
+          }
+
+          // 等待处理
+          pendingFiles.forEach(name => {
+            if (name && name !== ocrWatchTask.currentFile) {
+              html += `<div class="file-item">
+                <span class="file-status status-pending">⏳ 等待中</span>
+                <span>${name}</span>
+              </div>`;
+            }
+          });
+
+          html += '</div>';
+        }
+        html += '</div>';
+
+        // 诊断结论
+        html += '<div class="section">';
+        html += '<h2>💡 诊断结论</h2>';
+
+        if (totalFiles === 1 && autoCompletedFiles.length === 0 && ocrWatchTask.currentFile) {
+          html += '<div class="alert alert-info">';
+          html += '<strong>只有1个任务 - 正在处理中</strong><br>';
+          html += '• 当前正在处理这个文件<br>';
+          html += '• 监听目录中没有其他待处理文件<br>';
+          html += '• 建议：添加更多图片到监听目录，系统会自动检测并处理';
+          html += '</div>';
+        } else if (totalFiles === 1 && autoCompletedFiles.length === 1) {
+          html += '<div class="alert alert-success">';
+          html += '<strong>只有1个任务 - 已完成</strong><br>';
+          html += '• 这个文件已经处理完成<br>';
+          html += '• 监听目录中没有其他文件<br>';
+          html += '• 建议：添加更多图片到监听目录';
+          html += '</div>';
+        } else if (pendingFiles.length > 0) {
+          html += '<div class="alert alert-success">';
+          html += `<strong>队列正常运行</strong><br>`;
+          html += `• 已完成：${autoCompletedFiles.length} 个<br>`;
+          html += `• 处理中：${ocrWatchTask.currentFile ? 1 : 0} 个<br>`;
+          html += `• 等待中：${pendingFiles.length} 个`;
+          html += '</div>';
+        } else {
+          html += '<div class="alert alert-info">';
+          html += '<strong>所有文件已处理完成</strong><br>';
+          html += `• 共处理了 ${autoCompletedFiles.length} 个文件<br>`;
+          html += '• 监听目录中没有新文件<br>';
+          html += '• 系统会继续监听新文件';
+          html += '</div>';
+        }
+
+        html += '</div>';
+
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        resultsDiv.innerHTML = `
+          <div class="section">
+            <h2>❌ 诊断出错</h2>
+            <div class="alert alert-warning">
+              <strong>错误信息：</strong><br>
+              ${error.message}
+            </div>
+            <p style="margin-top:15px;">请在主系统页面的控制台中手动诊断</p>
+          </div>
+        `;
+      }
+    }
+
+    function refreshData() {
+      const win = getMainWindow();
+      if (!win) {
+        alert('无法访问主窗口，请先打开主页面');
+        return;
+      }
+
+      try {
+        if (typeof win.loadOcrWatchTask === 'function') {
+          win.loadOcrWatchTask(win.window.currentProjectId);
+        }
+        if (typeof win.renderOCRQueue === 'function') {
+          win.renderOCRQueue();
+        }
+        alert('数据已刷新，请重新诊断');
+      } catch (error) {
+        alert('刷新失败: ' + error.message);
+      }
+    }
+
+    // 页面加载时提示
+    window.addEventListener('load', () => {
+      console.log('诊断工具已就绪');
+    });
+  </script>
+</body>
+</html>

@@ -23,13 +23,13 @@ $script:LoadingForm = $null
 $script:LoadingLabel = $null
 $script:LoadingProgress = $null
 $script:AppIconPath = Join-Path $PSScriptRoot 'helper-app.ico'
-$script:LaunchAction = 'open'
+$script:LaunchAction = ''
 $script:LaunchProjectId = 0
 $script:LaunchTaskId = 0
 $script:LaunchApiBase = ''
 $script:LaunchShouldHide = $false
 $script:LaunchShouldPromptBind = $false
-$script:ShowMainWindow = $false
+$script:ShowMainWindow = $true
 $script:StopWorkerOnExit = $false
 $script:UiPidPath = Join-Path $PSScriptRoot 'helper-ui.pid'
 $script:LaunchCommandPath = Join-Path $PSScriptRoot 'helper-launch-command.json'
@@ -294,7 +294,7 @@ function Convert-ToInt32OrDefault($value, [int]$defaultValue = 0) {
 
 function Read-LaunchContext([string]$value) {
     $result = @{
-        action = 'open'
+        action = ''
         code = ''
         apiBase = ''
         projectId = 0L
@@ -882,9 +882,11 @@ function Show-HelperWindow {
     if ($script:MainForm) {
         if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $true }
         $script:MainForm.ShowInTaskbar = $true
-        $script:MainForm.Show()
         $script:MainForm.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        $script:MainForm.Show()
+        $script:MainForm.BringToFront()
         $script:MainForm.Activate()
+        $script:MainForm.Focus()
     }
 }
 
@@ -894,6 +896,16 @@ function Hide-HelperWindow {
         $script:MainForm.ShowInTaskbar = $false
         $script:MainForm.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
         $script:MainForm.Hide()
+    }
+}
+
+function Open-SetupPage {
+    $config = Read-HelperConfig
+    $apiBase = Get-ApiBase $config
+    if ($apiBase -match 'localhost|127\.0\.0\.1') {
+        Start-Process ($apiBase -replace '/api/?$', '/')
+    } else {
+        Start-Process 'https://www.zhenwu.fun/?setup=1'
     }
 }
 
@@ -1032,18 +1044,21 @@ function Initialize-NotifyIcon {
         $showItem.Font = New-Object System.Drawing.Font($showItem.Font, [System.Drawing.FontStyle]::Bold)
         $showItem.Add_Click({ Show-HelperWindow })
 
-        $script:NotifyMenu.Items.Add('-')  # 分隔线
+        [void]$script:NotifyMenu.Items.Add('-')  # 分隔线
 
         # 状态检查菜单项
         $checkItem = $script:NotifyMenu.Items.Add('检查状态')
         $checkItem.Add_Click({ Show-HelperStatus })
 
-        $script:NotifyMenu.Items.Add('-')  # 分隔线
+        [void]$script:NotifyMenu.Items.Add('-')  # 分隔线
 
         # 彻底退出菜单项
         $exitItem = $script:NotifyMenu.Items.Add('彻底退出')
         $exitItem.Add_Click({
             $script:ExitRequested = $true
+            $script:StopWorkerOnExit = $true
+            # 立即停止后台服务
+            Stop-HelperWorker
             if ($script:MainForm) { $script:MainForm.Close() }
         })
         $script:NotifyIcon.ContextMenuStrip = $script:NotifyMenu
@@ -1102,12 +1117,6 @@ $form.Add_Resize({
     }
 })
 
-$form.Add_Shown({
-    if ($script:NotifyIcon) {
-        $script:NotifyIcon.Visible = $true
-        Set-TrayStatus '托盘状态：已初始化' ([System.Drawing.Color]::FromArgb(55, 125, 34))
-    }
-})
 
 # 主界面：默认使用网页自动激活，连接码仅作为备用入口
 $config = Read-HelperConfig
@@ -1138,13 +1147,7 @@ $openWebButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $openWebButton.ForeColor = [System.Drawing.Color]::White
 $openWebButton.FlatStyle = 'Flat'
 $openWebButton.Add_Click({
-    $config = Read-HelperConfig
-    $apiBase = Get-ApiBase $config
-    if ($apiBase -match 'localhost|127\.0\.0\.1') {
-        Start-Process ($apiBase -replace '/api/?$', '/')
-    } else {
-        Start-Process 'https://www.zhenwu.fun/?setup=1'
-    }
+    Open-SetupPage
 })
 $form.Controls.Add($openWebButton)
 
@@ -1339,6 +1342,9 @@ try {
     Ensure-DeviceId $config
     Save-HelperConfig $config
     Start-HelperWorker
+    if ([string]::IsNullOrWhiteSpace([string]$config.helperToken) -and [string]::IsNullOrWhiteSpace([string]$script:LaunchLinkCode) -and $script:LaunchAction -ne 'open') {
+        Open-SetupPage
+    }
 } catch {}
 
 # 处理启动参数中的连接码
@@ -1351,13 +1357,15 @@ if (-not [string]::IsNullOrWhiteSpace($script:LaunchLinkCode)) {
             Set-Status ("连接成功 · 当前设备: " + $result.deviceName) ([System.Drawing.Color]::FromArgb(55, 125, 34))
             Start-HelperWorker -ForceRestart
 
-            # 自动隐藏到托盘
-            Start-Sleep -Milliseconds 500
-            Hide-HelperWindow
-            if ($script:NotifyIcon) {
-                $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
-                $script:NotifyIcon.BalloonTipText = '连接成功！助手已在后台运行。'
-                $script:NotifyIcon.ShowBalloonTip(3000)
+            # 自动隐藏到托盘（仅在非默认显示模式下）
+            if (-not $script:ShowMainWindow) {
+                Start-Sleep -Milliseconds 500
+                Hide-HelperWindow
+                if ($script:NotifyIcon) {
+                    $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
+                    $script:NotifyIcon.BalloonTipText = '连接成功！助手已在后台运行。'
+                    $script:NotifyIcon.ShowBalloonTip(3000)
+                }
             }
         }
     } catch {
@@ -1375,8 +1383,13 @@ if ($script:LaunchAction -eq 'bind-folder') {
     }
 }
 $form.Add_Shown({
+    if ($script:NotifyIcon) {
+        $script:NotifyIcon.Visible = $true
+        Set-TrayStatus '托盘状态：已初始化' ([System.Drawing.Color]::FromArgb(55, 125, 34))
+    }
     Process-PendingLaunchCommand
-    if ($script:LaunchShouldHide) {
+    # 只有在非默认启动时才隐藏窗口
+    if ($script:LaunchShouldHide -and -not $script:ShowMainWindow) {
         $script:LaunchShouldHide = $false
         Hide-HelperWindow
     }
@@ -1391,9 +1404,7 @@ $form.Add_Shown({
         })
     }
 })
-if ($script:ShowMainWindow) {
-    $form.Show()
-} else {
+if (-not $script:ShowMainWindow) {
     $form.ShowInTaskbar = $false
     $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
 }

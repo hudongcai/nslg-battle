@@ -573,7 +573,7 @@ window.doLoginPwd = async function doLoginPwd(){
     saveRememberedUser(phone, pwd, user.name, user.role);
     addSysLog('login','密码登录成功');
     startSessionHeartbeat();
-    onLoginSuccess();
+    await onLoginSuccess();
   }catch(e){msgEl.textContent='登录失败：'+e.message;}
 }
 
@@ -661,7 +661,7 @@ async function doRegPwd(){
       </div>
     `;
     document.body.appendChild(_regOverlay);
-    document.getElementById('_regSuccessOkBtn').onclick = function(){
+    document.getElementById('_regSuccessOkBtn').onclick = async function(){
       _regOverlay.remove();
       // 确保积分正确
       currentUser = user;
@@ -669,7 +669,7 @@ async function doRegPwd(){
       if(typeof updateUserNavPoints === 'function') updateUserNavPoints();
       saveSession(currentUser);
       closeRegister();
-      onLoginSuccess();
+      await onLoginSuccess();
     };
   }catch(e){msgEl.textContent='注册失败：'+e.message;}
 }
@@ -698,15 +698,24 @@ async function onLoginSuccess(){
   const topNav = document.getElementById('topNav');
   if(topNav) topNav.style.display='';
   // 清除之前退出时残留的 inline display 样式，确保 tab 内容能正常显示
-  document.querySelectorAll('.tab-content').forEach(el => {
-    el.style.setProperty('display', 'none', 'important');
-    el.classList.remove('active');
-  });
+  if(typeof prepareProjectDirectoryShell === 'function'){
+    prepareProjectDirectoryShell();
+  } else {
+    document.querySelectorAll('.tab-content').forEach(el => {
+      el.style.setProperty('display', 'none', 'important');
+      el.classList.remove('active');
+    });
+  }
   // 恢复上次停留的 tab，否则默认显示项目 tab
   const _lastTab = (() => { try { return localStorage.getItem('lastTab'); } catch(e) { return null; } })();
   const _SYS_TABS = ['user','syslog','datamgmt','rolemanage','dataperm','cloudservice','ocrdict','ocrpending','labeleditor'];
   const _PROJ_TABS = ['data','winrate'];
-  if (_lastTab && _lastTab !== 'project') {
+  if (_PROJ_TABS.includes(_lastTab)) {
+    window.currentProjectId = null;
+    try { localStorage.setItem('lastTab', 'project'); } catch(e) {}
+    var projectTab = document.getElementById('tab-project');
+    if(projectTab) projectTab.style.setProperty('display', 'block', 'important');
+  } else if (_lastTab && _lastTab !== 'project') {
     // 延迟到 updateNavByRole 执行完再恢复，避免权限未就绪
     setTimeout(() => {
       if (_SYS_TABS.includes(_lastTab)) {
@@ -749,33 +758,30 @@ async function onLoginSuccess(){
     }).catch(e => console.warn('[onLoginSuccess] 积分刷新失败:', e.message));
   }
   // ① 先确保 IndexedDB 打开（openDB 必须完成才能写入战报数据）
-  if(typeof openDB==='function') await openDB();
+  // 项目目录页不需要预加载战报库；进入具体项目时再加载。
 
   // ② 加载本地已有数据先展示（不阻塞云端同步）
-  if(typeof loadAllRecords==='function') await loadAllRecords();
+  window.__skipInitialDataInit = true;
 
-  // ③ 从云端拉取最新数据（覆盖/补全本地）
-  if(window.cloudSync && window.cloudSync.syncToLocal){
-    try{
-      console.log('[onLoginSuccess] 开始同步云端数据...');
-      const syncResult = await window.cloudSync.syncToLocal();
-      console.log('[onLoginSuccess] 云端同步完成:', syncResult);
-    }catch(e){
-      console.error('[onLoginSuccess] 云端同步失败:', e);
+  if(typeof renderProjectManage === 'function') await renderProjectManage({ cacheOnly: true });
+
+  setTimeout(() => { (async () => {
+    if(window.cloudSync && window.cloudSync.syncToLocal){
+      try{
+        console.log('[onLoginSuccess] background sync start');
+        const syncResult = await window.cloudSync.syncToLocal();
+        console.log('[onLoginSuccess] background sync done:', syncResult);
+      }catch(e){
+        console.error('[onLoginSuccess] background sync failed:', e);
+      }
     }
-  }
-
-  // ④ 同步完成后刷新项目栏 + 战报视图
-  if(typeof renderProjectSwitcher === 'function') await renderProjectSwitcher();
-  if(typeof loadAllRecords === 'function'){
-    await loadAllRecords();
-    if(typeof renderDataTable === 'function') renderDataTable();
-    if(typeof renderGallery === 'function') renderGallery();
-  }
-
-  // ⑤ 刷新项目管理页面（页面刷新后首次进入需要渲染项目列表）
-  if(typeof renderProjectManage === 'function') await renderProjectManage();
-
+    if(window.currentProjectId && typeof loadAllRecords === 'function'){
+      await loadAllRecords();
+      if(typeof renderDataTable === 'function') renderDataTable();
+      if(typeof renderGallery === 'function') renderGallery();
+    }
+    if(typeof renderProjectManage === 'function') await renderProjectManage({ cacheOnly: true });
+  })(); }, 1500);
 }
 
 // ========== 渲染用户栏 ==========
@@ -1291,9 +1297,13 @@ async function checkLoginState(){
         try{
           const _token = typeof getToken === 'function' ? getToken() : '';
           const _base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'https://api.zhenwu.fun/api';
+          const profileCtrl = new AbortController();
+          const profileTimer = setTimeout(() => profileCtrl.abort(), 800);
           const profileResp = await fetch(`${_base}/auth/profile`, {
-            headers: _token ? { 'Authorization': 'Bearer ' + _token } : {}
+            headers: _token ? { 'Authorization': 'Bearer ' + _token } : {},
+            signal: profileCtrl.signal
           });
+          clearTimeout(profileTimer);
           const profileData = await profileResp.json();
           if(profileData && profileData.code === 401){
             cloudOk = false;
@@ -1317,7 +1327,7 @@ async function checkLoginState(){
         }
         addSysLog('login','自动登录（会话恢复）');
         startSessionHeartbeat();
-        onLoginSuccess();
+        await onLoginSuccess();
         return;
       }
     }catch(e){}

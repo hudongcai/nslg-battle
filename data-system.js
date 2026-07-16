@@ -7,7 +7,7 @@ let db = null;
 let allRecords = [];
 let batchRunning = false;
 let dataPage = 1;
-let dataPerPage = 20;
+let dataPerPage = 10;  // 减少到10条，降低渲染压力
 let winRateSortField = null;
 let winRateSortDir = 'desc';
 let gallerySelectedIds = new Set();
@@ -282,16 +282,41 @@ function dbGet(id) {
 }
 
 // 轻量版 getAll：跳过 imageBase64，设 hasImage 标记，大幅减少内存占用
-function dbGetAllLite() {
+// 🔥 支持按项目过滤，避免加载所有数据
+function dbGetAllLite(projectId = null) {
   return new Promise((resolve, reject) => {
     if (!db) { resolve([]); return; }
     const tx = db.transaction(['records'], 'readonly');
     const results = [];
-    const req = tx.objectStore('records').openCursor();
+
+    // 如果指定了项目ID，使用索引查询
+    let req;
+    if (projectId) {
+      const store = tx.objectStore('records');
+      // 尝试使用索引查询（如果有的话）
+      try {
+        const index = store.index('projectId');
+        req = index.openCursor(IDBKeyRange.only(String(projectId)));
+      } catch (e) {
+        // 如果没有索引，使用全表扫描
+        console.warn('[dbGetAllLite] 项目索引不存在，使用全表扫描');
+        req = store.openCursor();
+      }
+    } else {
+      req = tx.objectStore('records').openCursor();
+    }
+
     req.onsuccess = (e) => {
       const cursor = e.target.result;
       if (!cursor) { resolve(results); return; }
       const val = cursor.value;
+
+      // 如果指定了项目ID且使用全表扫描，需要过滤
+      if (projectId && String(val.projectId) !== String(projectId)) {
+        cursor.continue();
+        return;
+      }
+
       if (val.imageBase64) {
         const { imageBase64, ...lite } = val;
         results.push({ ...lite, hasImage: true });
@@ -307,10 +332,10 @@ function dbGetAllLite() {
 async function dbDelete(id) {
   // 1. 从内存取 cloudId
   const rec = allRecords.find(r => r.id === id);
-  const cloudId = rec?.cloudId;
+  const cloudId = rec?.cloudId || rec?.cloud_id || id;
 
-  // 2. MySQL first：有 cloudId 则先删云端，失败直接抛出（不动本地）
-  if (window.cloudSync && cloudId) {
+  // 2. MySQL first：优先删云端，失败直接抛出（不动本地）
+  if (window.cloudSync && window.cloudSync.deleteRecord && cloudId) {
     const ok = await window.cloudSync.deleteRecord(cloudId);
     if (!ok) throw new Error('云端删除失败，操作已取消');
   }
@@ -342,46 +367,55 @@ function dbClear() {
 }
 
 async function loadAllRecords() {
+  if (!db && typeof openDB === 'function') await openDB();
   console.log('[loadAllRecords] 开始加载...');
+  const startTime = performance.now();
   try {
-    let records = await dbGetAllLite();
-    console.log('[loadAllRecords] 从 IndexedDB 读取了', records.length, '条记录');
-    // 旧数据迁移：为没有 projectId/uploader 的记录补全字段
-    // 重要：只处理真正需要迁移的旧数据（无 cloudId），避免触发云端更新
-    const migratePromises = [];
-    for (const rec of records) {
-      let changed = false;
-      if (rec.projectId === undefined) { rec.projectId = ''; changed = true; }
-      if (rec.uploader === undefined) { rec.uploader = ''; changed = true; }
-      // 修复：只有没有 cloudId 的本地记录才需要迁移写入，有 cloudId 的记录不应该在这里触发 dbPut
-      if (changed && !rec.cloudId) {
-        migratePromises.push(dbPutLocal(rec));
-      }
-    }
-    if (migratePromises.length > 0) await Promise.all(migratePromises);
-    // 按项目过滤（统一转字符串比较，避免云端数字ID vs 本地字符串ID不一致）
-    const pid = window.currentProjectId;
-    if (pid) {
-      const pidStr = String(pid);
-      allRecords = records.filter(r => String(r.projectId) === pidStr);
+    // 🔥 核心优化：只加载当前项目的数据
+    const currentProjectId = window.currentProjectId;
+
+    let records;
+    if (currentProjectId) {
+      // 有项目过滤：直接从 IndexedDB 查询该项目的数据
+      records = await dbGetAllLite(currentProjectId);
+      console.log('[loadAllRecords] 从 IndexedDB 加载项目', currentProjectId, '的数据，共', records.length, '条，耗时', Math.round(performance.now() - startTime), 'ms');
+      allRecords = records;
     } else {
-      // 无项目过滤：超管看全部，普通用户只看有权限项目的战报
+      // 无项目过滤：加载所有数据（限制1000条）
+      records = await dbGetAllLite();
+      const totalRecords = records.length;
+      console.log('[loadAllRecords] 从 IndexedDB 读取了', totalRecords, '条记录，耗时', Math.round(performance.now() - startTime), 'ms');
+
+      // 如果数据量过大，只保留最新的记录
+      const MAX_RECORDS = 1000;
+      if (records.length > MAX_RECORDS) {
+        console.warn(`[loadAllRecords] 数据量过大 (${records.length}条)，只加载最新的 ${MAX_RECORDS} 条`);
+        records.sort((a, b) => (b.id || 0) - (a.id || 0));
+        records = records.slice(0, MAX_RECORDS);
+      }
+
+      // 按权限过滤
       if (typeof currentUser !== 'undefined' && currentUser && currentUser.role !== 'super_admin') {
-        // 获取当前用户可见的项目 ID 集合（含自建+成员+公开+授权）
         let visibleProjIds = new Set();
         try {
-          const visProjs = await (typeof getVisibleProjects === 'function' ? getVisibleProjects() : Promise.resolve([]));
+          const visProjs = await (typeof getVisibleProjects === 'function' ? getVisibleProjects({ cacheOnly: true }) : Promise.resolve([]));
           visProjs.forEach(p => visibleProjIds.add(String(p.id)));
         } catch(e) {}
         allRecords = records.filter(r =>
-          !r.projectId ||                          // 无项目关联的旧数据
-          visibleProjIds.has(String(r.projectId))   // 有权限访问的项目（统一字符串）
+          !r.projectId || visibleProjIds.has(String(r.projectId))
         );
       } else {
         allRecords = records;
       }
+
+      if (totalRecords > MAX_RECORDS) {
+        console.warn(`⚠️ IndexedDB 中有 ${totalRecords} 条记录，建议清理旧数据`);
+      }
     }
+
+    console.log('[loadAllRecords] 最终加载', allRecords.length, '条记录，总耗时', Math.round(performance.now() - startTime), 'ms');
   } catch (e) {
+    console.error('[loadAllRecords] 加载失败:', e);
     allRecords = [];
   }
 
@@ -454,6 +488,12 @@ async function repairCloudGeneralsTactics() {
 }
 
 function syncToLocalStorage() {
+  // 🔥 禁用此功能，避免调用 dbGetAll() 导致内存溢出
+  // localStorage 容量有限（5-10MB），不适合存储大量数据
+  // allRecords 已经在内存中，不需要额外备份到 localStorage
+  return;
+
+  /* 原实现已禁用
   try {
     setTimeout(() => {
       dbGetAll().then(records => {
@@ -471,6 +511,7 @@ function syncToLocalStorage() {
       });
     }, 100);
   } catch (e) { }
+  */
 }
 
 // ========== OCR STATUS ==========
@@ -527,7 +568,7 @@ async function switchTab(tabId, btn) {
 
   const tab = document.getElementById('tab-' + tabId);
   if (tab) {
-    tab.style.setProperty('display', 'block', 'important');
+    tab.style.setProperty('display', tabId === 'data' ? 'grid' : 'block', 'important');
     tab.classList.add('active');
     console.log('[switchTab] 已显示 tab:', tabId, '| offsetParent:', tab.offsetParent);
   }
@@ -585,13 +626,23 @@ async function switchTab(tabId, btn) {
   if (tabId === 'ocrdict') { if (typeof onOcrDictTabShow === 'function') onOcrDictTabShow(); }
   if (tabId === 'ocrpending') { if (typeof onOcrPendingTabShow === 'function') onOcrPendingTabShow(); }
   if (tabId === 'labeleditor') { if (typeof onLabelEditorTabShow === 'function') onLabelEditorTabShow(); }
-  if (tabId === 'data') { renderDataTable(); renderGallery(); }
+  if (tabId === 'project') {
+    if (typeof renderProjectManage === 'function') renderProjectManage({ cacheOnly: true });
+  }
+  if (tabId === 'data') {
+    renderDataTable();
+    renderGallery();
+    if (typeof renderOCRQueue === 'function') renderOCRQueue();
+    if (typeof replaceOcrWatchPanel === 'function' && window.currentProjectId) replaceOcrWatchPanel();
+    if (typeof loadPendingTasksFromBackend === 'function') loadPendingTasksFromBackend();
+    if (typeof loadOcrWatchTask === 'function' && window.currentProjectId) loadOcrWatchTask(window.currentProjectId);
+  }
   if (tabId === 'winrate') { const el = document.getElementById('tab-winrate'); if (el && typeof createCounterAnalysisUI === 'function') createCounterAnalysisUI(el).catch(e => console.error('[createCounterAnalysisUI] 失败:', e)); }
   if (tabId === 'library') { renderHeroes(); renderTactics(); }
   if (tabId === 'ranking') renderRanking();
   if (tabId === 'peijiang') onPeijiangChange();
   if (tabId === 'yanwu') onYanwuChange();
-  if (tabId === 'project') { if(typeof renderProjectManage==='function') renderProjectManage(); }
+  if (tabId === 'project') { /* project list already rendered from cache above */ }
   if (tabId === 'user') { if(typeof renderUserManage==='function') renderUserManage(); }
   if (tabId === 'syslog') { if(typeof renderSysLog==='function') renderSysLog(); }
   if (tabId === 'rolemanage') { if(typeof renderRoleManage==='function') renderRoleManage(); }
@@ -1052,8 +1103,14 @@ async function deleteSelected() {
   if (!ids.length) return;
   if (!confirm(`确定删除选中的 ${ids.length} 条记录？`)) return;
   _dupSelectIds.clear();
+
+  // 批量删除
   for (const id of ids) await dbDelete(id);
-  await loadAllRecords();
+
+  // 🔥 优化：不重新加载所有数据，只从内存中批量移除
+  const deletedIds = new Set(ids);
+  allRecords = allRecords.filter(r => !deletedIds.has(r.id));
+  updateGlobalStats();
   renderDataTable();
 }
 
@@ -1238,6 +1295,7 @@ async function deleteRecord(id) {
   // 先获取记录，找到所属项目
   const rec = allRecords.find(r => r.id === id);
   const projId = rec ? rec.projectId : null;
+  const cloudId = rec?.cloudId || rec?.cloud_id || id;
 
   // 如果记录属于某个项目，先从项目的 battleRecordIds 中移除
   if (projId) {
@@ -1253,20 +1311,40 @@ async function deleteRecord(id) {
   }
 
   // 删除战报记录（云端同步删除，会级联清理 battle_gallery）
+  let cloudDeleteFailed = false;
   try {
-    if (typeof cloudDeleteRecord === 'function') {
-      await cloudDeleteRecord(id);
+    if (window.cloudSync && window.cloudSync.deleteRecord && cloudId) {
+      const ok = await window.cloudSync.deleteRecord(cloudId);
+      if (!ok) throw new Error('云端删除失败');
     }
   } catch (e) {
-    console.warn('[deleteRecord] 云端删除失败（继续删本地）:', e.message);
+    console.warn('[deleteRecord] 云端删除失败:', e.message);
+    cloudDeleteFailed = true;
+    // 询问是否继续删除本地数据
+    const continueDelete = confirm('云端删除失败，是否仅删除本地数据？\n\n提示：如果选择"确定"，将只删除本地记录，云端数据保持不变。下次同步时可能会重新出现。');
+    if (!continueDelete) {
+      alert('已取消删除操作');
+      return;
+    }
   }
+
+  // 执行本地删除
   await dbDelete(id);
+
   // 记录系统日志
   if (typeof addSysLog === 'function') {
-    addSysLog('delete', '删除战报: ' + (rec ? (rec.leftPlayer || rec.rightPlayer || 'ID:' + id) : 'ID:' + id) + (projId ? ' [项目ID:' + projId + ']' : ''));
+    const logMsg = '删除战报: ' + (rec ? (rec.leftPlayer || rec.rightPlayer || 'ID:' + id) : 'ID:' + id) + (projId ? ' [项目ID:' + projId + ']' : '');
+    addSysLog('delete', logMsg + (cloudDeleteFailed ? ' [仅本地]' : ''));
   }
-  await loadAllRecords();
+
+  // 🔥 优化：不重新加载所有数据，只从内存中移除
+  allRecords = allRecords.filter(r => r.id !== id);
+  updateGlobalStats();
   renderDataTable();
+
+  if (cloudDeleteFailed) {
+    alert('本地数据已删除\n\n注意：云端数据未删除，下次同步时可能会重新出现。');
+  }
 }
 
 async function clearAllData() {
@@ -1489,8 +1567,17 @@ function viewFullImageByRecord(id) {
 
 // ========== 数据模块初始化（供 appInit 调用） ==========
 async function dataInit() {
+  if (window.__skipInitialDataInit) {
+    console.log('[DataSystem] 项目目录启动，跳过战报预加载');
+    return;
+  }
+  if (window.__dataInitDone) {
+    console.log('[DataSystem] 初始化已由登录流程完成，跳过重复加载');
+    return;
+  }
   await openDB();
   await loadAllRecords();
+  window.__dataInitDone = true;
   renderDataTable();
   renderGallery();
   console.log('[DataSystem] 初始化完成，当前 allRecords:', allRecords.length);

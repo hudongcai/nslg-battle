@@ -87,12 +87,22 @@ async function getProjAccessForUser(phone) {
 }
 
 // ========== 覆盖 getVisibleProjects（云端为真相之源）==========
-window.getVisibleProjects = async function () {
+window.getVisibleProjects = async function (options = {}) {
   if (!currentUser) return [];
 
   const localProjects = await projDBGetAll();
   let merged = new Map();
   for (const p of localProjects) { merged.set(p.id, p); }
+
+  if (options.cacheOnly) {
+    const cached = Array.from(merged.values());
+    if (currentUser.role === 'super_admin') return cached;
+    return cached.filter(p =>
+      p.visibility === 'public' || p.is_public == 1 ||
+      p.creator === currentUser.phone || p.creator_phone === currentUser.phone ||
+      (p.memberPhones || []).includes(currentUser.phone)
+    );
+  }
 
   // cloudIds = 后端按权限过滤后返回的项目ID集合
   let cloudIds = new Set();
@@ -545,4 +555,3 @@ async function canUserDeleteProject(phone, projectId) {
   `;
   document.head.appendChild(style);
 })();
-

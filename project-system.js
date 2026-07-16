@@ -8,13 +8,28 @@ console.log('[project-system.js] v20260619001 加载');
 // visibility: 'public' | 'private'
 
 // ========== 获取当前用户可见项目（云端为真相之源，本地多余项目视为已删除）==========
-async function getVisibleProjects(){
+function filterVisibleProjectsFromCache(projects){
+  if(!currentUser)return[];
+  const all = Array.from(projects || []);
+  if(currentUser.role==='super_admin') return all;
+  return all.filter(p=>
+    p.visibility==='public' || p.is_public == 1 ||
+    p.creator === currentUser.phone || p.creator_phone === currentUser.phone ||
+    (p.memberPhones||[]).includes(currentUser.phone)
+  );
+}
+
+async function getVisibleProjects(options = {}){
   if(!currentUser)return[];
 
   // 始终先读本地
   const localProjects = await projDBGetAll();
   let merged = new Map();
   for (const p of localProjects) { merged.set(p.id, p); }
+
+  if(options.cacheOnly){
+    return filterVisibleProjectsFromCache(Array.from(merged.values()));
+  }
 
   // 再从云端获取，合并到本地
   // cloudIds = 后端按权限过滤后返回的项目集合，用于前端可见性判断
@@ -69,8 +84,12 @@ async function getVisibleProjects(){
 }
 
 // ========== 项目查询（云端优先，失败回退本地）==========
-async function getProjectWithFallback(projectId) {
+async function getProjectWithFallback(projectId, options = {}) {
   let proj = null;
+  if (options.cacheFirst) {
+    proj = await projDBGet(projectId);
+    if (proj) return proj;
+  }
   // 云端优先（云端是真相源）
   if (typeof window.cloudSync?.getProject === 'function') {
     try {
@@ -99,9 +118,10 @@ async function getProjectWithFallback(projectId) {
 }
 
 // ========== 渲染项目管理页 ==========
-async function renderProjectManage(){
+async function renderProjectManage(options = {}){
   if(!currentUser)return;
-  const projects = await getVisibleProjects();
+  options = { cacheOnly: true, ...options };
+  const projects = await getVisibleProjects(options);
   const canManage = currentUser.role==='super_admin';
   const grid = document.getElementById('projectGrid');
   const empty = document.getElementById('projectEmpty');
@@ -117,7 +137,7 @@ async function renderProjectManage(){
 
   // 获取当前用户的 projAccess 权限
   let userPerms = {};
-  if(typeof getProjAccessForUser === 'function'){
+  if(!canManage && typeof getProjAccessForUser === 'function'){
     try{
       const entries = await getProjAccessForUser(currentUser.phone);
       entries.forEach(e => { userPerms[e.projectId] = e; });
@@ -585,7 +605,7 @@ function closeMemberModal(){ const el=document.getElementById('memberModal'); if
 
 // ========== 查看项目（进入项目详情，显示子导航） ==========
 async function viewProject(projectId){
-  const proj = await getProjectWithFallback(projectId);
+  const proj = await getProjectWithFallback(projectId, { cacheFirst: true });
   if(!proj){ alert('项目不存在'); return; }
   window.currentProjectId = projectId;
   window.currentProjectName = proj.name || '';
@@ -618,14 +638,31 @@ async function viewProject(projectId){
     `;
     projectSubNav.style.display='flex';
   }
-  // 先从云端全量同步该项目战报（解决历史截断导致的数据缺失）
-  if(window.cloudSync && typeof window.cloudSync.syncProjectRecords === 'function'){
-    try { await window.cloudSync.syncProjectRecords(projectId); } catch(e) {}
-  }
-  // 再加载本地数据（此时 IndexedDB 已完整）
-  if(typeof loadAllRecords==='function') await loadAllRecords();
+  // 先加载本地缓存并打开页面，云端全量同步放到后台刷新
+  // 性能优化：显示加载提示，异步加载数据
+  const loadingPromise = (async () => {
+    if(typeof loadAllRecords==='function') await loadAllRecords();
+  })();
+
   // 默认切换到战报导入
-  switchTab('data', document.querySelector('#projectSubNav button[onclick*="switchTab\(\'data\'"]'));
+  await switchTab('data', document.querySelector('#projectSubNav button[onclick*="switchTab\(\'data\'"]'));
+
+  // 等待数据加载完成后再渲染
+  await loadingPromise;
+
+  if(window.cloudSync && typeof window.cloudSync.syncProjectRecords === 'function'){
+    (async () => {
+      try {
+        await window.cloudSync.syncProjectRecords(projectId);
+        if(String(window.currentProjectId) !== String(projectId)) return;
+        if(typeof loadAllRecords==='function') await loadAllRecords();
+        if(typeof renderDataTable==='function') renderDataTable();
+        if(typeof renderGallery==='function') renderGallery();
+      } catch(e) {
+        console.warn('[viewProject] background sync failed:', e);
+      }
+    })();
+  }
   // owner 异步后台加载图片（不阻塞页面渲染）
   if(window.currentProjectIsOwner && window.cloudSync && typeof window.cloudSync.syncProjectImages === 'function'){
     setTimeout(() => window.cloudSync.syncProjectImages(projectId), 500);
@@ -636,6 +673,7 @@ async function viewProject(projectId){
 function exitProject(){
   window.currentProjectId = null;
   window.currentProjectIsOwner = null;
+  if(typeof stopOcrWatchPolling === 'function') stopOcrWatchPolling();
   // 隐藏子导航
   const sn = document.getElementById('projectSubNav');
   if(sn){
@@ -655,8 +693,7 @@ function exitProject(){
     if(tabProject){tabProject.style.display='block';tabProject.classList.add('active');}
     if(typeof renderProjectManage==='function') renderProjectManage();
   }
-  // 清除数据过滤
-  if(typeof loadAllRecords==='function') loadAllRecords();
+  // 项目目录不需要加载战报数据，进入具体项目时再读取。
 }
 
 // ========== 删除项目 ==========
@@ -697,7 +734,6 @@ async function deleteProject(projectId){
 // ========== 项目切换器（顶部）==========
 async function renderProjectSwitcher(){
   if(!currentUser)return;
-  const projects = await getVisibleProjects();
   let switcher = document.getElementById('projectSwitcher');
   if(!switcher){
     switcher = document.createElement('div');
@@ -732,7 +768,7 @@ async function showProjectHome(){
   window.currentProjectId = null;
   // 用 switchTab 正确切换到项目管理（会自动隐藏其他 tab 和子导航）
   if(typeof switchTab==='function'){
-    switchTab('project', document.getElementById('navProjectBtn'));
+    await switchTab('project', document.getElementById('navProjectBtn'));
   } else {
     // fallback
     document.querySelectorAll('.tab-content').forEach(t=>{ t.style.display='none'; t.classList.remove('active'); });

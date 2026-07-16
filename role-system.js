@@ -235,7 +235,10 @@ async function _doRoleSystemInit(){
     // 云端同步：角色权限以数据库为真相之源，每次启动都强制从云端拉取最新
     if (window.cloudSync) {
       try {
-        const cloudRoles = await cloudGetRoles();
+        const cloudRoles = await Promise.race([
+          cloudGetRoles(),
+          new Promise(resolve => setTimeout(() => resolve([]), 800))
+        ]);
         if (cloudRoles && cloudRoles.length > 0) {
           console.log('[roleSystemInit] 从云端同步', cloudRoles.length, '个角色（覆盖本地缓存）');
           for (const role of cloudRoles) {

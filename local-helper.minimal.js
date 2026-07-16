@@ -150,12 +150,19 @@ function listImages(folderPath) {
   }
 }
 
+// 获取系统已经记录过的图片名称：已提交、处理中、失败、已成功都算已记录。
+async function getKnownImageNames(config, task) {
+  const data = await apiFetch(config, `/battles/ocr-known-images?projectId=${encodeURIComponent(task.projectId || '')}`);
+  const names = Array.isArray(data.data) ? data.data : [];
+  return new Set(names.map(name => String(name || '').trim()).filter(Boolean));
+}
+
 // 创建待处理任务（不立即执行OCR）
 async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
-  const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + '/battles/ocr-upload', {
+  const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + '/battles/ocr-tasks', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -218,19 +225,16 @@ async function processTask(config, state, task) {
     return;
   }
 
-  // MySQL is authoritative. If the server cannot be reached, do not guess from local cache.
-  let processedFiles = new Set();
+  // MySQL is authoritative. The local helper only compares image names.
+  let knownFiles = new Set();
 
-  // 从后端获取已成功解析的文件列表（防止重复提交）
+  // 从后端获取已记录图片名：已提交/处理中/失败/已成功都不重复提交。
   try {
-    const data = await apiFetch(config, `/gallery/imagenames?successOnly=true&projectId=${encodeURIComponent(task.projectId || '')}`);
-    if (Array.isArray(data.data)) {
-      data.data.forEach(name => processedFiles.add(name));
-    }
+    knownFiles = await getKnownImageNames(config, task);
   } catch (e) {
-    console.warn(`[${taskKey}] 查询已解析文件失败，跳过本轮扫描，避免错误覆盖进度:`, e.message);
+    console.warn(`[${taskKey}] 查询已记录图片名失败，跳过本轮扫描，避免重复提交:`, e.message);
     await updateProgress(config, task, {
-      lastError: `查询已解析文件失败: ${e.message}`,
+      lastError: `查询已记录图片名失败: ${e.message}`,
       lastHeartbeat: new Date().toISOString()
     });
     return;
@@ -239,8 +243,8 @@ async function processTask(config, state, task) {
   // 获取所有文件
   const files = listImages(folderPath);
 
-  // 找出新文件
-  const newFiles = files.filter(name => !processedFiles.has(name));
+  // 找出新增图片：本地全量名称 - 系统已记录名称
+  const newFiles = files.filter(name => !knownFiles.has(name));
 
   if (newFiles.length === 0) {
     // update heartbeat (no new files) - clear pending/current
@@ -248,8 +252,6 @@ async function processTask(config, state, task) {
       pendingCount: 0,
       pendingFiles: [],
       currentFile: '',
-      processedCount: processedFiles.size,
-      processedFilesJson: Array.from(processedFiles),
       lastHeartbeat: new Date().toISOString()
     });
     return;
@@ -260,8 +262,6 @@ async function processTask(config, state, task) {
     pendingCount: newFiles.length,
     pendingFiles: newFiles.slice(),
     currentFile: '',
-    processedCount: processedFiles.size,
-    processedFilesJson: Array.from(processedFiles),
     lastHeartbeat: new Date().toISOString()
   });
 
@@ -280,14 +280,12 @@ async function processTask(config, state, task) {
       const currentTask = tasks.find(t => String(t.id) === taskKey);
       if (!currentTask || currentTask.status !== 'running') {
         console.log(`[${taskKey}] task status is ${currentTask ? currentTask.status : 'deleted'}, stop before next file`);
-        state.processedByTask[taskKey] = Array.from(processedFiles);
+        state.processedByTask[taskKey] = Array.from(knownFiles);
         writeJson(STATE_PATH, state);
         await updateProgress(config, task, {
           pendingCount: newFiles.slice(i).length,
           pendingFiles: newFiles.slice(i),
           currentFile: '',
-          processedCount: processedFiles.size,
-          processedFilesJson: Array.from(processedFiles),
           lastHeartbeat: new Date().toISOString()
         });
         return;
@@ -324,15 +322,13 @@ async function processTask(config, state, task) {
 
     try {
       await uploadFile(config, task, fullPath, fileName);
-      processedFiles.add(fileName);
+      knownFiles.add(fileName);
       successCount++;
       console.log(`[${taskKey}] ok ${fileName}`);
       await updateProgress(config, task, {
         pendingCount: remaining.length,
         pendingFiles: remaining,
         currentFile: '',
-        processedCount: processedFiles.size,
-        processedFilesJson: Array.from(processedFiles),
         lastError: '',
         lastHeartbeat: new Date().toISOString()
       });
@@ -355,7 +351,7 @@ async function processTask(config, state, task) {
       if (!currentTask || currentTask.status !== 'running') {
         console.log(`[${taskKey}] 任务状态已变更为 ${currentTask ? currentTask.status : 'deleted'}，停止处理`);
         // 保存进度
-        state.processedByTask[taskKey] = Array.from(processedFiles);
+        state.processedByTask[taskKey] = Array.from(knownFiles);
         writeJson(STATE_PATH, state);
         return;
       }
@@ -366,7 +362,7 @@ async function processTask(config, state, task) {
   }
 
   // update local state
-  state.processedByTask[taskKey] = Array.from(processedFiles);
+  state.processedByTask[taskKey] = Array.from(knownFiles);
   writeJson(STATE_PATH, state);
 
   // update progress - clear pending/current, all done
@@ -374,8 +370,6 @@ async function processTask(config, state, task) {
     pendingCount: 0,
     pendingFiles: [],
     currentFile: '',
-    processedCount: processedFiles.size,
-    processedFilesJson: Array.from(processedFiles),
     lastError,
     lastHeartbeat: new Date().toISOString()
   });
@@ -491,7 +485,7 @@ async function main() {
 
       const tasks = await listTasks(config);
 
-      // 同步 processedFiles
+      // 同步服务端已记录图片名（仅作为本地快照，不代表 OCR 已完成）
       tasks.forEach(task => {
         const taskKey = String(task.id);
         if (task.processedFilesJson && Array.isArray(task.processedFilesJson)) {
