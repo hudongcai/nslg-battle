@@ -1035,6 +1035,7 @@ function renderDataTable() {
         <td style="width:32px;min-width:32px;text-align:center;padding:0;"><input type="checkbox" class="row-check" data-id="${r.id}" ${_dupSelectIds.has(r.id) ? 'checked' : ''} onchange="updateSelectionCount()" style="width:16px;height:16px;padding:0;margin:0;cursor:pointer;accent-color:var(--accent);"></td>
         <td class="num">${start + i + 1}</td>
         <td style="color:var(--text2);font-size:11px;">${r.time || '-'}</td>
+        <td style="text-align:center;"><a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;" title="点击查看原图">🔍 原图</a></td>
         <td><span class="result-badge result-${r.result === '胜' ? 'win' : r.result === '败' ? 'lose' : 'draw'}">${r.result || '-'}</span></td>
         <td style="white-space:nowrap;">${escHtml(r.leftPlayer || '')}</td>
         <td style="color:var(--text2);white-space:nowrap;min-width:77px;">${escHtml(r.leftAlliance || '')}</td>
@@ -1042,6 +1043,7 @@ function renderDataTable() {
         <td style="min-width:28px;text-align:center;">${getStarsDisplay(r,'left')}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'left',1)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'left',2)}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'left',3)}</td>
         <td style="color:var(--text2);">${escHtml(r.leftFormation || '')}</td>
         <td class="num">${fmtNum(r.leftLoss)}</td>
         <td class="num">${fmtNum(r.leftTotal)}</td>
@@ -1052,11 +1054,11 @@ function renderDataTable() {
         <td style="min-width:28px;text-align:center;">${getStarsDisplay(r,'right')}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'right',1)}</td>
         <td style="min-width:100px;">${getTacticColDisplay(r,'right',2)}</td>
+        <td style="min-width:100px;">${getTacticColDisplay(r,'right',3)}</td>
         <td style="color:var(--text2);">${escHtml(r.rightFormation || '')}</td>
         <td class="num">${fmtNum(r.rightLoss)}</td>
         <td class="num">${fmtNum(r.rightTotal)}</td>
         <td class="num" style="font-weight:bold;color:${getLossColor(r.rightLossRate)}">${r.rightLossRate != null ? Number(r.rightLossRate).toFixed(1) + '%' : '-'}</td>
-        <td style="text-align:center;"><a href="javascript:void(0)" onclick="showRecordImage(${r.id})" style="color:var(--accent);text-decoration:underline;font-size:12px;" title="点击查看原图">🔍 原图</a></td>
         <td><button class="btn btn-sm btn-danger" onclick="deleteRecord(${r.id})">删除</button></td>
       </tr>`).join('');
   }
