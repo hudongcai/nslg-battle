@@ -162,19 +162,39 @@ async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
+  // 获取项目的 OCR 模板配置
+  let labelConfig = null;
+  if (task.projectId) {
+    try {
+      const configData = await apiFetch(config, `/label-config/${task.projectId}`);
+      if (configData && configData.code === 200 && configData.data) {
+        labelConfig = configData.data.categories;
+      }
+    } catch (e) {
+      console.warn('[uploadFile] 获取 labelConfig 失败:', e.message);
+    }
+  }
+
+  const body = {
+    image: base64,
+    projectId: task.projectId || null,
+    imageName: fileName,
+    source: 'auto-watch',
+    helperTaskId: task.id
+  };
+
+  // 传递 labelConfig（如果有）
+  if (labelConfig) {
+    body.labelConfig = labelConfig;
+  }
+
   const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + '/battles/ocr-tasks', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + config.helperToken
     },
-    body: JSON.stringify({
-      image: base64,
-      projectId: task.projectId || null,
-      imageName: fileName,
-      source: 'auto-watch',
-      helperTaskId: task.id
-    })
+    body: JSON.stringify(body)
   });
 
   const data = await resp.json();
