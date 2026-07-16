@@ -155,19 +155,39 @@ async function uploadFile(config, task, filePath, fileName) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
+  // 获取项目的标注配置
+  let labelConfig = null;
+  try {
+    const projectId = task.projectId || 0;
+    const configResp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + `/label-config/${projectId}`, {
+      headers: { 'Authorization': 'Bearer ' + config.helperToken }
+    });
+    if (configResp.ok) {
+      const configData = await configResp.json();
+      if (configData.code === 200 && configData.data && configData.data.categories) {
+        labelConfig = configData.data.categories;
+      }
+    }
+  } catch (e) {
+    console.warn('[警告] 获取标注配置失败，将使用自动检测模式:', e.message);
+  }
+
+  const reqBody = {
+    image: base64,
+    projectId: task.projectId || null,
+    imageName: fileName,
+    source: 'auto-watch',
+    helperTaskId: task.id
+  };
+  if (labelConfig) reqBody.labelConfig = labelConfig;
+
   const resp = await fetch(normalizeApiBase(config.apiBase).replace(/\/$/, '') + '/battles/ocr-upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + config.helperToken
     },
-    body: JSON.stringify({
-      image: base64,
-      projectId: task.projectId || null,
-      imageName: fileName,
-      source: 'auto-watch',
-      helperTaskId: task.id
-    })
+    body: JSON.stringify(reqBody)
   });
 
   const data = await resp.json();
