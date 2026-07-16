@@ -6,7 +6,8 @@
 
 // 根据当前页面域名自动确定 API 地址 - 直接调用 MySQL API，绕过 Cloudflare Worker
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-const CLOUD_API_BASE = isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
+window.CLOUD_API_BASE = isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
+const CLOUD_API_BASE = window.CLOUD_API_BASE; // 向后兼容
 
 // JSON 安全解析（后端返回的 JSON 字段可能是字符串）
 function safeJSONParse(val) {
