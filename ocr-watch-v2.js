@@ -144,20 +144,73 @@ async function loadOcrWatchTask(projectId) {
   if (!token) return;
 
   try {
-    const resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks?projectId=' + encodeURIComponent(projectId), {
-      headers: { 'Authorization': 'Bearer ' + token }
-    });
-    const data = await resp.json();
-    if (data.code === 200) {
-      console.log('[OCR-Watch] 加载任务: status=' + (data.data ? data.data.status : 'null') + ' heartbeat=' + (data.data ? data.data.lastHeartbeat : 'null') + ' processedCount=' + (data.data ? data.data.processedCount : 'null'));
+    // 同时加载监听任务状态和任务列表
+    const [watchResp, tasksResp] = await Promise.all([
+      fetch(ocrWatchApiBase() + '/ocr-watch/tasks?projectId=' + encodeURIComponent(projectId), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }),
+      fetch(ocrWatchApiBase() + '/battles/ocr-tasks?projectId=' + encodeURIComponent(projectId), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+    ]);
+
+    const watchData = await watchResp.json();
+    const tasksData = await tasksResp.json();
+
+    console.log('[OCR-Watch] watchData.code:', watchData.code);
+    console.log('[OCR-Watch] tasksData:', tasksData);
+
+    if (watchData.code === 200) {
+      console.log('[OCR-Watch] 加载任务: status=' + (watchData.data ? watchData.data.status : 'null') + ' heartbeat=' + (watchData.data ? watchData.data.lastHeartbeat : 'null'));
       if (String(window.currentProjectId || '') !== String(projectId)) return;
       var prev = window.ocrWatchTask;
-      window.ocrWatchTask = compactOcrWatchTask(data.data);
+      window.ocrWatchTask = compactOcrWatchTask(watchData.data);
+
+      // 从 ocr_pending_tasks 初始化任务列表
+      if (tasksData.code === 200 && Array.isArray(tasksData.data)) {
+        console.log('[OCR-Watch] 加载任务列表，共 ' + tasksData.data.length + ' 项');
+
+        window.autoCompletedFiles = [];
+        var pendingFiles = [];
+        var currentFile = '';
+
+        // 按状态分组
+        tasksData.data.forEach(function(task) {
+          if (task.status === 'done') {
+            // 已完成
+            var createdAt = new Date(task.created_at);
+            var timeStr = String(createdAt.getHours()).padStart(2, '0') + ':'
+                        + String(createdAt.getMinutes()).padStart(2, '0') + ':'
+                        + String(createdAt.getSeconds()).padStart(2, '0');
+            window.autoCompletedFiles.push({ name: task.image_name, time: timeStr });
+          } else if (task.status === 'processing') {
+            // 处理中（只取第一个）
+            if (!currentFile) currentFile = task.image_name;
+          } else if (task.status === 'pending') {
+            // 待处理
+            pendingFiles.push(task.image_name);
+          } else if (task.status === 'failed') {
+            // 失败也显示在待处理（带错误标记）
+            pendingFiles.push(task.image_name);
+          }
+        });
+
+        // 同步到 ocrWatchTask
+        if (window.ocrWatchTask) {
+          window.ocrWatchTask.pendingFiles = pendingFiles;
+          window.ocrWatchTask.currentFile = currentFile;
+        }
+
+        console.log('[OCR-Watch] 已完成: ' + window.autoCompletedFiles.length +
+                    ', 处理中: ' + (currentFile ? 1 : 0) +
+                    ', 待处理: ' + pendingFiles.length);
+      }
+
       updateOcrWatchUI();
       getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(){});
 
       // 当已处理数量变化时，记录完成的文件并刷新数据底表
-      var newCount = data.data ? data.data.processedCount : 0;
+      var newCount = watchData.data ? watchData.data.processedCount : 0;
       var oldCount = prev ? prev.processedCount : 0;
       if (newCount !== oldCount && newCount > oldCount) {
         // 新完成了文件：将 currentFile 加入已完成列表
@@ -261,7 +314,7 @@ async function loadOcrWatchTask(projectId) {
         }
       }
       if (typeof renderOCRQueue === 'function') renderOCRQueue();
-      if (data.data && data.data.status === 'running' && Number(data.data.pendingCount || 0) > 0) {
+      if (watchData.data && watchData.data.status === 'running' && Number(watchData.data.pendingCount || 0) > 0) {
         try {
           if (typeof loadPendingTasksFromBackend === 'function') await loadPendingTasksFromBackend();
           if (typeof startBatchProcess === 'function' && !window.ocrRunning) {
