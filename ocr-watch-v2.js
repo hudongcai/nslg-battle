@@ -1,50 +1,117 @@
 /**
- * 战报自动监听 v2.1 - 统一队列渲染
+ * 战报自动监听 v2.2 - WebSocket 实时推送
  */
 
 window.ocrWatchTask = null;
 window.autoCompletedFiles = [];  // 记录最近完成的自动解析文件
-let ocrWatchTimer = null;
+let ocrWatchSocket = null;  // WebSocket 连接
 
 function isOcrWatchActiveContext() {
   return !!window.currentProjectId;
 }
-
-function compactOcrWatchTask(task) {
-  if (!task) return null;
-  var compact = { ...task };
-  delete compact.processedFilesJson;
-  delete compact.processedFiles;
-
-  // 统一字段名：支持 pending_count 和 pendingCount
-  if (compact.pendingCount !== undefined && compact.pending_count === undefined) {
-    compact.pending_count = compact.pendingCount;
-  }
-  if (compact.pending_count !== undefined && compact.pendingCount === undefined) {
-    compact.pendingCount = compact.pending_count;
-  }
-
-  // 保留前50个待处理文件（避免数据过大）
-  if (Array.isArray(compact.pendingFiles)) {
-    compact.pendingFiles = compact.pendingFiles.slice(0, 50);
-  }
-  return compact;
-}
-
-function stopOcrWatchPolling() {
-  if (ocrWatchTimer) {
-    clearInterval(ocrWatchTimer);
-    ocrWatchTimer = null;
-  }
-  window.ocrWatchTask = null;
-}
-window.stopOcrWatchPolling = stopOcrWatchPolling;
 
 // 根据当前页面域名自动确定 API 地址（与 cloud-sync.js 保持一致）
 function ocrWatchApiBase() {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
   return isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
 }
+
+// WebSocket 连接管理
+function initOcrWatchWebSocket() {
+  if (ocrWatchSocket) {
+    ocrWatchSocket.disconnect();
+    ocrWatchSocket = null;
+  }
+
+  const apiBase = ocrWatchApiBase();
+  const wsUrl = apiBase.replace('/api', '');
+
+  console.log('[OCR-Watch] 连接 WebSocket:', wsUrl);
+
+  ocrWatchSocket = io(wsUrl, {
+    path: '/ws',
+    transports: ['websocket', 'polling']
+  });
+
+  ocrWatchSocket.on('connect', () => {
+    console.log('[OCR-Watch] WebSocket 已连接');
+    if (window.currentProjectId) {
+      ocrWatchSocket.emit('join-project', window.currentProjectId);
+      console.log('[OCR-Watch] 已加入项目房间:', window.currentProjectId);
+    }
+  });
+
+  ocrWatchSocket.on('task-update', (data) => {
+    console.log('[OCR-Watch] 收到任务更新:', data);
+    updateOcrWatchUI(data);
+  });
+
+  ocrWatchSocket.on('disconnect', () => {
+    console.log('[OCR-Watch] WebSocket 断开连接');
+  });
+
+  ocrWatchSocket.on('reconnect', () => {
+    console.log('[OCR-Watch] WebSocket 重新连接');
+    if (window.currentProjectId) {
+      ocrWatchSocket.emit('join-project', window.currentProjectId);
+    }
+  });
+}
+
+// 更新 UI（由 WebSocket 推送触发）
+function updateOcrWatchUI(data) {
+  if (!data) return;
+
+  // 更新全局状态
+  window.ocrWatchTask = {
+    id: data.taskId,
+    projectId: data.projectId,
+    status: data.status,
+    pendingCount: data.pendingCount || 0,
+    processedCount: data.processedCount || 0,
+    failedCount: data.failedCount || 0,
+    currentFile: data.currentFile || '',
+    lastError: data.lastError || ''
+  };
+
+  // 更新 UI 元素
+  const statusEl = document.getElementById('ocrWatchStatus');
+  const pendingEl = document.getElementById('ocrWatchPending');
+  const processedEl = document.getElementById('ocrWatchProcessed');
+
+  if (statusEl) {
+    const statusMap = {
+      'idle': '空闲',
+      'running': '运行中',
+      'paused': '已暂停',
+      'error': '错误'
+    };
+    statusEl.textContent = statusMap[data.status] || data.status;
+    statusEl.style.color = data.status === 'running' ? 'var(--success)' : 'var(--text3)';
+  }
+
+  if (pendingEl) {
+    pendingEl.textContent = data.pendingCount || 0;
+  }
+
+  if (processedEl) {
+    processedEl.textContent = data.processedCount || 0;
+  }
+
+  // 刷新自动战报解析列表
+  if (typeof renderOcrAutoQueue === 'function') {
+    renderOcrAutoQueue();
+  }
+}
+
+function stopOcrWatchPolling() {
+  if (ocrWatchSocket) {
+    ocrWatchSocket.disconnect();
+    ocrWatchSocket = null;
+  }
+  window.ocrWatchTask = null;
+}
+window.stopOcrWatchPolling = stopOcrWatchPolling;
 
 // ======= 替换旧面板 =======
 function replaceOcrWatchPanel() {
@@ -163,8 +230,12 @@ async function loadOcrWatchTask(projectId) {
     if (watchData.code === 200) {
       console.log('[OCR-Watch] 加载任务: status=' + (watchData.data ? watchData.data.status : 'null') + ' heartbeat=' + (watchData.data ? watchData.data.lastHeartbeat : 'null'));
       if (String(window.currentProjectId || '') !== String(projectId)) return;
+
+      // 保存旧状态用于比较
       var prev = window.ocrWatchTask;
-      window.ocrWatchTask = compactOcrWatchTask(watchData.data);
+
+      // 直接使用数据，不需要 compact
+      window.ocrWatchTask = watchData.data;
 
       // 从 ocr_pending_tasks 初始化任务列表
       if (tasksData.code === 200 && Array.isArray(tasksData.data)) {
@@ -366,7 +437,7 @@ function updateOcrWatchUI() {
 
   if (!window.__ocrWatchLastUiLog || Date.now() - window.__ocrWatchLastUiLog > 30000) {
     window.__ocrWatchLastUiLog = Date.now();
-    console.log('[OCR-Watch] UI update: status=' + task.status + ' effective=' + effectiveStatus + ' heartbeatAge=' + heartbeatAge + 'ms');
+    console.log('[OCR-Watch] UI update: status=' + task.status + ' effective=' + effectiveStatus + ' heartbeatAge=' + heartbeatAge + 'ms lastHeartbeat=' + task.lastHeartbeat + ' parsed=' + parsed);
   }
 
   // 状态：区分"真正空闲"和"心跳超时离线"
@@ -665,29 +736,23 @@ async function toggleOcrWatchTask() {
 
 // ======= 初始化 =======
 function initOcrWatch() {
-  if (ocrWatchTimer) clearInterval(ocrWatchTimer);
-  ocrWatchTimer = null;
+  console.log('[OCR-Watch] 初始化 WebSocket 模式');
+
   if (!isOcrWatchActiveContext()) {
     window.ocrWatchTask = null;
     return;
   }
+
+  // 初始化 WebSocket 连接
+  initOcrWatchWebSocket();
+
+  // 首次加载任务状态
   var pid = window.currentProjectId;
   if (pid) {
     loadOcrWatchTask(pid);
     // 首次加载时也检测本地助手状态
     getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(){});
   }
-  // 降低轮询频率，从3秒改为10秒，减少渲染压力
-  ocrWatchTimer = setInterval(function() {
-    if (isOcrWatchActiveContext()) {
-      loadOcrWatchTask(window.currentProjectId);
-      // 每次轮询都检测本地助手是否在线
-      getLocalHelperStatus(1500).then(updateOcrWatchDiagnostics).catch(function(err) {
-        // 本地助手无法连接时，显示离线状态
-        updateOcrWatchDiagnostics({ running: false, configured: false, helperClientId: null });
-      });
-    }
-  }, 10000);  // 3000 → 10000 (降低刷新频率)
 }
 
 // 页面加载后自动替换旧面板

@@ -903,7 +903,8 @@ function Open-SetupPage {
     $config = Read-HelperConfig
     $apiBase = Get-ApiBase $config
     if ($apiBase -match 'localhost|127\.0\.0\.1') {
-        Start-Process ($apiBase -replace '/api/?$', '/')
+        $baseUrl = $apiBase -replace '/api/?$', '/'
+        Start-Process ($baseUrl + '?setup=1')
     } else {
         Start-Process 'https://www.zhenwu.fun/?setup=1'
     }
@@ -939,42 +940,73 @@ function Show-StartupReadyMessage {
 
 function Show-HelperStatus {
     try {
-        $statusData = $null
-        $httpStatus = '❌ 未运行'
-        try {
-            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9999/status' -Method GET -TimeoutSec 2 -UseBasicParsing
-            if ($response.StatusCode -eq 200) {
-                $statusData = $response.Content | ConvertFrom-Json
-                $httpStatus = '✅ 正常运行'
-            }
-        } catch {}
-
         $config = Read-HelperConfig
-        $tokenStatus = if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) { '❌ 未配置' } else { '✅ 已配置' }
-        $helperClientId = if ($statusData -and $statusData.helperClientId) { $statusData.helperClientId } else { $config.helperClientId }
-        $deviceId = if ($statusData -and $statusData.deviceId) { $statusData.deviceId } else { $config.deviceId }
-        $identityStatus = if ([string]::IsNullOrWhiteSpace([string]$helperClientId)) { '❌ 未就绪' } else { "✅ 已就绪 (#$helperClientId)" }
-        $apiBase = if ($statusData -and $statusData.apiBase) { $statusData.apiBase } else { $config.apiBase }
-        $lastFolderPath = if ($statusData -and $statusData.lastFolderPath) { $statusData.lastFolderPath } else { $config.lastFolderPath }
-        $folderStatus = '未选择'
-        if (-not [string]::IsNullOrWhiteSpace([string]$lastFolderPath)) {
-            $exists = if ($statusData -and $null -ne $statusData.folderExists) { [bool]$statusData.folderExists } else { Test-Path -LiteralPath ([string]$lastFolderPath) }
-            $folderStatus = if ($exists) { "✅ 存在：$lastFolderPath" } else { "❌ 不存在：$lastFolderPath" }
-        }
+        $apiBase = Get-ApiBase $config
 
-        $workerStatus = '❌ 未启动'
-        $runningWorker = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
-            try {
-                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-                return $cmdLine -and $cmdLine -like "*local-helper.js*"
-            } catch {
-                return $false
+        # 1. 本地网页连接状态（端口：9999）
+        $localStatus = '❌ 未运行'
+        $localDetail = ''
+        try {
+            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:9999/ping' -Method GET -TimeoutSec 2 -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+                $localStatus = '✅ 正常运行'
+                $localDetail = 'HTTP 服务已启动，可接收前端激活请求'
             }
-        }
-        if ($runningWorker) {
-            $workerStatus = '✅ 运行中'
+        } catch {
+            $localDetail = "连接失败: $($_.Exception.Message)"
         }
 
+        # 2. 远程服务器连接状态
+        $remoteStatus = '❌ 无法连接'
+        $remoteDetail = ''
+        try {
+            $response = Invoke-WebRequest -Uri "$apiBase/ping" -Method GET -TimeoutSec 3 -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+                $responseData = $response.Content | ConvertFrom-Json
+                if ($responseData.code -eq 200) {
+                    $remoteStatus = '✅ 连接正常'
+                    $remoteDetail = "后端 API 可访问: $apiBase"
+                } else {
+                    $remoteDetail = "API 返回错误: code=$($responseData.code)"
+                }
+            }
+        } catch {
+            $remoteDetail = "连接失败: $($_.Exception.Message)"
+        }
+
+        # 3. 关联网页连接码状态（自动）
+        $tokenStatus = '❌ 未配置'
+        $tokenDetail = ''
+        if ([string]::IsNullOrWhiteSpace([string]$config.helperToken)) {
+            $tokenDetail = '本地助手尚未保存 helperToken，请在网页激活或手动输入连接码'
+        } else {
+            $tokenStatus = '✅ 已配置'
+            $tokenMasked = $config.helperToken.Substring(0, [Math]::Min(20, $config.helperToken.Length)) + '...'
+            $tokenDetail = "Token: $tokenMasked"
+        }
+
+        # 4. 后端连接码验证状态（自动）
+        $verifyStatus = '⏸️ 跳过检查'
+        $verifyDetail = ''
+        if ($tokenStatus -like '✅*') {
+            try {
+                $verifyResponse = Invoke-HelperApi -Path '/ocr-watch/tasks' -Method 'GET'
+                if ($verifyResponse.code -eq 200) {
+                    $verifyStatus = '✅ 验证通过'
+                    $verifyDetail = 'helperToken 有效，后端认证成功'
+                } else {
+                    $verifyStatus = '❌ 验证失败'
+                    $verifyDetail = "后端返回: $($verifyResponse.message)"
+                }
+            } catch {
+                $verifyStatus = '❌ 验证失败'
+                $verifyDetail = $_.Exception.Message
+            }
+        } else {
+            $verifyDetail = 'Token 未配置，无需验证'
+        }
+
+        # 版本信息
         $versionJsonPath = Join-Path $PSScriptRoot 'version.json'
         $versionTime = '未知'
         if (Test-Path $versionJsonPath) {
@@ -982,7 +1014,6 @@ function Show-HelperStatus {
                 $versionInfo = Get-Content $versionJsonPath -Raw | ConvertFrom-Json
                 $versionTime = $versionInfo.buildTime
             } catch {
-                # 如果读取失败，回退到使用文件修改时间
                 $helperJsPath = Join-Path $PSScriptRoot 'local-helper.js'
                 if (Test-Path $helperJsPath) {
                     $fileTime = (Get-Item $helperJsPath).LastWriteTime
@@ -991,22 +1022,32 @@ function Show-HelperStatus {
             }
         }
 
-        $overallReady = ($httpStatus -like '✅*') -and ($workerStatus -like '✅*') -and ($tokenStatus -like '✅*') -and ($identityStatus -like '✅*')
-        $overallStatus = if ($overallReady) { '✅ 自动监听基础条件已就绪' } else { '❌ 自动监听基础条件未就绪' }
+        # 总体状态
+        $allGood = ($localStatus -like '✅*') -and ($remoteStatus -like '✅*') -and ($tokenStatus -like '✅*') -and ($verifyStatus -like '✅*')
+        $overallStatus = if ($allGood) { '✅ 所有检查通过，助手可正常工作' } else { '⚠️ 部分检查未通过，请查看详情' }
 
         $statusMessage = @"
 版本时间: $versionTime
 
+═══════════════════════════════════════
 总体状态: $overallStatus
+═══════════════════════════════════════
 
-HTTP 服务 (端口 9999): $httpStatus
-后台进程: $workerStatus
-Token 配置: $tokenStatus
-设备身份: $identityStatus
-设备编号: $deviceId
+1️⃣  本地网页连接状态（端口：9999）
+    状态: $localStatus
+    说明: $localDetail
 
-API 地址: $apiBase
-最近目录: $folderStatus
+2️⃣  远程服务器连接状态
+    状态: $remoteStatus
+    说明: $remoteDetail
+
+3️⃣  关联网页连接码状态（自动）
+    状态: $tokenStatus
+    说明: $tokenDetail
+
+4️⃣  后端连接码验证状态（自动）
+    状态: $verifyStatus
+    说明: $verifyDetail
 "@
 
         $result = [System.Windows.Forms.MessageBox]::Show(

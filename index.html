@@ -919,7 +919,7 @@ document.addEventListener('click', function(e) {
       <div id="autoQueueArea" style="display:block;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:12px;font-weight:bold;color:var(--accent);">自动战报解析列表 (<span id="autoQueueCount">0</span>)</span>
-          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnAutoStartBatch" onclick="typeof startOcrWatchTask==='function'&&startOcrWatchTask()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnAutoPauseBatch" onclick="handleAutoQueuePauseClick(this)">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearAutoQueue()">🗑 清空</button></div>
+          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnAutoStartBatch" onclick="typeof startBatchProcess==='function'&&startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnAutoPauseBatch" onclick="handleAutoQueuePauseClick(this)">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearAutoQueue()">🗑 清空</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="autoBatchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
         <div class="queue-list" id="autoQueueList"></div>
@@ -2322,7 +2322,8 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
   <script defer src="project-system.js?v=202607160230"></script>
   <script defer src="role-system.js?v=202607160100"></script>
   <script defer src="ocr-system.js?v=202607150130"></script>
-  <script defer src="ocr-watch-v2.js?v=202607171802"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script defer src="ocr-watch-v2.js?v=202607172100"></script>
   <script defer src="data-perm.js?v=202607160140"></script>
   <script defer src="points-mall.js?v=202607021"></script>
   <script defer src="ocr-dict-system.js?v=20260619002"></script>

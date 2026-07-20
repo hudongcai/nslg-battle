@@ -270,15 +270,20 @@ def _load_dot_template():
     """加载所有豆豆模板（原始 + 从样本提取的暗/亮模板）"""
     global _DOT_TPL_GRAY, _DOT_TPL_EDGE, _DOT_TPL_LIST
 
-    # 1) 加载原始主模板
+    # 1) 加载原始主模板（如果不存在，稍后从额外模板加载第一个作为主模板）
     tpl_path = os.path.join(_here, 'dot_template.png')
-    tpl_rgba = cv2.imread(tpl_path, cv2.IMREAD_UNCHANGED)
-    if tpl_rgba is None:
-        raise RuntimeError('豆豆模板加载失败: ' + tpl_path)
-    if tpl_rgba.shape[2] != 4:
-        raise RuntimeError('豆豆模板缺少 alpha 通道')
-    _DOT_TPL_GRAY, _DOT_TPL_EDGE = _process_template_rgba(tpl_rgba)
-    _DOT_TPL_LIST.append(('original', _DOT_TPL_GRAY, _DOT_TPL_EDGE))
+    main_loaded = False
+    if os.path.exists(tpl_path):
+        tpl_rgba = cv2.imread(tpl_path, cv2.IMREAD_UNCHANGED)
+        if tpl_rgba is not None and len(tpl_rgba.shape) == 3 and tpl_rgba.shape[2] == 4:
+            _DOT_TPL_GRAY, _DOT_TPL_EDGE = _process_template_rgba(tpl_rgba)
+            _DOT_TPL_LIST.append(('original', _DOT_TPL_GRAY, _DOT_TPL_EDGE))
+            main_loaded = True
+            _debug_msg('加载主模板: ' + tpl_path)
+        else:
+            _debug_msg('主模板加载失败（格式错误），将使用备用模板: ' + tpl_path)
+    else:
+        _debug_msg('主模板不存在，将使用备用模板: ' + tpl_path)
 
     # 2) 加载额外模板 (从样本提取的)
     tpl_dir = os.path.join(_here, 'dot_templates_out')
@@ -289,19 +294,29 @@ def _load_dot_template():
         for ref_path in ref_files:
             name = os.path.basename(ref_path).replace('_ref.png', '')
             tpl_rgba = cv2.imread(ref_path, cv2.IMREAD_UNCHANGED)
-            if tpl_rgba is None or tpl_rgba.shape[2] != 4:
+            if tpl_rgba is None or len(tpl_rgba.shape) < 3 or tpl_rgba.shape[2] != 4:
                 continue
             gray, edge = _process_template_rgba(tpl_rgba)
             if gray is not None:
-                _DOT_TPL_LIST.append((name, gray, edge))
+                # 如果主模板未加载，使用第一个额外模板作为主模板
+                if not main_loaded:
+                    _DOT_TPL_GRAY, _DOT_TPL_EDGE = gray, edge
+                    _DOT_TPL_LIST.append(('original_from_' + name, gray, edge))
+                    main_loaded = True
+                    _debug_msg('使用备用模板作为主模板: ' + ref_path)
+                else:
+                    _DOT_TPL_LIST.append((name, gray, edge))
                 loaded += 1
         _debug_msg('加载额外模板: %d 个 (total=%d)' % (loaded, len(_DOT_TPL_LIST)))
     else:
         _debug_msg('模板目录不存在: %s, 仅使用原始模板' % tpl_dir)
 
-    _debug_msg('豆豆模板: %dx%d alpha=%.1f%% edge=%d (total_templates=%d)' % (
+    # 最终检查：确保至少加载了一个模板
+    if not main_loaded or _DOT_TPL_GRAY is None:
+        raise RuntimeError('无法加载任何豆豆模板，请检查 dot_template.png 或 dot_templates_out 目录')
+
+    _debug_msg('豆豆模板: %dx%d edge=%d (total_templates=%d)' % (
         _DOT_TPL_GRAY.shape[1], _DOT_TPL_GRAY.shape[0],
-        100.0 * np.count_nonzero(tpl_rgba[:,:,3] > 0.5) / tpl_rgba[:,:,3].size,
         np.count_nonzero(_DOT_TPL_EDGE),
         len(_DOT_TPL_LIST)))
 

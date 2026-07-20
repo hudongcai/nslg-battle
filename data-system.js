@@ -1628,7 +1628,7 @@ async function refreshDBViewer() {
     const tableNames = {
       users:'用户表', roles:'角色表', projects:'项目表',
       project_members:'项目成员', battle_records:'战报记录',
-      battle_gallery:'战报图库', ocr_tasks:'OCR任务',
+      battle_gallery:'战报图库', ocr_pending_tasks:'OCR任务',
       system_logs:'系统日志', team_plans:'配将方案',
       yanwu_records:'演武记录', user_credits:'用户积分',
       credit_logs:'积分日志'

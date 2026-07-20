@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const XLSX = require('xlsx');
@@ -7,9 +8,20 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { mapPaddleResult } = require('./ocr-parser');
+const { Server: SocketIOServer } = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = 3000;
+
+// Socket.IO 服务器配置
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  },
+  path: '/ws'
+});
 
 app.use(cors({
   origin: true,                      // 反射请求的 origin，支持任意来源
@@ -72,6 +84,76 @@ const dbConfig = {
 
 let pool;
 
+// ========== 内存状态管理（WebSocket 实时推送） ==========
+class TaskState {
+  constructor(taskId, userId, projectId) {
+    this.taskId = taskId;
+    this.userId = userId;
+    this.projectId = projectId;
+    this.status = 'idle';
+    this.pendingCount = 0;
+    this.processedCount = 0;
+    this.failedCount = 0;
+    this.currentFile = '';
+    this.lastError = '';
+    this.lastHeartbeat = new Date();
+  }
+
+  toJSON() {
+    return {
+      taskId: this.taskId,
+      userId: this.userId,
+      projectId: this.projectId,
+      status: this.status,
+      pendingCount: this.pendingCount,
+      processedCount: this.processedCount,
+      failedCount: this.failedCount,
+      currentFile: this.currentFile,
+      lastError: this.lastError,
+      lastHeartbeat: this.lastHeartbeat.toISOString()
+    };
+  }
+}
+
+const watchTaskStates = new Map(); // taskId → TaskState
+
+// 广播任务更新到前端
+function broadcastTaskUpdate(taskId) {
+  const state = watchTaskStates.get(taskId);
+  if (!state) return;
+  io.to(`project-${state.projectId}`).emit('task-update', state.toJSON());
+  console.log(`[WebSocket] 广播任务更新: task=${taskId}, project=${state.projectId}`);
+}
+
+// 根据 projectId 查找任务状态
+function findTaskStateByProject(projectId) {
+  for (const state of watchTaskStates.values()) {
+    if (state.projectId === projectId) return state;
+  }
+  return null;
+}
+
+// WebSocket 连接管理
+io.on('connection', (socket) => {
+  console.log(`[WebSocket] 客户端连接: ${socket.id}`);
+
+  socket.on('join-project', (projectId) => {
+    const roomName = `project-${projectId}`;
+    socket.join(roomName);
+    console.log(`[WebSocket] ${socket.id} 加入房间: ${roomName}`);
+
+    // 立即推送该项目的任务状态
+    const state = findTaskStateByProject(projectId);
+    if (state) {
+      socket.emit('task-update', state.toJSON());
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[WebSocket] 客户端断开: ${socket.id}`);
+  });
+});
+
 async function initDB() {
   try {
     pool = mysql.createPool(dbConfig);
@@ -91,34 +173,22 @@ async function initDB() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uk_project (project_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS ocr_watch_tasks (
+    await pool.query(`CREATE TABLE IF NOT EXISTS helper_configs (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
       user_id BIGINT NOT NULL,
       project_id BIGINT NOT NULL,
-      folder_path VARCHAR(512) NOT NULL DEFAULT '',
-      status ENUM('idle','running','paused','error') NOT NULL DEFAULT 'idle',
-      pending_count INT DEFAULT 0,
-      processed_count INT DEFAULT 0,
-      processed_files_json JSON DEFAULT NULL,
-      last_error VARCHAR(500) DEFAULT '',
-      last_heartbeat DATETIME,
+      folder_path VARCHAR(512) DEFAULT '',
+      access_token VARCHAR(128) DEFAULT '',
+      token_expires_at DATETIME NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uk_user_project (user_id, project_id),
-      KEY idx_user_project (user_id, project_id)
+      KEY idx_access_token (access_token)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    // 添加 helper_client_id 字段（如果不存在）
+    await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS helper_client_id BIGINT DEFAULT NULL AFTER project_id`).catch(()=>{});
     await pool.query(`ALTER TABLE label_configs MODIFY COLUMN project_id BIGINT NOT NULL`).catch(()=>{});
-    await pool.query(`ALTER TABLE local_helper_clients ADD COLUMN access_token VARCHAR(128) DEFAULT ''`).catch(()=>{});
-    await pool.query(`ALTER TABLE local_helper_clients ADD COLUMN token_expires_at DATETIME NULL`).catch(()=>{});
     await pool.query(`ALTER TABLE project_player_dict ADD UNIQUE KEY uk_proj_player (project_id, player_name)`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN pending_files_json JSON DEFAULT NULL`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN processed_files_json JSON DEFAULT NULL`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN current_file VARCHAR(512) DEFAULT ''`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN pending_count INT DEFAULT 0`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN processed_count INT DEFAULT 0`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN failed_count INT DEFAULT 0`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN last_heartbeat DATETIME NULL`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_watch_tasks ADD COLUMN last_error VARCHAR(500) DEFAULT ''`).catch(()=>{});
     // OCR 待处理任务表
     await pool.query(`CREATE TABLE IF NOT EXISTS ocr_pending_tasks (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -126,8 +196,6 @@ async function initDB() {
       project_id BIGINT,
       image_base64 LONGTEXT NULL,
       image_name VARCHAR(255),
-      battle_date DATE,
-      label_config JSON,
       helper_task_id BIGINT,
       status ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -137,6 +205,8 @@ async function initDB() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     await pool.query(`ALTER TABLE ocr_pending_tasks MODIFY COLUMN image_base64 LONGTEXT NULL`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_pending_tasks ADD INDEX idx_project_image (project_id, image_name)`).catch(()=>{});
+    await pool.query(`ALTER TABLE ocr_pending_tasks DROP COLUMN battle_date`).catch(()=>{});
+    await pool.query(`ALTER TABLE ocr_pending_tasks DROP COLUMN label_config`).catch(()=>{});
     // 常用查询索引
     try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_project (project_id)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_project:', e.message); }
     try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_project_date (project_id, battle_date)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_project_date:', e.message); }
@@ -152,6 +222,46 @@ async function initDB() {
       console.log('📐 全局标注配置已创建 (project_id=0)');
     }
   } catch (err) { console.error('❌ MySQL 连接失败:', err.message); process.exit(1); }
+}
+
+// 初始化内存状态（从数据库恢复配置）
+async function initWatchTaskStates() {
+  try {
+    // 从 helper_configs 只加载配置（folder_path），不加载状态
+    const [tasks] = await pool.query(
+      'SELECT id, user_id, project_id FROM helper_configs'
+    );
+
+    for (const task of tasks) {
+      const state = new TaskState(task.id, task.user_id, task.project_id);
+      // 状态默认为 idle，不从数据库读取
+      state.status = 'idle';
+      // 清空历史错误（避免"目录不存在"等旧错误导致前端显示异常）
+      state.lastError = '';
+
+      // 从 ocr_pending_tasks 统计当前状态
+      const [stats] = await pool.query(
+        `SELECT
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+          COUNT(CASE WHEN status = 'done' THEN 1 END) as processed,
+          COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
+         FROM ocr_pending_tasks WHERE helper_task_id = ?`,
+        [task.id]
+      );
+
+      if (stats.length) {
+        state.pendingCount = stats[0].pending || 0;
+        state.processedCount = stats[0].processed || 0;
+        state.failedCount = stats[0].failed || 0;
+      }
+
+      watchTaskStates.set(task.id, state);
+    }
+
+    console.log(`✅ 内存状态已加载: ${watchTaskStates.size} 个任务（仅配置，状态为空）`);
+  } catch (err) {
+    console.error('❌ 初始化内存状态失败:', err.message);
+  }
 }
 
 app.use('/api', globalUserCheck);
@@ -174,7 +284,7 @@ async function requireOcrUploadActor(req, res, next) {
     try {
       const [rows] = await pool.query(
         `SELECT c.id, c.user_id, u.phone, u.status
-         FROM local_helper_clients c
+         FROM helper_configs c
          INNER JOIN users u ON u.id = c.user_id
          WHERE c.access_token = ? AND (c.token_expires_at IS NULL OR c.token_expires_at > NOW())
          LIMIT 1`,
@@ -246,24 +356,49 @@ function normalizeMySqlDateTime(value) {
 async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
   const id = Number(helperTaskId);
   if (!Number.isInteger(id) || id <= 0) return;
-  const fields = [
-    `pending_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ? AND status = 'pending')`,
-    `processed_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ? AND status = 'done')`,
-    `failed_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ? AND status = 'failed')`,
-    'last_heartbeat = NOW()',
-    'updated_at = NOW()'
-  ];
-  const params = [id, id, id];
+
+  // 从内存获取或创建任务状态
+  let state = watchTaskStates.get(id);
+  if (!state) {
+    // 从数据库恢复
+    const [rows] = await pool.query(
+      'SELECT user_id, project_id FROM helper_configs WHERE id = ?',
+      [id]
+    );
+    if (!rows.length) return;
+
+    state = new TaskState(id, rows[0].user_id, rows[0].project_id);
+    state.status = 'idle';  // 状态在内存管理，默认为 idle
+    watchTaskStates.set(id, state);
+  }
+
+  // 从 ocr_pending_tasks 实时统计
+  const [stats] = await pool.query(
+    `SELECT
+      COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+      COUNT(CASE WHEN status = 'done' THEN 1 END) as processed,
+      COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
+     FROM ocr_pending_tasks WHERE helper_task_id = ?`,
+    [id]
+  );
+
+  if (stats.length) {
+    state.pendingCount = stats[0].pending || 0;
+    state.processedCount = stats[0].processed || 0;
+    state.failedCount = stats[0].failed || 0;
+  }
+
+  // 更新额外字段
   if (extra.currentFile !== undefined) {
-    fields.push('current_file = ?');
-    params.push(String(extra.currentFile || '').slice(0, 512));
+    state.currentFile = String(extra.currentFile || '').slice(0, 512);
   }
   if (extra.lastError !== undefined) {
-    fields.push('last_error = ?');
-    params.push(String(extra.lastError || '').slice(0, 500));
+    state.lastError = String(extra.lastError || '').slice(0, 500);
   }
-  params.push(id);
-  await pool.query(`UPDATE ocr_watch_tasks SET ${fields.join(', ')} WHERE id = ?`, params);
+  state.lastHeartbeat = new Date();
+
+  // 广播更新
+  broadcastTaskUpdate(id);
 }
 
 function taskStatusLabel(status) {
@@ -340,6 +475,18 @@ function taskStatusLabel(status) {
 //     res.status(500).json({ code: 500, message: err.message });
 //   }
 // }
+
+// ========== 健康检查（匿名可访问）==========
+app.get('/api/ping', (req, res) => {
+  res.json({
+    code: 200,
+    data: {
+      status: 'ok',
+      timestamp: Date.now(),
+      version: '1.7'
+    }
+  });
+});
 
 // ========== 认证 ==========
 app.post('/api/auth/login', async (req, res) => {
@@ -990,12 +1137,12 @@ app.post('/api/battles/ocr-tasks', requireOcrUploadActor, async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO ocr_pending_tasks
-       (user_id, project_id, image_base64, image_name, battle_date, label_config, helper_task_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
-      [userId, projectId || null, cleanImage, normalizedImageName, battleDate || null, labelConfig ? JSON.stringify(labelConfig) : null, helperTaskId || null]
+       (user_id, project_id, image_base64, image_name, helper_task_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
+      [userId, projectId || null, cleanImage, normalizedImageName, helperTaskId || null]
     );
 
-    // 如果是自动监听任务，更新 ocr_watch_tasks 的 pending_count
+    // 如果是自动监听任务，更新 helper_configs 的 pending_count
     if (helperTaskId) {
       await refreshOcrWatchTaskStats(helperTaskId, { currentFile: normalizedImageName, lastError: '' });
     }
@@ -1013,7 +1160,7 @@ app.get('/api/battles/ocr-tasks', requireActiveUser, async (req, res) => {
     const { projectId, status } = req.query;
     const userId = req.authUserId;
 
-    let sql = 'SELECT id, project_id, image_name, battle_date, status, helper_task_id, created_at FROM ocr_pending_tasks WHERE user_id = ?';
+    let sql = 'SELECT id, project_id, image_name, status, helper_task_id, created_at FROM ocr_pending_tasks WHERE user_id = ?';
     const params = [userId];
 
     if (projectId) {
@@ -1072,7 +1219,7 @@ app.post('/api/battles/ocr-execute', requireActiveUser, async (req, res) => {
 
     // 获取任务
     const [tasks] = await pool.query(
-      'SELECT id, user_id, project_id, image_base64, image_name, battle_date, label_config, helper_task_id, status FROM ocr_pending_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+      'SELECT id, user_id, project_id, image_base64, image_name, helper_task_id, status FROM ocr_pending_tasks WHERE id = ? AND user_id = ? LIMIT 1',
       [taskId, userId]
     );
 
@@ -1212,7 +1359,7 @@ app.post('/api/battles/ocr-clear-pending', requireActiveUser, async (req, res) =
 
     // 清空所有关联监听任务的 pending_files_json 和 pending_count
     await pool.query(
-      `UPDATE ocr_watch_tasks
+      `UPDATE helper_configs
        SET pending_files_json = JSON_ARRAY(),
            pending_count = 0,
            current_file = '',
@@ -1240,16 +1387,11 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     if ((uRows[0].credit_balance || 0) <= 0) return res.json({ code: 402, message: '积分不足' });
     const helperTaskId = Number(req.body && req.body.helperTaskId);
     if (Number.isInteger(helperTaskId) && helperTaskId > 0) {
-      if (!req.helperClientId) return res.json({ code: 403, message: '自动监听必须使用本地助手身份' });
       const [taskRows] = await pool.query(
-        'SELECT status, helper_client_id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+        'SELECT id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
         [helperTaskId, userId]
       );
       if (!taskRows.length) return res.json({ code: 404, message: '监听任务不存在' });
-      if (req.helperClientId && Number(taskRows[0].helper_client_id || 0) !== Number(req.helperClientId)) {
-        return res.json({ code: 403, message: '监听任务未绑定到当前本地助手' });
-      }
-      if (taskRows[0].status !== 'running') return res.json({ code: 409, message: '监听任务已暂停' });
     }
     const cleanImage = image.replace(/^data:[^;]+;base64,/, '');
 
@@ -1319,19 +1461,14 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     await pool.query('UPDATE users SET credit_balance = credit_balance - 1 WHERE id = ?', [userId]);
     await pool.query('INSERT INTO credit_logs (user_id, change_amount, balance_after, type, description, operator_id, created_at) SELECT ?, -1, credit_balance, ?, ?, ?, NOW() FROM users WHERE id = ?', [userId, 'consume', `OCR识别: ${imageName || '战报'}`, userId, userId]);
 
+    // ✅ 重构：上传成功后自动统计并通过 WebSocket 推送
     if (Number.isInteger(helperTaskId) && helperTaskId > 0) {
-      await pool.query(
-        `UPDATE ocr_watch_tasks
-         SET pending_count = GREATEST(pending_count - 1, 0),
-             processed_count = processed_count + 1,
-             current_file = '',
-             last_error = '',
-             last_heartbeat = NOW(),
-             updated_at = NOW()
-         WHERE id = ? AND user_id = ? AND status = 'running'`,
-        [helperTaskId, userId]
-      );
+      await refreshOcrWatchTaskStats(helperTaskId, {
+        currentFile: '',  // 上传完成，清空当前文件
+        lastError: ''     // 上传成功，清空错误
+      });
     }
+
     record.id = newId; record.cloudId = newId; record.projectId = projectId;
     record.attackerName = record.leftPlayer || ''; record.enemyName = record.rightPlayer || '';
     res.json({ code: 200, data: record });
@@ -1790,7 +1927,11 @@ if ($dialog.ShowDialog() -eq 'OK') {
 `.trim();
 
   try {
-    fs.writeFileSync(tmpFile, script, 'utf-8');
+    // 写入 UTF-8 BOM，确保 PowerShell 正确识别编码
+    const utf8BOM = Buffer.from([0xEF, 0xBB, 0xBF]);
+    const scriptBuffer = Buffer.from(script, 'utf-8');
+    fs.writeFileSync(tmpFile, Buffer.concat([utf8BOM, scriptBuffer]));
+
     const result = execSync(`powershell -STA -NoProfile -NonInteractive -File "${tmpFile}"`, {
       encoding: 'utf-8',
       timeout: 120000,
@@ -1848,9 +1989,11 @@ app.get('/download/local-helper', (req, res) => {
   });
 });
 
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   await initDB();
+  await initWatchTaskStates();
   console.log(`🚀 服务运行在 http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket 服务运行在 ws://localhost:${PORT}/ws`);
   // 若上次已开启监听，自动恢复
   const _fwCfg = loadFolderWatchConfig();
   if (_fwCfg.enabled && _fwCfg.folderPath) { startFolderWatch(); }
@@ -1863,113 +2006,56 @@ function randomToken(prefix, size = 18) {
   return `${prefix}${crypto.randomBytes(size).toString('hex')}`;
 }
 
-// 1. 获取当前项目任务
+// 1. 获取当前项目任务（从内存读取）
 app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
   try {
     const rawProjectId = req.query?.projectId;
     const hasProjectFilter = rawProjectId !== undefined && rawProjectId !== null && String(rawProjectId).trim() !== '';
     const projectId = hasProjectFilter ? Number(rawProjectId) : null;
-    const includeFiles = req.query?.includeFiles === '1';
 
     if (hasProjectFilter && (!Number.isInteger(projectId) || projectId <= 0)) {
       return res.json({ code: 400, message: '项目参数无效' });
     }
 
-    let sql = 'SELECT id, user_id, project_id, folder_path, status, pending_count, processed_count, failed_count, current_file, pending_files_json, last_error, last_heartbeat, created_at, updated_at, helper_client_id, (SELECT COUNT(*) FROM battle_records br WHERE br.project_id = ocr_watch_tasks.project_id AND br.status = 1) AS actual_processed FROM ocr_watch_tasks WHERE user_id = ?';
-    const params = [req.authUserId];
+    // 从内存获取任务状态
+    const tasks = [];
+    for (const state of watchTaskStates.values()) {
+      // 过滤：只返回当前用户的任务
+      if (state.userId !== req.authUserId) continue;
 
-    if (req.helperClientId) {
-      sql += ' AND helper_client_id = ?';
-      params.push(req.helperClientId);
-    }
+      // 如果指定了项目，只返回该项目的任务
+      if (hasProjectFilter && state.projectId !== projectId) continue;
 
-    if (hasProjectFilter) {
-      sql += ' AND project_id = ?';
-      params.push(projectId);
-    }
-
-    sql += ' ORDER BY updated_at DESC, id DESC';
-
-    const [rows] = await pool.query(sql, params);
-    const projectIds = [...new Set(rows.map(r => r.project_id).filter(Boolean))];
-
-    // 查询最近完成的文件（最多10条）
-    const recentCompletedByProject = new Map();
-    if (projectIds.length) {
-      const placeholders = projectIds.map(() => '?').join(',');
-      const [recentRows] = await pool.query(
-        `SELECT bg.project_id, bg.original_name, bg.created_at
-         FROM battle_gallery bg
-         INNER JOIN battle_records br ON bg.battle_id = br.id
-         WHERE bg.uploaded_by = ?
-           AND bg.project_id IN (${placeholders})
-           AND bg.original_name != ''
-           AND bg.status = 1
-         ORDER BY bg.created_at DESC
-         LIMIT 50`,
-        [req.authUserId, ...projectIds]
+      // 查询数据库获取 folder_path 等配置信息
+      const [rows] = await pool.query(
+        'SELECT folder_path, helper_client_id, created_at, updated_at FROM helper_configs WHERE id = ?',
+        [state.taskId]
       );
-      recentRows.forEach(row => {
-        const key = String(row.project_id);
-        if (!recentCompletedByProject.has(key)) recentCompletedByProject.set(key, []);
-        if (recentCompletedByProject.get(key).length < 10) {
-          recentCompletedByProject.get(key).push({
-            name: row.original_name,
-            time: row.created_at
-          });
-        }
-      });
-    }
 
-    // 查询所有已处理文件名（用于 includeFiles 参数）
-    const processedFilesByProject = new Map();
-    if (includeFiles && projectIds.length) {
-      const placeholders = projectIds.map(() => '?').join(',');
-      const [fileRows] = await pool.query(
-        `SELECT bg.project_id, bg.original_name
-         FROM battle_gallery bg
-         INNER JOIN battle_records br ON bg.battle_id = br.id
-         WHERE bg.uploaded_by = ?
-           AND bg.project_id IN (${placeholders})
-           AND bg.original_name != ''
-           AND bg.status = 1
-           AND br.left_general_1 IS NOT NULL
-           AND br.left_general_1 != ''`,
-        [req.authUserId, ...projectIds]
-      );
-      fileRows.forEach(row => {
-        const key = String(row.project_id);
-        if (!processedFilesByProject.has(key)) processedFilesByProject.set(key, []);
-        processedFilesByProject.get(key).push(row.original_name);
-      });
+      if (rows.length) {
+        tasks.push({
+          id: state.taskId,
+          projectId: state.projectId,
+          folderPath: rows[0].folder_path || '',
+          status: state.status,
+          pendingCount: state.pendingCount,
+          processedCount: state.processedCount,
+          failedCount: state.failedCount,
+          currentFile: state.currentFile,
+          lastError: state.lastError,
+          lastHeartbeat: state.lastHeartbeat.toISOString(),
+          helperClientId: rows[0].helper_client_id || null,
+          createdAt: rows[0].created_at,
+          updatedAt: rows[0].updated_at
+        });
+      }
     }
-
-    const data = rows.map(r => ({
-      id: r.id,
-      projectId: r.project_id,
-      folderPath: r.folder_path || '',
-      status: r.status,
-      pendingCount: r.pending_count || 0,
-      failedCount: r.failed_count || 0,
-      processedCount: Number(r.processed_count) || 0,
-      processedFilesJson: includeFiles ? (processedFilesByProject.get(String(r.project_id)) || []) : [],
-      recentCompleted: recentCompletedByProject.get(String(r.project_id)) || [],
-      pendingFiles: Array.isArray(r.pending_files_json) ? r.pending_files_json :
-                    (typeof r.pending_files_json === 'string' && r.pending_files_json ?
-                     JSON.parse(r.pending_files_json) : []),
-      currentFile: r.current_file || '',
-      lastError: r.last_error || '',
-      lastHeartbeat: r.last_heartbeat,
-      helperClientId: r.helper_client_id || null,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at
-    }));
 
     // 如果有项目过滤，返回单个对象；否则返回数组
     if (hasProjectFilter) {
-      res.json({ code: 200, data: data[0] || null });
+      res.json({ code: 200, data: tasks[0] || null });
     } else {
-      res.json({ code: 200, data });
+      res.json({ code: 200, data: tasks });
     }
   } catch (err) {
     console.error('[OCR-Watch] 获取任务失败:', err);
@@ -1980,7 +2066,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
 // 2. 创建/更新任务
 app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
   try {
-    const { projectId, folderPath, helperClientId } = req.body || {};
+    const { projectId, folderPath } = req.body || {};
     const normalizedProjectId = Number(projectId);
 
     if (!Number.isInteger(normalizedProjectId) || normalizedProjectId <= 0) {
@@ -1988,21 +2074,10 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
     }
 
     const normalizedFolder = String(folderPath || '').trim().slice(0, 512);
-    const normalizedHelperClientId = Number(helperClientId) || null;
-    if (!normalizedHelperClientId) {
-      return res.json({ code: 400, message: '本地助手设备身份未就绪，请重新激活或安装最新版助手' });
-    }
-    if (normalizedHelperClientId) {
-      const [helperRows] = await pool.query(
-        'SELECT id FROM local_helper_clients WHERE id = ? AND user_id = ? LIMIT 1',
-        [normalizedHelperClientId, req.authUserId]
-      );
-      if (!helperRows.length) return res.json({ code: 400, message: '本地助手设备无效，请重新激活助手' });
-    }
 
     // 检查是否已存在
     const [existing] = await pool.query(
-      'SELECT id, status FROM ocr_watch_tasks WHERE user_id = ? AND project_id = ? LIMIT 1',
+      'SELECT id FROM helper_configs WHERE user_id = ? AND project_id = ? LIMIT 1',
       [req.authUserId, normalizedProjectId]
     );
 
@@ -2014,28 +2089,29 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
       if (normalizedFolder !== undefined) {
         updateFields.push('folder_path = ?');
         updateParams.push(normalizedFolder);
-        updateFields.push('helper_client_id = ?');
-        updateParams.push(normalizedHelperClientId);
-        // 切换目录时，清空已处理文件列表
-        updateFields.push('processed_files_json = NULL');
-        updateFields.push('processed_count = 0');
-        updateFields.push('pending_count = 0');
-        updateFields.push('failed_count = 0');
-        updateFields.push('pending_files_json = JSON_ARRAY()');
-        updateFields.push('current_file = ""');
-        updateFields.push('last_error = ""');
-        updateFields.push('status = "idle"');
       }
 
       updateParams.push(existing[0].id);
-      await pool.query(`UPDATE ocr_watch_tasks SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
+      await pool.query(`UPDATE helper_configs SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
       res.json({ code: 200, data: { id: existing[0].id } });
     } else {
-      // 创建
-      const taskName = `监听任务-${normalizedProjectId}`;
+      // 创建新任务配置
+      // 检查用户是否已有 token，如果没有则生成
+      const [tokenCheck] = await pool.query(
+        'SELECT access_token FROM helper_configs WHERE user_id = ? LIMIT 1',
+        [req.authUserId]
+      );
+
+      let helperToken = '';
+      if (tokenCheck.length > 0 && tokenCheck[0].access_token) {
+        helperToken = tokenCheck[0].access_token;
+      } else {
+        helperToken = randomToken('helper-auth-');
+      }
+
       const [result] = await pool.query(
-        'INSERT INTO ocr_watch_tasks (user_id, project_id, task_name, folder_path, helper_client_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [req.authUserId, normalizedProjectId, taskName, normalizedFolder, normalizedHelperClientId, 'idle']
+        'INSERT INTO helper_configs (user_id, project_id, folder_path, access_token, token_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NOW(), NOW())',
+        [req.authUserId, normalizedProjectId, normalizedFolder, helperToken]
       );
       res.json({ code: 200, data: { id: result.insertId } });
     }
@@ -2060,9 +2136,9 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
       return res.json({ code: 400, message: '不支持的操作' });
     }
 
-    // 检查任务是否存在
+    // 检查任务是否存在并获取配置
     const [task] = await pool.query(
-      'SELECT id, folder_path, status, helper_client_id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
+      'SELECT id, folder_path, helper_client_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
       [taskId, req.authUserId]
     );
 
@@ -2079,38 +2155,43 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
       return res.json({ code: 400, message: '监听任务未绑定本地助手，请重新选择监听目录' });
     }
 
-    // 状态转换逻辑
     const nextStatus = actionMap[action];
-    const updateFields = ['status = ?', 'updated_at = NOW()'];
-    const updateParams = [nextStatus];
 
-    if (nextStatus === 'running') {
-      await pool.query(
-        `UPDATE ocr_watch_tasks
-         SET status = 'idle',
-             pending_count = 0,
-             pending_files_json = JSON_ARRAY(),
-             current_file = '',
-             updated_at = NOW()
-         WHERE user_id = ? AND id <> ?`,
-        [req.authUserId, taskId]
-      );
+    // 初始化或更新内存中的任务状态
+    let state = watchTaskStates.get(taskId);
+    if (!state) {
+      state = new TaskState(taskId, req.authUserId, task[0].project_id);
+      watchTaskStates.set(taskId, state);
     }
 
-    // 开始时清空错误信息、心跳和待处理数量
+    // 如果启动新任务，暂停其他运行中的任务
     if (nextStatus === 'running') {
-      updateFields.push('last_error = ?');
-      updateParams.push('');
-      updateFields.push('last_heartbeat = NULL');
+      for (const [otherId, otherState] of watchTaskStates.entries()) {
+        if (otherId !== taskId && otherState.userId === req.authUserId && otherState.status === 'running') {
+          otherState.status = 'idle';
+          otherState.pendingCount = 0;
+          otherState.currentFile = '';
+          broadcastTaskUpdate(otherId);
+        }
+      }
+      // 清空当前任务的错误和统计
+      state.lastError = '';
+      state.pendingCount = 0;
     }
 
     // 停止时清空待处理数量
     if (nextStatus === 'idle') {
-      updateFields.push('pending_count = 0');
+      state.pendingCount = 0;
+      state.currentFile = '';
     }
 
-    updateParams.push(taskId);
-    await pool.query(`UPDATE ocr_watch_tasks SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
+    // 更新状态
+    state.status = nextStatus;
+    state.lastHeartbeat = new Date();  // 更新心跳时间
+    state.lastUpdate = Date.now();
+
+    // 广播状态更新
+    broadcastTaskUpdate(taskId);
 
     res.json({ code: 200, message: '操作成功' });
   } catch (err) {
@@ -2119,11 +2200,15 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
   }
 });
 
-// 4. 助手进度上报
+// 4. 助手进度上报（改为内存状态 + WebSocket 推送）
+// ⚠️ DEPRECATED: 此接口已废弃，保留仅为向下兼容
+// 新版本本地助手不再调用此接口，后端会在上传文件后自动统计并推送
 app.post('/api/ocr-watch/tasks/:id/progress', requireOcrUploadActor, async (req, res) => {
   try {
     const taskId = Number(req.params.id);
-    const { pendingCount, processedCount, processedFilesJson, pendingFiles, currentFile, lastError, lastHeartbeat } = req.body || {};
+    const { pendingCount, processedCount, currentFile, lastError } = req.body || {};
+
+    console.log('[DEPRECATED] POST /progress 被调用，建议升级本地助手到 v3.0+');
 
     if (!Number.isInteger(taskId) || taskId <= 0) {
       return res.json({ code: 400, message: '任务参数无效' });
@@ -2133,101 +2218,14 @@ app.post('/api/ocr-watch/tasks/:id/progress', requireOcrUploadActor, async (req,
       return res.json({ code: 403, message: '进度上报必须使用本地助手身份' });
     }
 
-    const [existingTaskRows] = await pool.query(
-      'SELECT status, pending_count, processed_count, pending_files_json, current_file, helper_client_id FROM ocr_watch_tasks WHERE id = ? AND user_id = ? LIMIT 1',
-      [taskId, req.authUserId]
-    );
-    if (req.helperClientId && existingTaskRows.length && Number(existingTaskRows[0].helper_client_id || 0) !== Number(req.helperClientId)) {
-      return res.json({ code: 403, message: '监听任务未绑定到当前本地助手' });
-    }
-    if (!existingTaskRows.length) {
-      return res.json({ code: 404, message: '监听任务不存在' });
-    }
-    const existingTask = existingTaskRows[0];
-    const incomingPendingFiles = Array.isArray(pendingFiles)
-      ? pendingFiles.map(item => String(item || '').trim()).filter(Boolean)
-      : null;
-    const incomingPendingCount = pendingCount !== undefined ? Math.max(0, Number(pendingCount) || 0) : null;
-    const incomingCurrentFile = currentFile !== undefined ? String(currentFile || '').trim() : null;
-    const incomingProcessedCount = processedCount !== undefined ? Number(processedCount) || 0 : null;
-    const suspiciousClear =
-      existingTask.status === 'running' &&
-      Number(existingTask.pending_count || 0) > 1 &&
-      incomingPendingCount === 0 &&
-      incomingPendingFiles &&
-      incomingPendingFiles.length === 0 &&
-      incomingCurrentFile === '' &&
-      incomingProcessedCount !== null &&
-      incomingProcessedCount <= Number(existingTask.processed_count || 0);
-    const updateFields = ['updated_at = NOW()'];
-    const updateParams = [];
+    // ✅ 重构：不再接受客户端上报的统计数据，改为从数据库统计
+    // 但保留 currentFile 和 lastError（这些是数据库没有的信息）
+    await refreshOcrWatchTaskStats(taskId, {
+      currentFile: currentFile !== undefined ? String(currentFile || '').slice(0, 512) : undefined,
+      lastError: lastError !== undefined ? String(lastError || '').slice(0, 500) : undefined
+    });
 
-    if (pendingCount !== undefined && !suspiciousClear) {
-      updateFields.push('pending_count = ?');
-      updateParams.push(Math.max(0, Number(pendingCount) || 0));
-    }
-
-    // pendingCount 不从客户端接收，由后端自动计算
-    // if (pendingCount !== undefined) {
-    //   updateFields.push('pending_count = ?');
-    //   updateParams.push(Number(pendingCount));
-    // }
-
-    if (processedCount !== undefined && !suspiciousClear) {
-      updateFields.push('processed_count = ?');
-      updateParams.push(Number(processedCount));
-    }
-
-    if (processedFilesJson && Array.isArray(processedFilesJson) && !suspiciousClear) {
-      updateFields.push('processed_files_json = ?');
-      updateParams.push(JSON.stringify(processedFilesJson));
-    }
-
-    if (pendingFiles !== undefined && !suspiciousClear) {
-      updateFields.push('pending_files_json = ?');
-      updateParams.push(Array.isArray(pendingFiles) ? JSON.stringify(pendingFiles) : null);
-    }
-
-    // pending_count 从 ocr_pending_tasks 表实时查询
-    if (pendingCount === undefined) updateFields.push('pending_count = (SELECT COUNT(*) FROM ocr_pending_tasks WHERE helper_task_id = ? AND status = ?)');
-    if (pendingCount === undefined) {
-      updateParams.push(taskId);
-      updateParams.push('pending');
-    }
-
-    if (currentFile !== undefined && !suspiciousClear) {
-      updateFields.push('current_file = ?');
-      updateParams.push(String(currentFile || '').slice(0, 512));
-    }
-
-    if (lastError !== undefined) {
-      updateFields.push('last_error = ?');
-      updateParams.push(String(lastError).slice(0, 500));
-      if (/目录不存在/.test(String(lastError))) {
-        updateFields.push('status = "error"');
-        updateFields.push('current_file = ""');
-      }
-    }
-
-    if (lastHeartbeat !== undefined) {
-      updateFields.push('last_heartbeat = ?');
-      // ISO 8601 UTC → MySQL DATETIME 本地时间（UTC+8）
-      // "2026-07-07T13:03:47.768Z" → Date对象 → "2026-07-07 21:03:47"
-      try {
-        const utcDate = new Date(lastHeartbeat);
-        const pad = num => String(num).padStart(2, '0');
-        const localDatetime = `${utcDate.getFullYear()}-${pad(utcDate.getMonth() + 1)}-${pad(utcDate.getDate())} ${pad(utcDate.getHours())}:${pad(utcDate.getMinutes())}:${pad(utcDate.getSeconds())}`;
-        updateParams.push(localDatetime);
-      } catch (e) {
-        // 降级：直接去除格式符号
-        updateParams.push(String(lastHeartbeat).replace('T', ' ').replace(/\.\d+Z$/, '').replace('Z', ''));
-      }
-    }
-
-    updateParams.push(taskId);
-    await pool.query(`UPDATE ocr_watch_tasks SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
-
-    res.json({ code: 200, message: '进度已更新' });
+    res.json({ code: 200, message: '进度已更新（已自动从数据库统计）' });
   } catch (err) {
     console.error('[OCR-Watch] 更新进度失败:', err);
     res.json({ code: 500, message: err.message });
@@ -2239,42 +2237,29 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
   try {
     const os = require('os');
     const deviceId = req.query.deviceId || 'device-' + Date.now();
-    const deviceName = req.query.deviceName || os.hostname() || 'Unknown';
 
-    // 检查是否已有该设备的 token
+    // 检查该用户是否已有 token（从任意一条配置记录中获取）
     let [existing] = await pool.query(
-      'SELECT id, access_token FROM local_helper_clients WHERE user_id = ? AND device_id = ? LIMIT 1',
-      [req.authUserId, deviceId]
+      'SELECT access_token, token_expires_at FROM helper_configs WHERE user_id = ? LIMIT 1',
+      [req.authUserId]
     );
 
     let helperToken;
-    let helperClientId = existing.length > 0 ? existing[0].id : null;
     if (existing.length > 0 && existing[0].access_token) {
       // 复用已有 token
       helperToken = existing[0].access_token;
-      await pool.query(
-        'UPDATE local_helper_clients SET status = ?, token_expires_at = NULL, updated_at = NOW() WHERE id = ?',
-        ['online', existing[0].id]
-      );
     } else {
       // 生成新的永久 token
       helperToken = randomToken('helper-auth-');
 
-      // 存储到数据库（token_expires_at 为 NULL 表示永久有效）
+      // 如果用户已有配置记录，更新所有记录的 token
       if (existing.length > 0) {
         await pool.query(
-          'UPDATE local_helper_clients SET access_token = ?, token_expires_at = NULL, status = ?, updated_at = NOW() WHERE user_id = ? AND device_id = ?',
-          [helperToken, 'online', req.authUserId, deviceId]
+          'UPDATE helper_configs SET access_token = ?, token_expires_at = NULL, updated_at = NOW() WHERE user_id = ?',
+          [helperToken, req.authUserId]
         );
-        const [clientRows] = await pool.query('SELECT id FROM local_helper_clients WHERE user_id = ? AND device_id = ? LIMIT 1', [req.authUserId, deviceId]);
-        helperClientId = clientRows[0]?.id || helperClientId;
-      } else {
-        const [insertResult] = await pool.query(
-          'INSERT INTO local_helper_clients (user_id, device_id, device_name, access_token, token_expires_at, status, helper_version) VALUES (?, ?, ?, ?, NULL, ?, ?)',
-          [req.authUserId, deviceId, deviceName, helperToken, 'online', '2.0']
-        );
-        helperClientId = insertResult.insertId;
       }
+      // 如果用户没有任何配置记录，则不插入（等待创建监听任务时插入）
     }
 
     // 返回配置信息
@@ -2282,7 +2267,7 @@ app.get('/api/ocr-watch/helper-config', requireActiveUser, async (req, res) => {
       code: 200,
       data: {
         helperToken,
-        helperClientId,
+        helperClientId: req.authUserId,  // 使用 user_id 作为标识
         apiBase: ((req.get('host') || '').includes('api.zhenwu.fun') ? 'https://api.zhenwu.fun/api' : (req.protocol + '://' + req.get('host') + '/api')),
         userId: req.authUserId,
         deviceId
@@ -2316,7 +2301,7 @@ app.get('/api/ocr-watch/select-folder', requireActiveUser, async (req, res) => {
     let initialPath = '';
     try {
       const [rows] = await pool.query(
-        'SELECT folder_path FROM ocr_watch_tasks WHERE user_id = ? AND project_id = ? ORDER BY updated_at DESC LIMIT 1',
+        'SELECT folder_path FROM helper_configs WHERE user_id = ? AND project_id = ? ORDER BY updated_at DESC LIMIT 1',
         [req.authUserId, req.query.projectId || 0]
       );
       if (rows.length > 0 && rows[0].folder_path) {
