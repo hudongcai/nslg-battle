@@ -73,3 +73,11 @@ everything-claude-code/
 # Local helper runtime files
 local-helper/local-helper.config.json
 local-helper/local-helper.state.json
+local-helper.config.json
+local-helper.pid
+local-helper.state.json
+local-helper/local-helper.pid
+
+# Claude 临时文档（重构、诊断等）
+.claude/*.md
+.claude/refactor-*.js
