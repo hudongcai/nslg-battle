@@ -1943,13 +1943,27 @@ if ($dialog.ShowDialog() -eq 'OK') {
 // ========== 本地助手下载接口 ==========
 app.get('/download/local-helper', (req, res) => {
   const downloadsDir = path.join(__dirname, 'downloads');
-  const installers = fs.readdirSync(downloadsDir)
-    .filter(name => /^zhenwu-local-helper-setup-\d+\.exe$/i.test(name))
-    .map(name => {
-      const filePath = path.join(downloadsDir, name);
-      const suffix = (name.match(/setup-(\d+)\.exe$/i) || [])[1] || '';
-      return { name, filePath, suffix, mtimeMs: fs.statSync(filePath).mtimeMs };
-    });
+
+  // 检查目录是否存在
+  if (!fs.existsSync(downloadsDir)) {
+    console.error('[Download] downloads目录不存在');
+    return res.status(404).json({ code: 404, message: '安装包不存在' });
+  }
+
+  let installers;
+  try {
+    installers = fs.readdirSync(downloadsDir)
+      .filter(name => /^zhenwu-local-helper-setup-\d+\.exe$/i.test(name))
+      .map(name => {
+        const filePath = path.join(downloadsDir, name);
+        const suffix = (name.match(/setup-(\d+)\.exe$/i) || [])[1] || '';
+        return { name, filePath, suffix, mtimeMs: fs.statSync(filePath).mtimeMs };
+      });
+  } catch (err) {
+    console.error('[Download] 读取目录失败:', err);
+    return res.status(500).json({ code: 500, message: '服务器错误' });
+  }
+
   const preferredInstallers = installers.filter(item => item.suffix.length === 8);
   const latestInstaller = (preferredInstallers.length ? preferredInstallers : installers)
     .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
