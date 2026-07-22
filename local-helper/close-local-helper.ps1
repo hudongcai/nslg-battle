@@ -1,11 +1,22 @@
 param(
-    [switch]$Quiet
+    [switch]$Quiet,
+    [string]$InstallDir = ''
 )
 
-$installDir = Join-Path $env:LOCALAPPDATA 'ZhenwuLocalHelper'
-$pidFile = Join-Path $installDir 'local-helper.pid'
-$uiPidFile = Join-Path $installDir 'helper-ui.pid'
-$launchCommandFile = Join-Path $installDir 'helper-launch-command.json'
+# 优先使用传入的路径，否则尝试检测当前脚本目录，最后回退到默认安装目录
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+    # 如果在local-helper子目录中运行，使用父目录
+    $scriptDir = $PSScriptRoot
+    if ($scriptDir -and (Test-Path (Join-Path $scriptDir 'local-helper.js'))) {
+        $InstallDir = $scriptDir
+    } else {
+        $InstallDir = Join-Path $env:LOCALAPPDATA 'ZhenwuLocalHelper'
+    }
+}
+
+$pidFile = Join-Path $InstallDir 'local-helper.pid'
+$uiPidFile = Join-Path $InstallDir 'helper-ui.pid'
+$launchCommandFile = Join-Path $InstallDir 'helper-launch-command.json'
 
 function Write-Info([string]$message) {
     if (-not $Quiet) {
@@ -109,7 +120,7 @@ Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
     $cmd = if ($info) { [string]$info.CommandLine } else { '' }
     if ($name -ieq 'node' -or $name -ieq 'powershell' -or $name -ieq 'wscript') {
         $isInstallDirMatch = (-not [string]::IsNullOrWhiteSpace($cmd)) -and
-            ($cmd -like ("*" + $installDir + "*"))
+            ($cmd -like ("*" + $InstallDir + "*"))
         if ((Test-IsHelperCommand $cmd -or $isInstallDirMatch) -and $_.Id -ne $selfPid) {
             [void]$targets.Add([int]$_.Id)
         }
