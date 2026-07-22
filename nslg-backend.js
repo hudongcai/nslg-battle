@@ -1275,8 +1275,8 @@ app.post('/api/battles/ocr-execute', requireActiveUser, async (req, res) => {
 
     if (!record) {
       await pool.query('UPDATE ocr_pending_tasks SET status = ?, updated_at = NOW() WHERE id = ?', ['failed', taskId]);
-      await refreshOcrWatchTaskStats(task.helper_task_id, { currentFile: '', lastError: 'OCR 服务不可用' });
-      return res.json({ code: 503, message: 'OCR 服务不可用，请检查本地 PaddleOCR 是否正在运行' });
+      await refreshOcrWatchTaskStats(task.helper_task_id, { currentFile: '', lastError: 'OCR 识别结果为空' });
+      return res.json({ code: 422, message: 'OCR 识别失败：无法从图片中提取有效数据' });
     }
 
     const now = new Date();
@@ -1405,8 +1405,8 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     }
     // 处理失败（Python 内部错误）→ 422，前端立即跳过不重试
     if (paddleProcessError) return res.json({ code: 422, message: `图片处理失败: ${paddleProcessError}` });
-    // 服务不可达 → 503，前端可重试
-    if (!record) return res.json({ code: 503, message: 'OCR 服务不可用，请检查本地 PaddleOCR 是否正在运行' });
+    // 识别结果为空 → 422，前端立即跳过不重试
+    if (!record) return res.json({ code: 422, message: 'OCR 识别失败：无法从图片中提取有效数据' });
 
     const now = new Date();
     record.battleDate = clientDate || now.toISOString().split('T')[0];
@@ -1747,7 +1747,7 @@ async function _processOcrImageFile(filePath, imageName, projectId, userId) {
   if (labelCfg) ocrBody.labelConfig = labelCfg;
   const { record, paddleRaw, paddleProcessError } = await _callPaddleOcr(ocrBody, imageName);
   if (paddleProcessError) throw new Error(`图片处理失败: ${paddleProcessError}`);
-  if (!record) throw new Error('OCR 服务不可用');
+  if (!record) throw new Error('OCR 识别结果为空');
 
   const now = new Date();
   record.battleDate = now.toISOString().split('T')[0];
