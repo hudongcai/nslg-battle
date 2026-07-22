@@ -1357,17 +1357,6 @@ app.post('/api/battles/ocr-clear-pending', requireActiveUser, async (req, res) =
       [userId, Number(projectId)]
     );
 
-    // 清空所有关联监听任务的 pending_files_json 和 pending_count
-    await pool.query(
-      `UPDATE helper_configs
-       SET pending_files_json = JSON_ARRAY(),
-           pending_count = 0,
-           current_file = '',
-           updated_at = NOW()
-       WHERE user_id = ? AND project_id = ?`,
-      [userId, Number(projectId)]
-    );
-
     res.json({ code: 200, message: '清空成功', data: { deletedCount: deleteResult.affectedRows } });
   } catch (err) {
     console.error('[OCR-Clear] 清空失败:', err);
