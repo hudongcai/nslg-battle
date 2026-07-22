@@ -13,7 +13,12 @@ function isOcrWatchActiveContext() {
 // 根据当前页面域名自动确定 API 地址（与 cloud-sync.js 保持一致）
 function ocrWatchApiBase() {
   const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-  return isLocal ? 'http://localhost:3000/api' : 'https://api.zhenwu.fun/api';
+  if (isLocal) {
+    return 'http://localhost:3000/api';
+  }
+
+  // 生产环境：使用完整的API域名
+  return 'https://api.zhenwu.fun/api';
 }
 
 // WebSocket 连接管理
@@ -24,8 +29,10 @@ function initOcrWatchWebSocket() {
   }
 
   const apiBase = ocrWatchApiBase();
-  const wsUrl = apiBase.replace('/api', '');
+  // 从API地址提取WebSocket基础URL
+  const wsUrl = apiBase.replace(/\/api$/, '');
 
+  console.log('[OCR-Watch] API Base:', apiBase);
   console.log('[OCR-Watch] 连接 WebSocket:', wsUrl);
 
   ocrWatchSocket = io(wsUrl, {
