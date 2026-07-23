@@ -94,6 +94,7 @@ class TaskState {
     this.pendingCount = 0;
     this.processedCount = 0;
     this.failedCount = 0;
+    this.pendingFiles = [];  // 待处理文件列表
     this.currentFile = '';
     this.lastError = '';
     this.lastHeartbeat = new Date();
@@ -108,6 +109,7 @@ class TaskState {
       pendingCount: this.pendingCount,
       processedCount: this.processedCount,
       failedCount: this.failedCount,
+      pendingFiles: this.pendingFiles,  // 包含文件列表
       currentFile: this.currentFile,
       lastError: this.lastError,
       lastHeartbeat: this.lastHeartbeat.toISOString()
@@ -387,6 +389,15 @@ async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
     state.processedCount = stats[0].processed || 0;
     state.failedCount = stats[0].failed || 0;
   }
+
+  // 查询待处理文件列表（最多50个，按创建时间排序）
+  const [pendingRows] = await pool.query(
+    `SELECT image_name FROM ocr_pending_tasks
+     WHERE helper_task_id = ? AND status = 'pending'
+     ORDER BY created_at ASC LIMIT 50`,
+    [id]
+  );
+  state.pendingFiles = pendingRows.map(row => row.image_name);
 
   // 更新额外字段
   if (extra.currentFile !== undefined) {

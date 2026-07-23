@@ -77,6 +77,7 @@ function updateOcrWatchUI(data) {
     pendingCount: data.pendingCount || 0,
     processedCount: data.processedCount || 0,
     failedCount: data.failedCount || 0,
+    pendingFiles: data.pendingFiles || [],  // 接收待处理文件列表
     currentFile: data.currentFile || '',
     lastError: data.lastError || ''
   };
@@ -106,8 +107,8 @@ function updateOcrWatchUI(data) {
   }
 
   // 刷新自动战报解析列表
-  if (typeof renderOcrAutoQueue === 'function') {
-    renderOcrAutoQueue();
+  if (typeof renderOCRQueue === 'function') {
+    renderOCRQueue();
   }
 }
 
