@@ -317,10 +317,7 @@ async function loadOcrWatchTask(projectId) {
                       + String(now.getMinutes()).padStart(2, '0') + ':'
                       + String(now.getSeconds()).padStart(2, '0');
           window.autoCompletedFiles.unshift({ name: completedFile, time: timeStr });
-          // 只保留最近10条
-          if (window.autoCompletedFiles.length > 10) {
-            window.autoCompletedFiles = window.autoCompletedFiles.slice(0, 10);
-          }
+          // 取消数量限制，显示所有已完成记录
         }
         // 立即从云端同步新数据并刷新数据底表
         console.log('[OCR-Watch] 检测到新完成文件，processedCount: ' + oldCount + ' → ' + newCount);
