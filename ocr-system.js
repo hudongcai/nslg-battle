@@ -275,9 +275,19 @@ function renderOCRQueue() {
     }
   });
 
+  // 排序：已完成 → 处理中 → 待处理（按状态优先级排序）
+  const statusOrder = { 'done': 1, 'processing': 2, 'error': 3, 'paused': 4, 'pending': 5 };
+  watchQueueItems.sort((a, b) => {
+    const orderA = statusOrder[a.status] || 99;
+    const orderB = statusOrder[b.status] || 99;
+    return orderA - orderB;
+  });
+
   if (queueCount) queueCount.textContent = manualItems.filter(({ item }) => item.status === 'pending').length;
   if (queueArea) queueArea.style.display = 'block';
-  if (autoQueueCount) autoQueueCount.textContent = watchQueueItems.length;
+  // 待处理数量只统计 pending 状态的任务
+  const autoPendingCount = watchQueueItems.filter(item => item.status === 'pending').length;
+  if (autoQueueCount) autoQueueCount.textContent = autoPendingCount;
   if (autoQueueArea) autoQueueArea.style.display = 'block';
 
   const btnPauseBatch = document.getElementById('btnPauseBatch');
