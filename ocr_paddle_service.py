@@ -50,7 +50,7 @@ print('PaddleOCR ready')
 # ── 长时间运行稳定性 ─────────────────────────────────────────────────
 _request_count = 0
 _GC_INTERVAL = 5           # 每 N 次请求执行一次 gc.collect()
-_MEM_RESTART_PCT = 90      # 系统内存使用率超过此值时主动重启（释放内存）
+_MEM_RESTART_PCT = 95      # 系统内存使用率超过此值时主动重启（释放内存）
 _LOG_MAX_MB = 10           # 日志文件上限 MB
 _LOG_BACKUPS = 3           # 保留备份数
 
