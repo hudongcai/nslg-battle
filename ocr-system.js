@@ -835,7 +835,12 @@ async function startBatchProcess() {
 
   const btnStart = document.getElementById('btnStartBatch');
   const btnPause = document.getElementById('btnPauseBatch');
+  const btnAutoStart = document.getElementById('btnAutoStartBatch');
+  const btnAutoPause = document.getElementById('btnAutoPauseBatch');
+
   if (btnStart) btnStart.disabled = true;
+  if (btnAutoStart) btnAutoStart.disabled = true;
+
   if (btnPause) {
     btnPause.disabled = false;
     btnPause.textContent = '⏸ 暂停';
@@ -843,8 +848,17 @@ async function startBatchProcess() {
     btnPause.classList.remove('is-paused');
     console.log('[OCR] 战报解析列表暂停按钮已启用');
   }
+  if (btnAutoPause) {
+    btnAutoPause.disabled = false;
+    btnAutoPause.textContent = '⏸ 暂停';
+    btnAutoPause.dataset.paused = '0';
+    btnAutoPause.classList.remove('is-paused');
+  }
+
   const queueAreaStart = document.getElementById('queueArea');
+  const autoQueueAreaStart = document.getElementById('autoQueueArea');
   if (queueAreaStart) queueAreaStart.classList.remove('queue-paused');
+  if (autoQueueAreaStart) autoQueueAreaStart.classList.remove('queue-paused');
 
   let processing = 0;
   let idx = 0;
@@ -998,7 +1012,9 @@ async function startBatchProcess() {
             updateOCRProgress();
             ocrRunning = false;
             if (btnStart) btnStart.disabled = false;
+            if (btnAutoStart) btnAutoStart.disabled = false;
             if (btnPause) btnPause.disabled = true;
+            if (btnAutoPause) btnAutoPause.disabled = true;
             showPointsInsufficientModal(0, 1);
             return;
           }
@@ -1063,8 +1079,10 @@ async function startBatchProcess() {
             updateOCRProgress();
             ocrRunning = false;
             if (btnStart) btnStart.disabled = false;
+            if (btnAutoStart) btnAutoStart.disabled = false;
             if (btnPause) { btnPause.disabled = false; }
-            updateOCRStatus('ok', '已暂停，点击“继续”恢复');
+            if (btnAutoPause) { btnAutoPause.disabled = false; }
+            updateOCRStatus('ok', '已暂停，点击”继续”恢复');
             return;
           }
           // 缃戠粶閿欒 / 鏈嶅姟涓嶅彲杈?/ 璇锋眰瓒呮椂 鈫?鑷姩閲嶈瘯
@@ -1114,14 +1132,23 @@ async function startBatchProcess() {
     // 鈹€鈹€ 鎵瑰鐞嗗叏閮ㄧ粨鏉?鈹€鈹€
     ocrRunning = false;
     if (btnStart) btnStart.disabled = false;
+    if (btnAutoStart) btnAutoStart.disabled = false;
     if (btnPause) {
       btnPause.disabled = true;
       btnPause.textContent = '⏸ 暂停';
       btnPause.dataset.paused = '0';
       btnPause.classList.remove('is-paused');
     }
+    if (btnAutoPause) {
+      btnAutoPause.disabled = true;
+      btnAutoPause.textContent = '⏸ 暂停';
+      btnAutoPause.dataset.paused = '0';
+      btnAutoPause.classList.remove('is-paused');
+    }
     const queueAreaDone = document.getElementById('queueArea');
+    const autoQueueAreaDone = document.getElementById('autoQueueArea');
     if (queueAreaDone) queueAreaDone.classList.remove('queue-paused');
+    if (autoQueueAreaDone) autoQueueAreaDone.classList.remove('queue-paused');
     throttledRenderAll();
     updateOCRProgress();
     updateOCRStatus('ok', 'OCR 就绪');
