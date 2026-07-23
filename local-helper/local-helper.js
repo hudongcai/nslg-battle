@@ -110,6 +110,20 @@ async function listTasks(config) {
   }
 }
 
+// ========== 核心功能1.5：上报目录状态 ==========
+
+async function reportFolderStatus(config, taskId, status, message) {
+  try {
+    await apiFetch(config, `/ocr-watch/tasks/${taskId}/folder-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, message })
+    });
+  } catch (e) {
+    throw new Error(`上报目录状态失败: ${e.message}`);
+  }
+}
+
 // ========== 核心功能2：扫描本地文件 ==========
 
 function listImages(folderPath) {
@@ -216,10 +230,21 @@ async function processTask(config, task) {
   if (!folderPath || !folderPath.trim()) {
     return;
   }
+
+  // 检查目录是否存在
   if (!fs.existsSync(folderPath)) {
     console.warn(`[任务${taskKey}] 目录不存在: ${folderPath}`);
+    // 上报目录状态
+    await reportFolderStatus(config, task.id, 'not_found', `目录不存在: ${folderPath}`).catch(e => {
+      console.warn(`[任务${taskKey}] 上报目录状态失败:`, e.message);
+    });
     return;
   }
+
+  // 目录存在，上报正常状态
+  await reportFolderStatus(config, task.id, 'ok', '').catch(e => {
+    console.warn(`[任务${taskKey}] 上报目录状态失败:`, e.message);
+  });
 
   // 查询已处理文件（去重）
   let processedFiles;

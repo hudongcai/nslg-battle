@@ -79,13 +79,16 @@ function updateOcrWatchUI(data) {
     failedCount: data.failedCount || 0,
     pendingFiles: data.pendingFiles || [],  // 接收待处理文件列表
     currentFile: data.currentFile || '',
-    lastError: data.lastError || ''
+    lastError: data.lastError || '',
+    folderStatus: data.folderStatus || 'unknown',
+    folderStatusMessage: data.folderStatusMessage || ''
   };
 
   // 更新 UI 元素
   const statusEl = document.getElementById('ocrWatchStatus');
   const pendingEl = document.getElementById('ocrWatchPending');
   const processedEl = document.getElementById('ocrWatchProcessed');
+  const folderWarningEl = document.getElementById('ocrWatchFolderWarning');
 
   if (statusEl) {
     const statusMap = {
@@ -104,6 +107,19 @@ function updateOcrWatchUI(data) {
 
   if (processedEl) {
     processedEl.textContent = data.processedCount || 0;
+  }
+
+  // 显示/隐藏目录警告
+  if (folderWarningEl) {
+    if (data.folderStatus === 'not_found') {
+      folderWarningEl.textContent = '⚠️ ' + (data.folderStatusMessage || '监听目录不存在，请重新选择目录');
+      folderWarningEl.style.display = 'block';
+    } else if (data.folderStatus === 'error') {
+      folderWarningEl.textContent = '⚠️ ' + (data.folderStatusMessage || '目录访问错误');
+      folderWarningEl.style.display = 'block';
+    } else {
+      folderWarningEl.style.display = 'none';
+    }
   }
 
   // 刷新自动战报解析列表
@@ -175,6 +191,7 @@ function replaceOcrWatchPanel() {
         <button class="btn btn-sm btn-primary" id="btnOcrWatchToggle" style="width:100%;justify-content:center;">▶ 开始监听</button>
       </div>
     </div>
+    <div id="ocrWatchFolderWarning" style="display:none;font-size:12px;color:var(--red);background:rgba(255,100,100,0.1);padding:8px 12px;border-radius:6px;margin-top:8px;border-left:3px solid var(--red);"></div>
     <div style="font-size:11px;color:var(--red);margin-top:6px;" id="ocrWatchError"></div>
     <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6;" id="ocrWatchDiagnostics"></div>
   </div>`;

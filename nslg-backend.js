@@ -189,6 +189,8 @@ async function initDB() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     // 添加 helper_client_id 字段（如果不存在）
     await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS helper_client_id BIGINT DEFAULT NULL AFTER project_id`).catch(()=>{});
+    await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS folder_status ENUM('unknown','ok','not_found','error') DEFAULT 'unknown' AFTER folder_path`).catch(()=>{});
+    await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS folder_status_message VARCHAR(512) DEFAULT '' AFTER folder_status`).catch(()=>{});
     await pool.query(`ALTER TABLE label_configs MODIFY COLUMN project_id BIGINT NOT NULL`).catch(()=>{});
     await pool.query(`ALTER TABLE project_player_dict ADD UNIQUE KEY uk_proj_player (project_id, player_name)`).catch(()=>{});
     // OCR 待处理任务表
@@ -2042,7 +2044,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
 
       // 查询数据库获取 folder_path 等配置信息
       const [rows] = await pool.query(
-        'SELECT folder_path, helper_client_id, created_at, updated_at FROM helper_configs WHERE id = ?',
+        'SELECT folder_path, folder_status, folder_status_message, helper_client_id, created_at, updated_at FROM helper_configs WHERE id = ?',
         [state.taskId]
       );
 
@@ -2051,6 +2053,8 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
           id: state.taskId,
           projectId: state.projectId,
           folderPath: rows[0].folder_path || '',
+          folderStatus: rows[0].folder_status || 'unknown',
+          folderStatusMessage: rows[0].folder_status_message || '',
           status: state.status,
           pendingCount: state.pendingCount,
           processedCount: state.processedCount,
@@ -2103,10 +2107,25 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
       if (normalizedFolder !== undefined) {
         updateFields.push('folder_path = ?');
         updateParams.push(normalizedFolder);
+        // 修改目录时：重置状态为 unknown，清空待处理队列
+        updateFields.push('folder_status = ?');
+        updateParams.push('unknown');
+        updateFields.push('folder_status_message = ?');
+        updateParams.push('');
       }
 
       updateParams.push(existing[0].id);
       await pool.query(`UPDATE helper_configs SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
+
+      // 清空该任务的待处理队列
+      if (normalizedFolder !== undefined) {
+        await pool.query(
+          `DELETE FROM ocr_pending_tasks WHERE helper_task_id = ?`,
+          [existing[0].id]
+        );
+        console.log(`[OCR-Watch] 任务 ${existing[0].id} 修改目录，已清空待处理队列`);
+      }
+
       res.json({ code: 200, data: { id: existing[0].id } });
     } else {
       // 创建新任务配置
@@ -2210,6 +2229,37 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
     res.json({ code: 200, message: '操作成功' });
   } catch (err) {
     console.error('[OCR-Watch] 控制任务失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 4.5. 本地助手上报目录状态
+app.post('/api/ocr-watch/tasks/:id/folder-status', requireOcrUploadActor, async (req, res) => {
+  try {
+    const taskId = Number(req.params.id);
+    const { status, message } = req.body || {};
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.json({ code: 400, message: '任务参数无效' });
+    }
+
+    const validStatuses = ['unknown', 'ok', 'not_found', 'error'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.json({ code: 400, message: '状态参数无效' });
+    }
+
+    // 更新数据库
+    await pool.query(
+      'UPDATE helper_configs SET folder_status = ?, folder_status_message = ?, updated_at = NOW() WHERE id = ?',
+      [status, String(message || '').slice(0, 512), taskId]
+    );
+
+    // 广播状态更新
+    broadcastTaskUpdate(taskId);
+
+    res.json({ code: 200, message: '状态已更新' });
+  } catch (err) {
+    console.error('[OCR-Watch] 更新目录状态失败:', err);
     res.json({ code: 500, message: err.message });
   }
 });
