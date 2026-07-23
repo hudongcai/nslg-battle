@@ -6,6 +6,10 @@ param(
     [switch]$NoScreenshot
 )
 
+# 设置控制台输出编码为 GBK，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding("gbk")
+$OutputEncoding = [System.Text.Encoding]::GetEncoding("gbk")
+
 $projectDir    = "C:\nslg-battle"
 $screenshotDir = "C:\AutoScreenshotTool2"
 $pythonPath    = "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe"

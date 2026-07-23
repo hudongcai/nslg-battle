@@ -1162,28 +1162,31 @@ $form.Add_Resize({
 # 主界面：默认使用网页自动激活，连接码仅作为备用入口
 $config = Read-HelperConfig
 
-$form.Size = New-Object System.Drawing.Size(560, 430)
+# 固定窗口大小，确保内容完整显示
+$form.Size = New-Object System.Drawing.Size(720, 520)
+$form.MinimumSize = New-Object System.Drawing.Size(720, 520)
+$form.MaximizeBox = $false
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = '真武本地助手'
-$title.Font = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold)
-$title.Location = New-Object System.Drawing.Point(30, 24)
+$title.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+$title.Location = New-Object System.Drawing.Point(40, 30)
 $title.AutoSize = $true
 $form.Controls.Add($title)
 
 $summary = New-Object System.Windows.Forms.Label
 $summary.Text = "网页会自动连接本地助手。通常不需要复制连接码。`n请在网页中登录账号、选择项目和监听目录，然后开始监听。"
-$summary.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$summary.Font = New-Object System.Drawing.Font('Segoe UI', 11)
 $summary.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 55)
-$summary.Location = New-Object System.Drawing.Point(32, 64)
-$summary.Size = New-Object System.Drawing.Size(490, 56)
+$summary.Location = New-Object System.Drawing.Point(42, 75)
+$summary.Size = New-Object System.Drawing.Size(630, 65)
 $form.Controls.Add($summary)
 
 $openWebButton = New-Object System.Windows.Forms.Button
 $openWebButton.Text = '打开网页配置自动监听'
-$openWebButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$openWebButton.Location = New-Object System.Drawing.Point(32, 132)
-$openWebButton.Size = New-Object System.Drawing.Size(235, 42)
+$openWebButton.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+$openWebButton.Location = New-Object System.Drawing.Point(42, 160)
+$openWebButton.Size = New-Object System.Drawing.Size(300, 50)
 $openWebButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $openWebButton.ForeColor = [System.Drawing.Color]::White
 $openWebButton.FlatStyle = 'Flat'
@@ -1194,39 +1197,39 @@ $form.Controls.Add($openWebButton)
 
 $checkStatusButton = New-Object System.Windows.Forms.Button
 $checkStatusButton.Text = '检查助手状态'
-$checkStatusButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$checkStatusButton.Location = New-Object System.Drawing.Point(285, 132)
-$checkStatusButton.Size = New-Object System.Drawing.Size(235, 42)
+$checkStatusButton.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+$checkStatusButton.Location = New-Object System.Drawing.Point(370, 160)
+$checkStatusButton.Size = New-Object System.Drawing.Size(300, 50)
 $checkStatusButton.Add_Click({ Show-HelperStatus })
 $form.Controls.Add($checkStatusButton)
 
 $hint = New-Object System.Windows.Forms.Label
 $hint.Text = '提示：监听目录请在网页里选择。这个窗口可以关闭，助手会留在托盘后台运行。'
-$hint.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$hint.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $hint.ForeColor = [System.Drawing.Color]::FromArgb(95, 95, 95)
-$hint.Location = New-Object System.Drawing.Point(32, 190)
-$hint.Size = New-Object System.Drawing.Size(490, 24)
+$hint.Location = New-Object System.Drawing.Point(42, 230)
+$hint.Size = New-Object System.Drawing.Size(630, 30)
 $form.Controls.Add($hint)
 
 $advancedGroup = New-Object System.Windows.Forms.GroupBox
 $advancedGroup.Text = '手动连接码（备用）'
-$advancedGroup.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$advancedGroup.Location = New-Object System.Drawing.Point(30, 228)
-$advancedGroup.Size = New-Object System.Drawing.Size(500, 92)
+$advancedGroup.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$advancedGroup.Location = New-Object System.Drawing.Point(40, 280)
+$advancedGroup.Size = New-Object System.Drawing.Size(640, 110)
 $form.Controls.Add($advancedGroup)
 
 $advancedHint = New-Object System.Windows.Forms.Label
 $advancedHint.Text = '只有网页自动连接失败时，才需要在这里粘贴连接码。'
-$advancedHint.Font = New-Object System.Drawing.Font('Segoe UI', 8)
+$advancedHint.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $advancedHint.ForeColor = [System.Drawing.Color]::DimGray
-$advancedHint.Location = New-Object System.Drawing.Point(12, 22)
-$advancedHint.Size = New-Object System.Drawing.Size(470, 18)
+$advancedHint.Location = New-Object System.Drawing.Point(16, 26)
+$advancedHint.Size = New-Object System.Drawing.Size(600, 22)
 $advancedGroup.Controls.Add($advancedHint)
 
 $script:LinkCodeBox = New-Object System.Windows.Forms.TextBox
-$script:LinkCodeBox.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$script:LinkCodeBox.Location = New-Object System.Drawing.Point(12, 48)
-$script:LinkCodeBox.Size = New-Object System.Drawing.Size(350, 30)
+$script:LinkCodeBox.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+$script:LinkCodeBox.Location = New-Object System.Drawing.Point(16, 58)
+$script:LinkCodeBox.Size = New-Object System.Drawing.Size(450, 35)
 $script:LinkCodeBox.Add_KeyDown({
     param($sender, $e)
     if ($e.Control -and $e.KeyCode -eq 'A') {
@@ -1238,17 +1241,17 @@ $advancedGroup.Controls.Add($script:LinkCodeBox)
 
 $connectButton = New-Object System.Windows.Forms.Button
 $connectButton.Text = '手动连接'
-$connectButton.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$connectButton.Location = New-Object System.Drawing.Point(374, 46)
-$connectButton.Size = New-Object System.Drawing.Size(108, 30)
+$connectButton.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$connectButton.Location = New-Object System.Drawing.Point(485, 56)
+$connectButton.Size = New-Object System.Drawing.Size(135, 38)
 $advancedGroup.Controls.Add($connectButton)
 
 $script:StatusLabel = New-Object System.Windows.Forms.Label
 $script:StatusLabel.Text = '状态: 等待网页自动连接...'
-$script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $script:StatusLabel.ForeColor = [System.Drawing.Color]::DimGray
-$script:StatusLabel.Location = New-Object System.Drawing.Point(32, 338)
-$script:StatusLabel.Size = New-Object System.Drawing.Size(490, 30)
+$script:StatusLabel.Location = New-Object System.Drawing.Point(42, 415)
+$script:StatusLabel.Size = New-Object System.Drawing.Size(630, 40)
 $form.Controls.Add($script:StatusLabel)
 
 # Hidden grid kept for legacy launch/bind helpers that still use Refresh-UiTasks.

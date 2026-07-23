@@ -1,11 +1,12 @@
 {
   "apiBase": "http://localhost:3000/api",
-  "helperToken": "mock-token-13651810449-1783340458148",
-  "clientId": 3,
-  "deviceId": "8223033f-d700-4250-878e-cc6b60364653",
+  "helperToken": "helper-auth-398976a352767055230ff524c36e801f7411",
+  "tasks": {},
+  "helperClientId": 1,
+  "deviceId": "device-1784592742760",
+  "lastFolderPath": "C:\\AutoScreenshotTool\\screenshots\\6",
   "taskFolders": {
-    "1": "C:\\test",
-    "12": "C:\\nslg-battle\\screenshots\\4"
-  },
-  "lastFolderPath": "C:\\nslg-battle\\screenshots\\4"
+    "1": "C:\\nslg-battle\\screenshots\\5",
+    "4": "C:\\AutoScreenshotTool\\screenshots\\6"
+  }
 }

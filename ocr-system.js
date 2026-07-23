@@ -1570,6 +1570,31 @@ async function manualRefreshHelperStatus(btn) {
   }
 }
 
+// ========== 服务端监听状态实时轮询 ==========
+let _svrWatchStatusTimer = null;
+
+function startSvrWatchStatusPolling() {
+  if (_svrWatchStatusTimer) clearInterval(_svrWatchStatusTimer);
+  _svrWatchStatusTimer = setInterval(() => {
+    if (typeof svrWatchRefresh === 'function') {
+      svrWatchRefresh();
+    }
+  }, 3000);
+  // 立即执行一次
+  if (typeof svrWatchRefresh === 'function') {
+    svrWatchRefresh();
+  }
+}
+
+// 在 initOCR 时启动轮询
+if (typeof window !== 'undefined') {
+  const originalInitOCR = initOCR;
+  window.initOCR = function() {
+    originalInitOCR.apply(this, arguments);
+    startSvrWatchStatusPolling();
+  };
+}
+
 // Inline buttons in index.html call these names directly.
 window.initOCR = initOCR;
 window.renderOCRQueue = renderOCRQueue;
