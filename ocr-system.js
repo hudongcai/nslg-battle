@@ -238,6 +238,16 @@ function renderOCRQueue() {
   const watchCompletedFiles = Array.isArray(window.autoCompletedFiles) ? window.autoCompletedFiles : [];
   const watchQueueItems = [];
 
+  // 从 ocrQueue 中获取自动任务（正在处理或待处理）
+  const autoTasksInQueue = ocrQueue
+    .filter(item => item.isAutoTask && normalizeQueueProjectId(item.projectId) === curPid)
+    .map(item => ({
+      name: item.name,
+      status: item.status,
+      error: item.error || '',
+      source: 'queue'
+    }));
+
   if (watchTaskMatchesProject) {
     watchCompletedFiles.forEach(item => {
       watchQueueItems.push({ name: item.name, time: item.time, status: 'done', error: '', source: 'auto' });
@@ -256,6 +266,14 @@ function renderOCRQueue() {
       }
     });
   }
+
+  // 合并 ocrQueue 中的自动任务（去重：优先显示 watchTask 中的状态）
+  const existingNames = new Set(watchQueueItems.map(item => item.name));
+  autoTasksInQueue.forEach(item => {
+    if (!existingNames.has(item.name)) {
+      watchQueueItems.push(item);
+    }
+  });
 
   if (queueCount) queueCount.textContent = manualItems.filter(({ item }) => item.status === 'pending').length;
   if (queueArea) queueArea.style.display = 'block';
