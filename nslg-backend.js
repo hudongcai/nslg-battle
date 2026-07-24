@@ -2049,6 +2049,11 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
       );
 
       if (rows.length) {
+        // 本地助手调用时：只返回绑定到当前设备的任务（或未绑定的任务）
+        if (req.helperClientId && rows[0].helper_client_id && rows[0].helper_client_id !== req.helperClientId) {
+          continue;
+        }
+
         tasks.push({
           id: state.taskId,
           projectId: state.projectId,
