@@ -287,7 +287,7 @@ async function requireOcrUploadActor(req, res, next) {
   if (helperToken.startsWith('helper-auth-')) {
     try {
       const [rows] = await pool.query(
-        `SELECT c.id, c.user_id, u.phone, u.status
+        `SELECT c.id, c.user_id, c.device_id, u.phone, u.status
          FROM helper_configs c
          INNER JOIN users u ON u.id = c.user_id
          WHERE c.access_token = ? AND (c.token_expires_at IS NULL OR c.token_expires_at > NOW())
@@ -299,6 +299,7 @@ async function requireOcrUploadActor(req, res, next) {
       req.authPhone = rows[0].phone;
       req.authUserId = rows[0].user_id;
       req.helperClientId = rows[0].id;
+      req.helperDeviceId = rows[0].device_id || null;  // 设置设备ID
       return next();
     } catch (err) {
       return res.status(500).json({ code: 500, message: err.message });
@@ -2044,13 +2045,13 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
 
       // 查询数据库获取 folder_path 等配置信息
       const [rows] = await pool.query(
-        'SELECT folder_path, folder_status, folder_status_message, helper_client_id, created_at, updated_at FROM helper_configs WHERE id = ?',
+        'SELECT folder_path, folder_status, folder_status_message, helper_client_id, device_id, created_at, updated_at FROM helper_configs WHERE id = ?',
         [state.taskId]
       );
 
       if (rows.length) {
-        // 本地助手调用时：只返回绑定到当前设备的任务（或未绑定的任务）
-        if (req.helperClientId && rows[0].helper_client_id && rows[0].helper_client_id !== req.helperClientId) {
+        // 本地助手调用时：只返回绑定到当前设备的任务（通过 device_id 过滤）
+        if (req.helperDeviceId && rows[0].device_id && rows[0].device_id !== req.helperDeviceId) {
           continue;
         }
 
@@ -2068,6 +2069,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
           lastError: state.lastError,
           lastHeartbeat: state.lastHeartbeat.toISOString(),
           helperClientId: rows[0].helper_client_id || null,
+          deviceId: rows[0].device_id || null,
           createdAt: rows[0].created_at,
           updatedAt: rows[0].updated_at
         });
@@ -2089,7 +2091,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
 // 2. 创建/更新任务
 app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
   try {
-    const { projectId, folderPath } = req.body || {};
+    const { projectId, folderPath, helperClientId, deviceId } = req.body || {};
     const normalizedProjectId = Number(projectId);
 
     if (!Number.isInteger(normalizedProjectId) || normalizedProjectId <= 0) {
@@ -2097,6 +2099,7 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
     }
 
     const normalizedFolder = String(folderPath || '').trim().slice(0, 512);
+    const normalizedDeviceId = deviceId ? String(deviceId).slice(0, 128) : null;
 
     // 检查是否已存在
     const [existing] = await pool.query(
@@ -2117,6 +2120,16 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
         updateParams.push('unknown');
         updateFields.push('folder_status_message = ?');
         updateParams.push('');
+      }
+
+      // 保存设备绑定信息
+      if (helperClientId !== undefined) {
+        updateFields.push('helper_client_id = ?');
+        updateParams.push(helperClientId);
+      }
+      if (normalizedDeviceId !== null) {
+        updateFields.push('device_id = ?');
+        updateParams.push(normalizedDeviceId);
       }
 
       updateParams.push(existing[0].id);
@@ -2148,8 +2161,8 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
       }
 
       const [result] = await pool.query(
-        'INSERT INTO helper_configs (user_id, project_id, folder_path, access_token, token_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NOW(), NOW())',
-        [req.authUserId, normalizedProjectId, normalizedFolder, helperToken]
+        'INSERT INTO helper_configs (user_id, project_id, folder_path, helper_client_id, device_id, access_token, token_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NOW(), NOW())',
+        [req.authUserId, normalizedProjectId, normalizedFolder, helperClientId || null, normalizedDeviceId, helperToken]
       );
       res.json({ code: 200, data: { id: result.insertId } });
     }

@@ -560,11 +560,12 @@ async function saveOcrWatchFolder(folderPath) {
       return;
     }
     var helperClientId = identity.helperClientId;
+    var deviceId = identity.status && identity.status.deviceId ? identity.status.deviceId : null;
 
     var resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ projectId: Number(pid), folderPath: folderPath, helperClientId: helperClientId })
+      body: JSON.stringify({ projectId: Number(pid), folderPath: folderPath, helperClientId: helperClientId, deviceId: deviceId })
     });
     var data = await resp.json();
     if (data.code === 200) {
