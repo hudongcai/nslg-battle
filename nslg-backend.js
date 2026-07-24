@@ -2300,7 +2300,7 @@ app.post('/api/ocr-watch/tasks/:id/progress', requireOcrUploadActor, async (req,
     const taskId = Number(req.params.id);
     const { pendingCount, processedCount, currentFile, lastError } = req.body || {};
 
-    console.log('[DEPRECATED] POST /progress 被调用，建议升级本地助手到 v3.0+');
+    // console.log('[DEPRECATED] POST /progress 被调用，建议升级本地助手到 v3.0+');
 
     if (!Number.isInteger(taskId) || taskId <= 0) {
       return res.json({ code: 400, message: '任务参数无效' });
