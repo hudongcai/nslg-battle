@@ -2264,6 +2264,29 @@ app.post('/api/ocr-watch/tasks/:id/folder-status', requireOcrUploadActor, async 
   }
 });
 
+// 4.6. 本地助手心跳更新
+app.post('/api/ocr-watch/tasks/:id/heartbeat', requireOcrUploadActor, async (req, res) => {
+  try {
+    const taskId = Number(req.params.id);
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.json({ code: 400, message: '任务参数无效' });
+    }
+
+    // 只更新心跳时间，不重新统计数据库
+    const state = watchTaskStates.get(taskId);
+    if (state) {
+      state.lastHeartbeat = new Date();
+      broadcastTaskUpdate(taskId);
+    }
+
+    res.json({ code: 200, message: '心跳已更新' });
+  } catch (err) {
+    console.error('[OCR-Watch] 更新心跳失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // 4. 助手进度上报（改为内存状态 + WebSocket 推送）
 // ⚠️ DEPRECATED: 此接口已废弃，保留仅为向下兼容
 // 新版本本地助手不再调用此接口，后端会在上传文件后自动统计并推送

@@ -124,6 +124,20 @@ async function reportFolderStatus(config, taskId, status, message) {
   }
 }
 
+// ========== 核心功能1.6：发送心跳 ==========
+
+async function sendHeartbeat(config, taskId) {
+  try {
+    await apiFetch(config, `/ocr-watch/tasks/${taskId}/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (e) {
+    // 心跳失败不影响主流程，仅记录日志
+    console.warn(`[心跳] 任务 ${taskId} 心跳发送失败:`, e.message);
+  }
+}
+
 // ========== 核心功能2：扫描本地文件 ==========
 
 function listImages(folderPath) {
@@ -541,6 +555,10 @@ async function main() {
       // 处理所有 running 状态的任务
       for (const task of tasks) {
         if (task.status === 'running') {
+          // 发送心跳保持在线状态
+          await sendHeartbeat(config, task.id);
+
+          // 处理任务文件
           await processTask(config, task);
         }
       }
