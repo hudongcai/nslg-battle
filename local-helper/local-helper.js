@@ -202,7 +202,7 @@ async function uploadFile(config, task, filePath, fileName) {
   }
 
   const resp = await fetch(
-    normalizeApiBase(config.apiBase) + '/battles/ocr-upload',
+    normalizeApiBase(config.apiBase) + '/battles/ocr-tasks',  // 修改为队列接口
     {
       method: 'POST',
       headers: {

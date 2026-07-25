@@ -1161,6 +1161,9 @@ app.post('/api/battles/ocr-tasks', requireOcrUploadActor, async (req, res) => {
       await refreshOcrWatchTaskStats(helperTaskId, { currentFile: normalizedImageName, lastError: '' });
     }
 
+    // 触发队列处理（不阻塞响应）
+    setImmediate(() => processOcrQueue());
+
     res.json({ code: 200, message: '任务已加入队列', data: { taskId: result.insertId } });
   } catch (err) {
     console.error('[OCR-Tasks] 创建任务失败:', err);
@@ -1378,6 +1381,43 @@ app.post('/api/battles/ocr-clear-pending', requireActiveUser, async (req, res) =
   }
 });
 
+// 5. 队列监控接口
+app.get('/api/ocr-queue/stats', requireActiveUser, async (req, res) => {
+  try {
+    // 统计队列状态
+    const [queueRows] = await pool.query(
+      `SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+        SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+       FROM ocr_pending_tasks
+       WHERE user_id = ?`,
+      [req.authUserId]
+    );
+
+    res.json({
+      code: 200,
+      data: {
+        queue: queueRows[0],
+        processor: {
+          isProcessing: isProcessingQueue,
+          heartbeat: new Date(queueProcessorHeartbeat).toISOString(),
+          restarts: queueProcessorRestarts,
+          totalProcessed: queueStats.totalProcessed,
+          totalFailed: queueStats.totalFailed,
+          avgProcessTime: Math.round(queueStats.avgProcessTime),
+          lastProcessTime: queueStats.lastProcessTime
+        }
+      }
+    });
+  } catch (err) {
+    console.error('[OCR-Queue-Stats] 查询失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // ========== OCR 一站式上传（手动上传使用，保留兼容）==========
 app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
   try {
@@ -1477,6 +1517,313 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
     res.json({ code: 200, data: record });
   } catch (err) { console.error('[OCR-Upload]', err); res.json({ code: 500, message: err.message }); }
 });
+
+// ========== OCR 队列后台处理器 ==========
+
+let isProcessingQueue = false;
+let pendingQueueTrigger = false;
+let queueProcessorHeartbeat = Date.now();
+let queueProcessorRestarts = 0;
+let queueStats = {
+  totalProcessed: 0,
+  totalFailed: 0,
+  avgProcessTime: 0,
+  lastProcessTime: 0
+};
+
+async function processOcrQueue() {
+  if (isProcessingQueue) {
+    pendingQueueTrigger = true;
+    return;
+  }
+
+  isProcessingQueue = true;
+  queueProcessorHeartbeat = Date.now();
+
+  try {
+    do {
+      pendingQueueTrigger = false;
+
+      // 获取下一个待处理任务
+      const [tasks] = await pool.query(
+        `SELECT id, user_id, project_id, image_base64, image_name,
+                helper_task_id, label_config
+         FROM ocr_pending_tasks
+         WHERE status = 'pending'
+         ORDER BY
+           CASE WHEN helper_task_id IS NOT NULL THEN 0 ELSE 1 END,
+           created_at ASC
+         LIMIT 1`
+      );
+
+      if (!tasks.length) break;
+
+      const task = tasks[0];
+
+      // 标记为处理中
+      await pool.query(
+        'UPDATE ocr_pending_tasks SET status = ?, updated_at = NOW() WHERE id = ?',
+        ['processing', task.id]
+      );
+
+      // 推送状态更新
+      if (task.helper_task_id) {
+        await refreshOcrWatchTaskStats(task.helper_task_id, {
+          currentFile: task.image_name,
+          lastError: ''
+        });
+      }
+
+      // 执行OCR识别
+      try {
+        await processOcrTask(task);
+      } catch (e) {
+        console.error(`[OCR-Queue] 任务 ${task.id} 处理失败:`, e.message);
+      }
+
+      // 冷却3秒后处理下一张
+      await new Promise(r => setTimeout(r, 3000));
+
+      queueProcessorHeartbeat = Date.now();
+
+    } while (pendingQueueTrigger);
+
+  } finally {
+    isProcessingQueue = false;
+  }
+}
+
+// PLACEHOLDER_FOR_PROCESS_OCR_TASK
+
+async function processOcrTask(task) {
+  const startTime = Date.now();
+
+  try {
+    // 1. 验证图片数据
+    if (!task.image_base64 || task.image_base64.length < 100) {
+      throw new Error('图片数据无效或为空');
+    }
+
+    // 2. 尝试解码验证
+    try {
+      Buffer.from(task.image_base64, 'base64');
+    } catch (e) {
+      throw new Error('Base64 解码失败');
+    }
+
+    // 3. 检查积分
+    const [uRows] = await pool.query(
+      'SELECT id, credit_balance FROM users WHERE id = ? LIMIT 1',
+      [task.user_id]
+    );
+
+    if (!uRows.length || (uRows[0].credit_balance || 0) <= 0) {
+      throw new Error('积分不足');
+    }
+
+    // 4. 获取字典
+    const { heroNames, tacticNames, playerNames, allianceNames } = await getCachedDicts(task.project_id);
+
+    // 5. 调用 PaddleOCR
+    const ocrBody = {
+      image: task.image_base64,
+      heroNames,
+      tacticNames,
+      playerNames,
+      allianceNames
+    };
+
+    if (task.label_config) {
+      try {
+        ocrBody.labelConfig = JSON.parse(task.label_config);
+      } catch (e) {}
+    }
+
+    let ocrResult;
+    try {
+      ocrResult = await _callPaddleOcr(ocrBody, task.image_name);
+    } catch (e) {
+      throw new Error(`OCR调用失败: ${e.message}`);
+    }
+
+    const { record, paddleRaw, paddleProcessError } = ocrResult;
+
+    // 6. 处理失败情况
+    if (paddleProcessError) {
+      throw new Error(`图片处理失败: ${paddleProcessError}`);
+    }
+
+    if (!record) {
+      throw new Error('OCR识别结果为空');
+    }
+
+    // PLACEHOLDER_FOR_SAVE_RESULTS
+
+    // 7. 保存战报数据
+    const now = new Date();
+    record.battleDate = task.battle_date || now.toISOString().split('T')[0];
+    record.time = now.toLocaleString('zh-CN');
+
+    const fv = v => (v && v !== '') ? v : null;
+    const insertParams = [
+      task.project_id || null,
+      record.leftPlayer || record.attackerName || '',
+      record.rightPlayer || record.enemyName || '',
+      record.result || '',
+      record.battleDate,
+      '',
+      fv(record.leftLoss), fv(record.rightLoss),
+      fv(record.leftTotal), fv(record.rightTotal),
+      record.leftLossRate != null ? record.leftLossRate : null,
+      record.rightLossRate != null ? record.rightLossRate : null,
+      fv(record.leftFormation), fv(record.rightFormation),
+      fv(record.leftAlliance), fv(record.rightAlliance),
+      fv(record.leftGeneral1), fv(record.leftGeneral2), fv(record.leftGeneral3),
+      fv(record.rightGeneral1), fv(record.rightGeneral2), fv(record.rightGeneral3),
+      fv(record.leftTactic1_1), fv(record.leftTactic1_2), fv(record.leftTactic1_3),
+      fv(record.leftTactic2_1), fv(record.leftTactic2_2), fv(record.leftTactic2_3),
+      fv(record.leftTactic3_1), fv(record.leftTactic3_2), fv(record.leftTactic3_3),
+      fv(record.rightTactic1_1), fv(record.rightTactic1_2), fv(record.rightTactic1_3),
+      fv(record.rightTactic2_1), fv(record.rightTactic2_2), fv(record.rightTactic2_3),
+      fv(record.rightTactic3_1), fv(record.rightTactic3_2), fv(record.rightTactic3_3),
+      record.leftGeneral1Stars ?? 0,
+      record.leftGeneral2Stars ?? 0,
+      record.leftGeneral3Stars ?? 0,
+      record.rightGeneral1Stars ?? 0,
+      record.rightGeneral2Stars ?? 0,
+      record.rightGeneral3Stars ?? 0,
+      task.user_id,
+      1,
+      now,
+      now
+    ];
+
+    const [insertResult] = await pool.query(
+      `INSERT INTO battle_records (
+        project_id, attacker_name, enemy_name, result, battle_date, description,
+        left_loss, right_loss, left_total, right_total,
+        left_loss_rate, right_loss_rate,
+        left_formation, right_formation,
+        left_alliance, right_alliance,
+        left_general_1, left_general_2, left_general_3,
+        right_general_1, right_general_2, right_general_3,
+        left_tactic_1_1, left_tactic_1_2, left_tactic_1_3,
+        left_tactic_2_1, left_tactic_2_2, left_tactic_2_3,
+        left_tactic_3_1, left_tactic_3_2, left_tactic_3_3,
+        right_tactic_1_1, right_tactic_1_2, right_tactic_1_3,
+        right_tactic_2_1, right_tactic_2_2, right_tactic_2_3,
+        right_tactic_3_1, right_tactic_3_2, right_tactic_3_3,
+        left_general_1_stars, left_general_2_stars, left_general_3_stars,
+        right_general_1_stars, right_general_2_stars, right_general_3_stars,
+        created_by, status, created_at, updated_at
+      ) VALUES (${insertParams.map(() => '?').join(',')})`,
+      insertParams
+    );
+
+    const newId = insertResult.insertId;
+
+    // 8. 提取待确认战法
+    const pendingTactics = [];
+    if (paddleRaw && paddleRaw.ok) {
+      for (const t of [...(paddleRaw.leftTactics || []), ...(paddleRaw.rightTactics || [])]) {
+        if (typeof t === 'string' && t.startsWith('待确认:')) {
+          const raw = t.slice(4).trim();
+          if (raw) pendingTactics.push(raw);
+        }
+      }
+    }
+
+    for (const raw of [...new Set(pendingTactics)]) {
+      await pool.query(
+        `INSERT INTO ocr_tactic_pending (
+          raw_text, detect_count, source_battle_id, status, created_at
+        ) VALUES (?, 1, ?, 'pending', NOW())
+        ON DUPLICATE KEY UPDATE detect_count = detect_count + 1`,
+        [raw, newId]
+      );
+    }
+
+    // 9. 保存图片到图库
+    if (task.image_base64) {
+      const imageBuf = Buffer.from(task.image_base64, 'base64');
+      await pool.query(
+        `INSERT INTO battle_gallery (
+          project_id, battle_id, image_data, original_name,
+          file_size, uploaded_by, created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,NOW(),NOW())`,
+        [task.project_id || null, newId, imageBuf, task.image_name || '', imageBuf.length, task.user_id]
+      );
+    }
+
+    // 10. 扣除积分
+    await pool.query(
+      'UPDATE users SET credit_balance = credit_balance - 1 WHERE id = ?',
+      [task.user_id]
+    );
+    await pool.query(
+      `INSERT INTO credit_logs (
+        user_id, change_amount, balance_after, type,
+        description, operator_id, created_at
+      ) SELECT ?, -1, credit_balance, ?, ?, ?, NOW()
+      FROM users WHERE id = ?`,
+      [task.user_id, 'consume', `OCR识别: ${task.image_name || '战报'}`, task.user_id, task.user_id]
+    );
+
+    // 11. 标记任务完成，删除图片数据（释放存储）
+    await pool.query(
+      `UPDATE ocr_pending_tasks
+       SET status = 'done',
+           battle_record_id = ?,
+           image_base64 = NULL,
+           updated_at = NOW()
+       WHERE id = ?`,
+      ['done', newId, task.id]
+    );
+
+    // 12. 更新统计并推送
+    if (task.helper_task_id) {
+      await refreshOcrWatchTaskStats(task.helper_task_id, {
+        currentFile: '',
+        lastError: ''
+      });
+    }
+
+    // 13. 更新统计
+    const processTime = Date.now() - startTime;
+    queueStats.lastProcessTime = processTime;
+    queueStats.avgProcessTime =
+      (queueStats.avgProcessTime * queueStats.totalProcessed + processTime) /
+      (queueStats.totalProcessed + 1);
+    queueStats.totalProcessed++;
+
+    console.log(`[OCR-Queue] ✅ 任务 ${task.id} 完成: ${task.image_name} -> 战报 ${newId}，耗时 ${(processTime/1000).toFixed(1)}s`);
+
+
+  } catch (e) {
+    console.error(`[OCR-Queue] 任务 ${task.id} 失败:`, e.message);
+
+    // 记录错误
+    await pool.query(
+      `UPDATE ocr_pending_tasks
+       SET status = 'failed',
+           error_message = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [e.message.slice(0, 500), task.id]
+    );
+
+    if (task.helper_task_id) {
+      await refreshOcrWatchTaskStats(task.helper_task_id, {
+        currentFile: '',
+        lastError: e.message
+      });
+    }
+
+    queueStats.totalFailed++;
+    throw e;
+  }
+}
+
 
 // ========== 战报图片 ==========
 app.post('/api/gallery', requireActiveUser, async (req, res) => {
@@ -2011,6 +2358,37 @@ server.listen(PORT, async () => {
   await initWatchTaskStates();
   console.log(`🚀 服务运行在 http://localhost:${PORT}`);
   console.log(`🔌 WebSocket 服务运行在 ws://localhost:${PORT}/ws`);
+
+  // 启动 OCR 队列处理器
+  setTimeout(async () => {
+    try {
+      // 重置超时的 processing 任务
+      const [result] = await pool.query(
+        `UPDATE ocr_pending_tasks
+         SET status = 'pending', updated_at = NOW()
+         WHERE status = 'processing' AND updated_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)`
+      );
+      if (result.affectedRows > 0) {
+        console.log(`[OCR-Queue] 已重置 ${result.affectedRows} 个超时任务`);
+      }
+
+      // 启动队列处理器
+      console.log('[OCR-Queue] 队列处理器已启动');
+      processOcrQueue();
+
+      // 定期检查心跳
+      setInterval(() => {
+        if (Date.now() - queueProcessorHeartbeat > 120000) {
+          console.warn('[OCR-Queue] 处理器无响应，重启...');
+          queueProcessorRestarts++;
+          processOcrQueue();
+        }
+      }, 60000);
+    } catch (e) {
+      console.error('[OCR-Queue] 初始化失败:', e.message);
+    }
+  }, 5000);
+
   // 若上次已开启监听，自动恢复
   const _fwCfg = loadFolderWatchConfig();
   if (_fwCfg.enabled && _fwCfg.folderPath) { startFolderWatch(); }
