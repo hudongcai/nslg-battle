@@ -210,7 +210,7 @@ async function initDB() {
     await pool.query(`ALTER TABLE ocr_pending_tasks MODIFY COLUMN image_base64 LONGTEXT NULL`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_pending_tasks ADD INDEX idx_project_image (project_id, image_name)`).catch(()=>{});
     await pool.query(`ALTER TABLE ocr_pending_tasks DROP COLUMN battle_date`).catch(()=>{});
-    await pool.query(`ALTER TABLE ocr_pending_tasks DROP COLUMN label_config`).catch(()=>{});
+    // await pool.query(`ALTER TABLE ocr_pending_tasks DROP COLUMN label_config`).catch(()=>{}); // 已注释：label_config字段现在需要保留
     // 常用查询索引
     try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_project (project_id)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_project:', e.message); }
     try { await pool.query(`ALTER TABLE battle_records ADD INDEX idx_project_date (project_id, battle_date)`); } catch (e) { if (e.code !== 'ER_DUP_KEYNAME') console.warn('idx_project_date:', e.message); }
@@ -943,7 +943,7 @@ const PADDLE_CACHE_IMG_URL = 'http://127.0.0.1:8003/cache-image';
 // PaddleOCR 单进程处理一张图约用 1-2 GB；并发两路直接 OOM 死机
 const OCR_QUEUE_LIMIT = 5;      // 最多允许 N 个任务在队列里等待
 const OCR_COOLDOWN_MS = 3000;   // 每张图处理完后冷却 3 秒让内存回收
-const OCR_MEM_THRESHOLD = 0.88; // 可用内存低于总量 12% 时暂停等待
+const OCR_MEM_THRESHOLD = 0.95; // 可用内存低于总量 5% 时暂停等待（原88%过于保守）
 let _ocrLockPromise = Promise.resolve();
 let _ocrQueueDepth = 0;
 
@@ -1777,7 +1777,7 @@ async function processOcrTask(task) {
            image_base64 = NULL,
            updated_at = NOW()
        WHERE id = ?`,
-      ['done', newId, task.id]
+      [newId, task.id]
     );
 
     // 12. 更新统计并推送

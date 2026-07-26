@@ -285,9 +285,17 @@ function renderOCRQueue() {
 
   if (queueCount) queueCount.textContent = manualItems.filter(({ item }) => item.status === 'pending').length;
   if (queueArea) queueArea.style.display = 'block';
-  // 待处理数量只统计 pending 状态的任务
-  const autoPendingCount = watchQueueItems.filter(item => item.status === 'pending').length;
-  if (autoQueueCount) autoQueueCount.textContent = autoPendingCount;
+
+  // 自动战报解析列表显示已完成数量：优先使用后端统计的processedCount（准确），否则fallback到前端watchQueueItems计算
+  let autoDoneCount = 0;
+  if (watchTask && typeof watchTask.processedCount === 'number') {
+    // 使用后端提供的准确统计
+    autoDoneCount = watchTask.processedCount;
+  } else {
+    // fallback: 从前端watchQueueItems计算（可能不准确）
+    autoDoneCount = watchQueueItems.filter(item => item.status === 'done').length;
+  }
+  if (autoQueueCount) autoQueueCount.textContent = autoDoneCount;
   if (autoQueueArea) autoQueueArea.style.display = 'block';
 
   const btnPauseBatch = document.getElementById('btnPauseBatch');
@@ -1260,11 +1268,27 @@ function updateOCRProgress() {
 }
 
 function updateAutoOCRProgress(watchQueueItems) {
+  // 优先使用后端统计数据（准确），否则fallback到前端watchQueueItems（可能不准确）
+  const watchTask = window.ocrWatchTask;
+  let total, done, failed;
+
+  if (watchTask && typeof watchTask.pendingCount === 'number' && typeof watchTask.processedCount === 'number') {
+    // 使用后端提供的准确统计
+    const pending = watchTask.pendingCount || 0;
+    done = watchTask.processedCount || 0;
+    failed = (typeof watchTask.failedCount === 'number') ? watchTask.failedCount : 0;
+    total = pending + done + failed;
+  } else {
+    // fallback: 从前端watchQueueItems计算
+    const items = Array.isArray(watchQueueItems) ? watchQueueItems : [];
+    total = items.length;
+    done = items.filter(item => item.status === 'done').length;
+    failed = items.filter(item => item.status === 'error').length;
+  }
+
   const items = Array.isArray(watchQueueItems) ? watchQueueItems : [];
-  const total = items.length;
-  const done = items.filter(item => item.status === 'done').length;
   const paused = items.some(item => item.status === 'paused');
-  const errored = items.some(item => item.status === 'error');
+  const errored = failed > 0 || items.some(item => item.status === 'error');
   const pct = total > 0 ? (done / total * 100) : 0;
 
   const bar = document.getElementById('autoBatchProgress');
