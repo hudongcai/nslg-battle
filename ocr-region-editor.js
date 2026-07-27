@@ -243,7 +243,7 @@ async function leSaveConfig() {
     name = name.trim();
   }
   const schemeData = {
-    imageB64: '',   // 不存储图片，避免超限
+    imageB64: _leCurrentImageB64 || '',   // 保存当前图片
     imageW: _leImgW,
     imageH: _leImgH,
     boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
@@ -274,7 +274,7 @@ async function leNewScheme() {
     return;
   }
   const schemeData = {
-    imageB64: '',
+    imageB64: _leCurrentImageB64 || '',   // 保存当前图片
     imageW: _leImgW,
     imageH: _leImgH,
     boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
@@ -876,12 +876,18 @@ async function _getSchemeData(name) {
   try {
     const token = typeof getToken === 'function' ? getToken() : '';
     const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
-    const resp = await fetch(`${base}/ocr-schemes/${encodeURIComponent(name)}`, {
+    const url = `${base}/ocr-schemes/${encodeURIComponent(name)}`;
+    console.log('[_getSchemeData] 请求URL:', url);
+    console.log('[_getSchemeData] Token:', token ? 'Bearer ' + token.substring(0, 20) + '...' : '无');
+
+    const resp = await fetch(url, {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
     });
     const data = await resp.json();
+    console.log('[_getSchemeData] API响应:', JSON.stringify(data, null, 2));
+
     if (data.code === 200 && data.data) {
-      return {
+      const result = {
         imageB64: '',
         imageW: data.data.imageWidth,
         imageH: data.data.imageHeight,
@@ -889,7 +895,10 @@ async function _getSchemeData(name) {
         testAllianceSlots: data.data.testAllianceSlots,
         testPlayerNames: data.data.testPlayerNames,
       };
+      console.log('[_getSchemeData] 返回数据，boxes数量:', result.boxes?.length);
+      return result;
     }
+    console.warn('[_getSchemeData] API返回非200或无data字段');
     return null;
   } catch (e) {
     console.error('[OCR方案] 获取方案数据失败:', e);
@@ -911,6 +920,7 @@ async function _saveSchemeData(name, data) {
         name: name,
         imageWidth: data.imageW,
         imageHeight: data.imageH,
+        imageBase64: data.imageB64,
         boxes: data.boxes,
         testAllianceSlots: data.testAllianceSlots,
         testPlayerNames: data.testPlayerNames,
@@ -949,6 +959,44 @@ async function leLoadScheme(name) {
   _setStatus('⏳ 加载方案中...');
   const scheme = await _getSchemeData(name);
   if (!scheme) { _setStatus(`❌ 方案"${name}"数据丢失`); return; }
+
+  // 如果方案没有图片数据，但当前已有图片加载，则复用当前图片
+  if (!scheme.imageB64 && _leImg) {
+    console.log('[leLoadScheme] 方案无图片，复用当前图片');
+    _leImgW = scheme.imageW || _leImgW;
+    _leImgH = scheme.imageH || _leImgH;
+
+    // 强制重新初始化 boxes（可能已有旧状态）
+    _leBoxes = LE_BOX_DEFS.map((def, i) => {
+      const coords = scheme.boxes[i];
+      if (coords) {
+        return { def, rx1: coords.rx1, ry1: coords.ry1, rx2: coords.rx2, ry2: coords.ry2 };
+      }
+      const d = (LE_DEFAULTS[def.cat] || {})[def.key] || [0.1, 0.1, 0.3, 0.2];
+      return { def, rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
+    });
+    _leBoxesFromRealSource = true;
+    _leSelIdx = -1;
+
+    _clearTestAllianceSlots();
+    if (scheme.testAllianceSlots) _setTestAllianceSlots(scheme.testAllianceSlots);
+    _leTestPlayerNames = Array.isArray(scheme.testPlayerNames) ? scheme.testPlayerNames.slice() : [];
+    _updatePlayerCount();
+
+    _showEditorWrap();
+    _resizeCanvas();
+    _renderCanvas();
+    _renderBoxList();
+    _updateSelPanel();
+    _setStatus(`✅ 已加载方案"${name}"（使用当前图片）`);
+    return;
+  }
+
+  // 如果方案没有图片且当前也没有图片，提示用户先上传
+  if (!scheme.imageB64) {
+    _setStatus(`❌ 请先上传战报图片，然后再加载方案`);
+    return;
+  }
 
   const img = new Image();
   img.onload = () => {

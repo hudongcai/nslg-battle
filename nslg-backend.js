@@ -1925,7 +1925,7 @@ app.get('/api/star-boxes/:projectId', async (req, res) => {
     const [rows] = await pool.query('SELECT * FROM star_box_configs WHERE project_id = ? LIMIT 1', [req.params.projectId]);
     if (!rows.length) return res.json({ code: 200, data: null });
     const r = rows[0];
-    res.json({ code: 200, data: { id: r.id, projectId: r.project_id, imageWidth: r.image_width, imageHeight: r.image_height, boxes: JSON.parse(r.boxes_json || '[]'), updatedAt: r.updated_at } });
+    res.json({ code: 200, data: { id: r.id, projectId: r.project_id, imageWidth: r.image_width, imageHeight: r.image_height, boxes: typeof r.boxes_json === 'string' ? JSON.parse(r.boxes_json || '[]') : (r.boxes_json || []), updatedAt: r.updated_at } });
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
@@ -1946,7 +1946,7 @@ app.get('/api/label-config/:projectId', async (req, res) => {
     if (!rows.length) [rows] = await pool.query('SELECT * FROM label_configs WHERE project_id = 0 LIMIT 1');
     if (!rows.length) return res.json({ code: 200, data: null });
     const r = rows[0];
-    res.json({ code: 200, data: { id: r.id, projectId: r.project_id, imageWidth: r.image_width, imageHeight: r.image_height, categories: JSON.parse(r.categories_json || '{}'), updatedAt: r.updated_at, isGlobal: r.project_id === 0 } });
+    res.json({ code: 200, data: { id: r.id, projectId: r.project_id, imageWidth: r.image_width, imageHeight: r.image_height, categories: typeof r.categories_json === 'string' ? JSON.parse(r.categories_json || '{}') : (r.categories_json || {}), updatedAt: r.updated_at, isGlobal: r.project_id === 0 } });
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
@@ -1989,9 +1989,10 @@ app.get('/api/ocr-schemes/:name', async (req, res) => {
         name: r.name,
         imageWidth: r.image_width,
         imageHeight: r.image_height,
-        boxes: JSON.parse(r.boxes || '[]'),
-        testAllianceSlots: JSON.parse(r.test_alliance_slots || '[]'),
-        testPlayerNames: JSON.parse(r.test_player_names || '[]'),
+        imageBase64: r.image_base64 || '',
+        boxes: typeof r.boxes === 'string' ? JSON.parse(r.boxes || '[]') : (r.boxes || []),
+        testAllianceSlots: typeof r.test_alliance_slots === 'string' ? JSON.parse(r.test_alliance_slots || '[]') : (r.test_alliance_slots || []),
+        testPlayerNames: typeof r.test_player_names === 'string' ? JSON.parse(r.test_player_names || '[]') : (r.test_player_names || []),
         createdAt: r.created_at,
         updatedAt: r.updated_at
       }
@@ -2008,18 +2009,19 @@ app.post('/api/ocr-schemes', async (req, res) => {
     console.log('[OCR方案保存] 请求 - phone:', phone, '| body:', JSON.stringify(req.body).substring(0, 200));
     if (!phone) return res.json({ code: 401, message: '未登录' });
 
-    const { name, imageWidth, imageHeight, boxes, testAllianceSlots, testPlayerNames } = req.body;
+    const { name, imageWidth, imageHeight, imageBase64, boxes, testAllianceSlots, testPlayerNames } = req.body;
     if (!name || !name.trim()) return res.json({ code: 400, message: '方案名称不能为空' });
 
     const trimmedName = name.trim();
 
     // 使用 INSERT ... ON DUPLICATE KEY UPDATE 实现保存或更新
     await pool.query(
-      `INSERT INTO ocr_schemes (name, user_phone, image_width, image_height, boxes, test_alliance_slots, test_player_names)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ocr_schemes (name, user_phone, image_width, image_height, image_base64, boxes, test_alliance_slots, test_player_names)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          image_width = VALUES(image_width),
          image_height = VALUES(image_height),
+         image_base64 = VALUES(image_base64),
          boxes = VALUES(boxes),
          test_alliance_slots = VALUES(test_alliance_slots),
          test_player_names = VALUES(test_player_names),
@@ -2029,13 +2031,14 @@ app.post('/api/ocr-schemes', async (req, res) => {
         phone,
         imageWidth || 0,
         imageHeight || 0,
+        imageBase64 || null,
         JSON.stringify(boxes || []),
         JSON.stringify(testAllianceSlots || []),
         JSON.stringify(testPlayerNames || [])
       ]
     );
 
-    console.log('[OCR方案保存] 成功 - 方案名:', trimmedName, '| 用户:', phone);
+    console.log('[OCR方案保存] 成功 - 方案名:', trimmedName, '| 用户:', phone, '| 图片大小:', imageBase64 ? (imageBase64.length / 1024).toFixed(1) + 'KB' : '无');
     res.json({ code: 200, message: '保存成功' });
   } catch (err) {
     console.error('[OCR方案保存] 失败 -', err);
@@ -2148,7 +2151,7 @@ async function _getCategories(projectId, provided) {
   if (provided && typeof provided === 'object' && Object.keys(provided).length > 0) return provided;
   let [rows] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = ? LIMIT 1', [projectId || 0]);
   if (!rows.length) [rows] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = 0 LIMIT 1');
-  return rows.length ? JSON.parse(rows[0].categories_json || '{}') : {};
+  return rows.length ? (typeof rows[0].categories_json === 'string' ? JSON.parse(rows[0].categories_json || '{}') : (rows[0].categories_json || {})) : {};
 }
 
 app.post('/api/ocr-preview/cache-image', requireSuperAdmin, async (req, res) => {
@@ -2203,11 +2206,17 @@ async function _getLabelConfigForProject(projectId) {
   const pid = projectId || 0;
   const [rows] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = ? LIMIT 1', [pid]);
   if (rows.length && rows[0].categories_json) {
-    try { return JSON.parse(rows[0].categories_json); } catch (e) {}
+    try {
+      return typeof rows[0].categories_json === 'string' ? JSON.parse(rows[0].categories_json) : rows[0].categories_json;
+    } catch (e) {}
   }
   if (pid !== 0) {
     const [g] = await pool.query('SELECT categories_json FROM label_configs WHERE project_id = 0 LIMIT 1');
-    if (g.length && g[0].categories_json) { try { return JSON.parse(g[0].categories_json); } catch (e) {} }
+    if (g.length && g[0].categories_json) {
+      try {
+        return typeof g[0].categories_json === 'string' ? JSON.parse(g[0].categories_json) : g[0].categories_json;
+      } catch (e) {}
+    }
   }
   return null;
 }
