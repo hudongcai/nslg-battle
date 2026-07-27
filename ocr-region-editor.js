@@ -302,7 +302,8 @@ async function leBindScheme() {
 
   if (!schemeName) { _setBindStatus('❌ 请先选择方案'); return; }
 
-  const scheme = _getSchemeData(schemeName);
+  _setBindStatus('⏳ 加载方案数据...');
+  const scheme = await _getSchemeData(schemeName);
   if (!scheme?.boxes) { _setBindStatus(`❌ 方案"${schemeName}"数据不存在`); return; }
 
   const categories = {};

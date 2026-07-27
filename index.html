@@ -2008,7 +2008,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
         <select id="leBindSchemeSelect" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;min-width:130px;">
           <option value="">— 选择方案 —</option>
         </select>
-        <button onclick="leBindScheme()" style="padding:5px 14px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:13px;font-weight:bold;">绑定生效</button>
+        <button onclick="leBindScheme().catch(e => console.error(e))" style="padding:5px 14px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:13px;font-weight:bold;">绑定生效</button>
         <span id="leBindStatus" style="font-size:12px;color:var(--text3);"></span>
       </div>
 
