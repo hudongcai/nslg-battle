@@ -1951,14 +1951,15 @@ app.get('/api/label-config/:projectId', async (req, res) => {
 });
 
 // ========== OCR 配置方案 API ==========
-// 获取用户的所有配置方案列表
+// 获取用户的所有配置方案列表（包括用户自己的 + 全局方案）
 app.get('/api/ocr-schemes', async (req, res) => {
   try {
     const phone = extractPhoneFromToken(req.headers['authorization'] || '');
     if (!phone) return res.json({ code: 401, message: '未登录' });
 
+    // 返回用户自己的方案 + 全局方案（user_phone IS NULL）
     const [rows] = await pool.query(
-      'SELECT id, name, image_width, image_height, created_at, updated_at FROM ocr_schemes WHERE user_phone = ? ORDER BY updated_at DESC',
+      'SELECT id, name, image_width, image_height, created_at, updated_at FROM ocr_schemes WHERE user_phone = ? OR user_phone IS NULL ORDER BY user_phone DESC, updated_at DESC',
       [phone]
     );
     res.json({ code: 200, data: rows });
@@ -1967,14 +1968,15 @@ app.get('/api/ocr-schemes', async (req, res) => {
   }
 });
 
-// 获取单个方案的详细数据
+// 获取单个方案的详细数据（支持用户方案 + 全局方案）
 app.get('/api/ocr-schemes/:name', async (req, res) => {
   try {
     const phone = extractPhoneFromToken(req.headers['authorization'] || '');
     if (!phone) return res.json({ code: 401, message: '未登录' });
 
+    // 优先返回用户自己的方案，其次返回全局方案
     const [rows] = await pool.query(
-      'SELECT * FROM ocr_schemes WHERE user_phone = ? AND name = ? LIMIT 1',
+      'SELECT * FROM ocr_schemes WHERE (user_phone = ? OR user_phone IS NULL) AND name = ? ORDER BY user_phone DESC LIMIT 1',
       [phone, req.params.name]
     );
     if (!rows.length) return res.json({ code: 404, message: '方案不存在' });
