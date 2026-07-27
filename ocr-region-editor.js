@@ -888,14 +888,14 @@ async function _getSchemeData(name) {
 
     if (data.code === 200 && data.data) {
       const result = {
-        imageB64: '',
+        imageB64: data.data.imageBase64 || '',
         imageW: data.data.imageWidth,
         imageH: data.data.imageHeight,
         boxes: data.data.boxes,
         testAllianceSlots: data.data.testAllianceSlots,
         testPlayerNames: data.data.testPlayerNames,
       };
-      console.log('[_getSchemeData] 返回数据，boxes数量:', result.boxes?.length);
+      console.log('[_getSchemeData] 返回数据，boxes数量:', result.boxes?.length, '| 图片大小:', result.imageB64 ? (result.imageB64.length / 1024).toFixed(1) + 'KB' : '无');
       return result;
     }
     console.warn('[_getSchemeData] API返回非200或无data字段');
