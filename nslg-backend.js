@@ -1950,6 +1950,115 @@ app.get('/api/label-config/:projectId', async (req, res) => {
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
+// ========== OCR 配置方案 API ==========
+// 获取用户的所有配置方案列表
+app.get('/api/ocr-schemes', async (req, res) => {
+  try {
+    const phone = extractPhoneFromToken(req.headers['authorization'] || '');
+    if (!phone) return res.json({ code: 401, message: '未登录' });
+
+    const [rows] = await pool.query(
+      'SELECT id, name, image_width, image_height, created_at, updated_at FROM ocr_schemes WHERE user_phone = ? ORDER BY updated_at DESC',
+      [phone]
+    );
+    res.json({ code: 200, data: rows });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 获取单个方案的详细数据
+app.get('/api/ocr-schemes/:name', async (req, res) => {
+  try {
+    const phone = extractPhoneFromToken(req.headers['authorization'] || '');
+    if (!phone) return res.json({ code: 401, message: '未登录' });
+
+    const [rows] = await pool.query(
+      'SELECT * FROM ocr_schemes WHERE user_phone = ? AND name = ? LIMIT 1',
+      [phone, req.params.name]
+    );
+    if (!rows.length) return res.json({ code: 404, message: '方案不存在' });
+
+    const r = rows[0];
+    res.json({
+      code: 200,
+      data: {
+        id: r.id,
+        name: r.name,
+        imageWidth: r.image_width,
+        imageHeight: r.image_height,
+        boxes: JSON.parse(r.boxes || '[]'),
+        testAllianceSlots: JSON.parse(r.test_alliance_slots || '[]'),
+        testPlayerNames: JSON.parse(r.test_player_names || '[]'),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }
+    });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 保存或更新配置方案
+app.post('/api/ocr-schemes', async (req, res) => {
+  try {
+    const phone = extractPhoneFromToken(req.headers['authorization'] || '');
+    if (!phone) return res.json({ code: 401, message: '未登录' });
+
+    const { name, imageWidth, imageHeight, boxes, testAllianceSlots, testPlayerNames } = req.body;
+    if (!name || !name.trim()) return res.json({ code: 400, message: '方案名称不能为空' });
+
+    const trimmedName = name.trim();
+
+    // 使用 INSERT ... ON DUPLICATE KEY UPDATE 实现保存或更新
+    await pool.query(
+      `INSERT INTO ocr_schemes (name, user_phone, image_width, image_height, boxes, test_alliance_slots, test_player_names)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         image_width = VALUES(image_width),
+         image_height = VALUES(image_height),
+         boxes = VALUES(boxes),
+         test_alliance_slots = VALUES(test_alliance_slots),
+         test_player_names = VALUES(test_player_names),
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        trimmedName,
+        phone,
+        imageWidth || 0,
+        imageHeight || 0,
+        JSON.stringify(boxes || []),
+        JSON.stringify(testAllianceSlots || []),
+        JSON.stringify(testPlayerNames || [])
+      ]
+    );
+
+    res.json({ code: 200, message: '保存成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 删除配置方案
+app.delete('/api/ocr-schemes/:name', async (req, res) => {
+  try {
+    const phone = extractPhoneFromToken(req.headers['authorization'] || '');
+    if (!phone) return res.json({ code: 401, message: '未登录' });
+
+    const [result] = await pool.query(
+      'DELETE FROM ocr_schemes WHERE user_phone = ? AND name = ?',
+      [phone, req.params.name]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.json({ code: 404, message: '方案不存在' });
+    }
+
+    res.json({ code: 200, message: '删除成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // ========== OCR 字段库 ==========
 async function requireSuperAdmin(req, res, next) {
   const phone = extractPhoneFromToken(req.headers['authorization'] || '');

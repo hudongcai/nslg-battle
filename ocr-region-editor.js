@@ -90,7 +90,7 @@ async function onLabelEditorTabShow() {
   _initBoxes();
   _renderBoxList();
   await _loadProjectList();
-  _renderSchemeSelect();
+  await _renderSchemeSelect();
   leInitProjectRefSelect();
   // 自动加载 DB 中当前项目/全局的配置到画布，保证显示与实际生效一致
   await _loadConfig(_leProjectId);
@@ -233,8 +233,8 @@ function _applyCategories(cats) {
   _leBoxesFromRealSource = true;
 }
 
-// ── 保存配置（保存当前画布框坐标到方案 localStorage）────────────────
-function leSaveConfig() {
+// ── 保存配置（保存当前画布框坐标到方案 数据库）────────────────
+async function leSaveConfig() {
   const sel = document.getElementById('leSchemeSelect');
   let name = sel?.value;
   if (!name) {
@@ -243,7 +243,7 @@ function leSaveConfig() {
     name = name.trim();
   }
   const schemeData = {
-    imageB64: '',   // 不存入localStorage，避免超限；图片仅保留在内存
+    imageB64: '',   // 不存储图片，避免超限
     imageW: _leImgW,
     imageH: _leImgH,
     boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
@@ -251,23 +251,22 @@ function leSaveConfig() {
     testPlayerNames: _leTestPlayerNames.slice(),
   };
   try {
-    _saveSchemeData(name, schemeData);
-    const names = _getSchemeNames();
-    if (!names.includes(name)) { names.push(name); _saveSchemeNames(names); }
-    _renderSchemeSelect();
+    _setStatus('⏳ 保存中...');
+    await _saveSchemeData(name, schemeData);
+    await _renderSchemeSelect();
     if (sel) sel.value = name;
-    _setStatus(`✅ 方案"${name}"已保存`);
+    _setStatus(`✅ 方案"${name}"已保存到云端`);
   } catch (e) {
     _setStatus('❌ 保存失败: ' + e.message);
   }
 }
 
 // ── 新建方案 ──────────────────────────────────────────────────────────
-function leNewScheme() {
+async function leNewScheme() {
   const name = prompt('请输入新方案名称（如：方案一）：', '');
   if (!name?.trim()) return;
   const trimmedName = name.trim();
-  const names = _getSchemeNames();
+  const names = await _getSchemeNames();
   if (names.includes(trimmedName)) {
     _setStatus(`方案"${trimmedName}"已存在，请在下拉框中选择`);
     const sel = document.getElementById('leSchemeSelect');
@@ -275,7 +274,7 @@ function leNewScheme() {
     return;
   }
   const schemeData = {
-    imageB64: '',   // 不存入localStorage，避免超限
+    imageB64: '',
     imageW: _leImgW,
     imageH: _leImgH,
     boxes: _leBoxes.map(b => ({ rx1: b.rx1, ry1: b.ry1, rx2: b.rx2, ry2: b.ry2 })),
@@ -283,10 +282,9 @@ function leNewScheme() {
     testPlayerNames: _leTestPlayerNames.slice(),
   };
   try {
-    _saveSchemeData(trimmedName, schemeData);
-    names.push(trimmedName);
-    _saveSchemeNames(names);
-    _renderSchemeSelect();
+    _setStatus('⏳ 创建中...');
+    await _saveSchemeData(trimmedName, schemeData);
+    await _renderSchemeSelect();
     const sel = document.getElementById('leSchemeSelect');
     if (sel) sel.value = trimmedName;
     _setStatus(`✅ 已创建方案"${trimmedName}"`);
@@ -850,26 +848,85 @@ function escHtml(s) {
 // ── 方案管理（localStorage）──────────────────────────────────────────
 const LE_SCHEME_LIST_KEY = 'le_scheme_list';
 
-function _getSchemeNames() {
-  try { return JSON.parse(localStorage.getItem(LE_SCHEME_LIST_KEY) || '[]'); }
-  catch { return []; }
+// ========== 方案管理：从 localStorage 迁移到数据库 API ==========
+async function _getSchemeNames() {
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+    const resp = await fetch(`${base}/ocr-schemes`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    const data = await resp.json();
+    if (data.code === 200 && Array.isArray(data.data)) {
+      return data.data.map(item => item.name);
+    }
+    return [];
+  } catch (e) {
+    console.error('[OCR方案] 获取方案列表失败:', e);
+    return [];
+  }
 }
 
 function _saveSchemeNames(names) {
-  localStorage.setItem(LE_SCHEME_LIST_KEY, JSON.stringify(names));
+  // 已迁移到数据库，此函数保留空实现以兼容旧代码
 }
 
-function _getSchemeData(name) {
-  try { return JSON.parse(localStorage.getItem('le_scheme_data_' + name) || 'null'); }
-  catch { return null; }
+async function _getSchemeData(name) {
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+    const resp = await fetch(`${base}/ocr-schemes/${encodeURIComponent(name)}`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    const data = await resp.json();
+    if (data.code === 200 && data.data) {
+      return {
+        imageB64: '',
+        imageW: data.data.imageWidth,
+        imageH: data.data.imageHeight,
+        boxes: data.data.boxes,
+        testAllianceSlots: data.data.testAllianceSlots,
+        testPlayerNames: data.data.testPlayerNames,
+      };
+    }
+    return null;
+  } catch (e) {
+    console.error('[OCR方案] 获取方案数据失败:', e);
+    return null;
+  }
 }
 
-function _saveSchemeData(name, data) {
-  localStorage.setItem('le_scheme_data_' + name, JSON.stringify(data));
+async function _saveSchemeData(name, data) {
+  try {
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+    const resp = await fetch(`${base}/ocr-schemes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: JSON.stringify({
+        name: name,
+        imageWidth: data.imageW,
+        imageHeight: data.imageH,
+        boxes: data.boxes,
+        testAllianceSlots: data.testAllianceSlots,
+        testPlayerNames: data.testPlayerNames,
+      }),
+    });
+    const result = await resp.json();
+    if (result.code !== 200) {
+      throw new Error(result.message || '保存失败');
+    }
+  } catch (e) {
+    console.error('[OCR方案] 保存方案失败:', e);
+    throw e;
+  }
 }
 
-function _renderSchemeSelect() {
-  const names = _getSchemeNames();
+async function _renderSchemeSelect() {
+  const names = await _getSchemeNames();
   ['leSchemeSelect', 'leBindSchemeSelect'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
@@ -886,9 +943,10 @@ function _renderSchemeSelect() {
 }
 
 
-function leLoadScheme(name) {
+async function leLoadScheme(name) {
   if (!name) return;
-  const scheme = _getSchemeData(name);
+  _setStatus('⏳ 加载方案中...');
+  const scheme = await _getSchemeData(name);
   if (!scheme) { _setStatus(`❌ 方案"${name}"数据丢失`); return; }
 
   const img = new Image();
@@ -928,16 +986,29 @@ function leLoadScheme(name) {
   img.src = scheme.imageB64;
 }
 
-function leDeleteScheme() {
+async function leDeleteScheme() {
   const sel = document.getElementById('leSchemeSelect');
   const name = sel?.value;
   if (!name) { _setStatus('请先选择一个方案'); return; }
   if (!confirm(`确定删除方案"${name}"？`)) return;
-  localStorage.removeItem('le_scheme_data_' + name);
-  const names = _getSchemeNames().filter(n => n !== name);
-  _saveSchemeNames(names);
-  _renderSchemeSelect();
-  _setStatus(`已删除方案"${name}"`);
+
+  try {
+    _setStatus('⏳ 删除中...');
+    const token = typeof getToken === 'function' ? getToken() : '';
+    const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
+    const resp = await fetch(`${base}/ocr-schemes/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    const result = await resp.json();
+    if (result.code !== 200) {
+      throw new Error(result.message || '删除失败');
+    }
+    await _renderSchemeSelect();
+    _setStatus(`✅ 已删除方案"${name}"`);
+  } catch (e) {
+    _setStatus('❌ 删除失败: ' + e.message);
+  }
 }
 
 // ── 从数据库已绑定配置还原方案 ───────────────────────────────────────
@@ -962,11 +1033,10 @@ async function leRestoreFromDB() {
       const d = (LE_DEFAULTS[def.cat] || {})[def.key] || [0.1, 0.1, 0.3, 0.2];
       return { rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
     });
-    const names = _getSchemeNames();
+    const names = await _getSchemeNames();
     if (names.includes(schemeName) && !confirm(`"${schemeName}"已存在，覆盖？`)) return;
-    _saveSchemeData(schemeName, { name: schemeName, imageB64: '', imageW: imageWidth || 0, imageH: imageHeight || 0, boxes });
-    if (!names.includes(schemeName)) { names.push(schemeName); _saveSchemeNames(names); }
-    _renderSchemeSelect();
+    await _saveSchemeData(schemeName, { name: schemeName, imageB64: '', imageW: imageWidth || 0, imageH: imageHeight || 0, boxes });
+    await _renderSchemeSelect();
     const sel = document.getElementById('leSchemeSelect');
     if (sel) sel.value = schemeName;
     _setStatus(`✅ 已从数据库还原"${schemeName}"（${imageWidth}×${imageHeight}）`);
@@ -976,9 +1046,9 @@ async function leRestoreFromDB() {
 }
 
 // ── 从系统默认坐标生成方案 ────────────────────────────────────────────
-function leCreateDefaultScheme() {
+async function leCreateDefaultScheme() {
   const DEFAULT_NAME = '系统默认方案';
-  const names = _getSchemeNames();
+  const names = await _getSchemeNames();
   if (names.includes(DEFAULT_NAME)) {
     if (!confirm(`"${DEFAULT_NAME}"已存在，是否覆盖？`)) return;
   }
@@ -987,9 +1057,8 @@ function leCreateDefaultScheme() {
     return { rx1: d[0], ry1: d[1], rx2: d[2], ry2: d[3] };
   });
   const schemeData = { name: DEFAULT_NAME, imageB64: '', imageW: 0, imageH: 0, boxes };
-  _saveSchemeData(DEFAULT_NAME, schemeData);
-  if (!names.includes(DEFAULT_NAME)) { names.push(DEFAULT_NAME); _saveSchemeNames(names); }
-  _renderSchemeSelect();
+  await _saveSchemeData(DEFAULT_NAME, schemeData);
+  await _renderSchemeSelect();
   const sel = document.getElementById('leSchemeSelect');
   if (sel) sel.value = DEFAULT_NAME;
   _setStatus(`✅ 已生成"${DEFAULT_NAME}"，可在下拉中选择`);
@@ -997,10 +1066,12 @@ function leCreateDefaultScheme() {
 
 // ── 导出所有方案 ──────────────────────────────────────────────────────
 async function leExportSchemes() {
-  const names = _getSchemeNames();
+  const names = await _getSchemeNames();
   if (names.length === 0) { _setStatus('❌ 当前没有任何方案可导出'); return; }
   const payload = { version: 1, exportedAt: new Date().toISOString(), schemes: {} };
-  names.forEach(n => { payload.schemes[n] = _getSchemeData(n); });
+  for (const n of names) {
+    payload.schemes[n] = await _getSchemeData(n);
+  }
   const json = JSON.stringify(payload, null, 2);
   const defaultName = `ocr_schemes_${new Date().toISOString().slice(0,10)}.json`;
 
@@ -1032,27 +1103,25 @@ async function leExportSchemes() {
 function leImportSchemes() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = '.json,application/json';
-  input.onchange = () => {
+  input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
         const payload = JSON.parse(e.target.result);
         if (!payload.schemes || typeof payload.schemes !== 'object') throw new Error('格式不正确');
         const incoming = Object.keys(payload.schemes);
         if (incoming.length === 0) { _setStatus('❌ 文件中没有方案数据'); return; }
-        const names = _getSchemeNames();
+        const names = await _getSchemeNames();
         const overwrite = incoming.filter(n => names.includes(n));
         if (overwrite.length > 0) {
           if (!confirm(`以下方案已存在，导入将覆盖：\n${overwrite.join('、')}\n\n继续？`)) return;
         }
-        incoming.forEach(n => {
-          _saveSchemeData(n, payload.schemes[n]);
-          if (!names.includes(n)) names.push(n);
-        });
-        _saveSchemeNames(names);
-        _renderSchemeSelect();
+        for (const n of incoming) {
+          await _saveSchemeData(n, payload.schemes[n]);
+        }
+        await _renderSchemeSelect();
         _setStatus(`✅ 已导入 ${incoming.length} 个方案：${incoming.join('、')}`);
       } catch (err) {
         _setStatus(`❌ 导入失败：${err.message}`);
