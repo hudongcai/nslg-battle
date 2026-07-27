@@ -2015,19 +2015,19 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
       <!-- Row 2: 编辑行（方案内容编辑） -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
         <span style="font-size:12px;color:var(--text3);white-space:nowrap;font-weight:bold;">OCR图片信息采集方案配置:</span>
-        <select id="leSchemeSelect" onchange="leLoadScheme(this.value)" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;min-width:130px;">
+        <select id="leSchemeSelect" onchange="leLoadScheme(this.value).catch(e => console.error(e))" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text1);font-size:13px;min-width:130px;">
           <option value="">— 选择方案 —</option>
         </select>
-        <button onclick="leNewScheme()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:bold;" title="新建方案">＋</button>
-        <button onclick="leSaveConfig()" style="padding:5px 14px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:13px;font-weight:bold;">💾 保存配置</button>
+        <button onclick="leNewScheme().catch(e => console.error(e))" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:bold;" title="新建方案">＋</button>
+        <button onclick="leSaveConfig().catch(e => console.error(e))" style="padding:5px 14px;border-radius:6px;background:var(--accent);color:#000;border:none;cursor:pointer;font-size:13px;font-weight:bold;">💾 保存配置</button>
         <button onclick="leRunTest()" style="padding:5px 14px;border-radius:6px;background:#2563eb;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:bold;">▶ 测试识别</button>
         <button onclick="leRunTestSingle()" style="padding:5px 14px;border-radius:6px;background:#0e7490;color:#fff;border:none;cursor:pointer;font-size:13px;">▶ 测试当前库框</button>
         <button onclick="leRunStars('both')" style="padding:5px 14px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:13px;">⭐ 六武将豆豆测试</button>
         <button onclick="leUploadRef()" style="padding:5px 14px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:13px;">📁 上传参考图</button>
-        <button onclick="leDeleteScheme()" style="padding:5px 10px;border-radius:6px;background:transparent;color:#e74c3c;border:1px solid #e74c3c;cursor:pointer;font-size:12px;" title="删除当前方案">🗑</button>
-        <button onclick="leRestoreFromDB()" style="padding:5px 10px;border-radius:6px;background:#1a4a2e;color:#6bcb77;border:1px solid #6bcb77;cursor:pointer;font-size:12px;" title="从数据库还原实际生效的配置为方案">🔄 从数据库还原</button>
-        <button onclick="leCreateDefaultScheme()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="将系统内置默认坐标生成为可选方案">📋 系统默认</button>
-        <button onclick="leExportSchemes()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="导出全部方案为JSON文件">📤 导出方案</button>
+        <button onclick="leDeleteScheme().catch(e => console.error(e))" style="padding:5px 10px;border-radius:6px;background:transparent;color:#e74c3c;border:1px solid #e74c3c;cursor:pointer;font-size:12px;" title="删除当前方案">🗑</button>
+        <button onclick="leRestoreFromDB().catch(e => console.error(e))" style="padding:5px 10px;border-radius:6px;background:#1a4a2e;color:#6bcb77;border:1px solid #6bcb77;cursor:pointer;font-size:12px;" title="从数据库还原实际生效的配置为方案">🔄 从数据库还原</button>
+        <button onclick="leCreateDefaultScheme().catch(e => console.error(e))" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="将系统内置默认坐标生成为可选方案">📋 系统默认</button>
+        <button onclick="leExportSchemes().catch(e => console.error(e))" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="导出全部方案为JSON文件">📤 导出方案</button>
         <button onclick="leImportSchemes()" style="padding:5px 10px;border-radius:6px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);cursor:pointer;font-size:12px;" title="从JSON文件导入方案">📥 导入方案</button>
         <input type="file" id="leFileInput" accept="image/*" style="display:none;" onchange="leOnFileSelected(this)">
         <span id="leStatus" style="font-size:12px;color:var(--text3);"></span>
