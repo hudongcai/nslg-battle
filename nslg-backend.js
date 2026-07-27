@@ -2005,6 +2005,7 @@ app.get('/api/ocr-schemes/:name', async (req, res) => {
 app.post('/api/ocr-schemes', async (req, res) => {
   try {
     const phone = extractPhoneFromToken(req.headers['authorization'] || '');
+    console.log('[OCR方案保存] 请求 - phone:', phone, '| body:', JSON.stringify(req.body).substring(0, 200));
     if (!phone) return res.json({ code: 401, message: '未登录' });
 
     const { name, imageWidth, imageHeight, boxes, testAllianceSlots, testPlayerNames } = req.body;
@@ -2034,8 +2035,10 @@ app.post('/api/ocr-schemes', async (req, res) => {
       ]
     );
 
+    console.log('[OCR方案保存] 成功 - 方案名:', trimmedName, '| 用户:', phone);
     res.json({ code: 200, message: '保存成功' });
   } catch (err) {
+    console.error('[OCR方案保存] 失败 -', err);
     res.json({ code: 500, message: err.message });
   }
 });
