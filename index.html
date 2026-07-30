@@ -919,7 +919,7 @@ document.addEventListener('click', function(e) {
       <div id="autoQueueArea" style="display:block;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:12px;font-weight:bold;color:var(--accent);">自动战报解析列表 (<span id="autoQueueCount">0</span>)</span>
-          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnAutoStartBatch" onclick="typeof startBatchProcess==='function'&&startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnAutoPauseBatch" onclick="handleAutoQueuePauseClick(this)">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearAutoQueue()">🗑 清空</button></div>
+          <div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" id="btnAutoStartBatch" onclick="typeof startBatchProcess==='function'&&startBatchProcess()">▶ 开始</button><button class="btn btn-sm btn-secondary" id="btnAutoPauseBatch" onclick="handleAutoQueuePauseClick(this)">⏸ 暂停</button><button class="btn btn-sm btn-danger" onclick="clearAutoQueue()">🗑 清空队列</button><button class="btn btn-sm btn-danger" onclick="typeof deleteOcrWatchTask==='function'&&deleteOcrWatchTask()" style="opacity:0.8;">❌ 删除监听</button></div>
         </div>
         <div class="progress-wrap"><div class="progress-bar" id="autoBatchProgress" style="width:0%"><span class="progress-text">准备就绪</span></div></div>
         <div class="queue-list" id="autoQueueList"></div>

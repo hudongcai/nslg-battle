@@ -53,6 +53,16 @@ function initOcrWatchWebSocket() {
     updateOcrWatchUIFromWebSocket(data);
   });
 
+  ocrWatchSocket.on('task-deleted', (data) => {
+    console.log('[OCR-Watch] 收到任务删除事件:', data);
+    if (window.ocrWatchTask && window.ocrWatchTask.id === data.taskId) {
+      showToast('监听任务已被删除', 'info');
+      window.ocrWatchTask = null;
+      if (typeof updateOcrWatchUI === 'function') updateOcrWatchUI();
+      if (typeof renderOCRQueue === 'function') renderOCRQueue();
+    }
+  });
+
   // ========== 本地助手状态监听 ==========
   ocrWatchSocket.on('helper-online', (data) => {
     console.log('[本地助手] 上线:', data);
@@ -852,6 +862,39 @@ async function ocrAutoProcessControl(action) {
   } catch (e) {
     console.error('[OCR-Watch] ocrAutoProcessControl error:', e);
     alert('操作失败: ' + e.message);
+  }
+}
+
+// 删除监听任务（同时删除对应的待处理任务）
+async function deleteOcrWatchTask() {
+  if (!window.ocrWatchTask) {
+    console.warn('[OCR-Watch] deleteOcrWatchTask: 无任务');
+    return;
+  }
+
+  const confirmed = confirm('确认删除监听任务？\n\n将同时删除所有待处理的OCR任务，此操作不可恢复。');
+  if (!confirmed) return;
+
+  console.log('[OCR-Watch] deleteOcrWatchTask:', window.ocrWatchTask.id);
+  const token = localStorage.getItem('nslg_token');
+  try {
+    const resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks/' + window.ocrWatchTask.id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = await resp.json();
+    console.log('[OCR-Watch] deleteOcrWatchTask response:', data);
+    if (data.code === 200) {
+      showToast(`监听任务已删除（清空 ${data.data?.deletedPendingTasks || 0} 个待处理任务）`, 'success');
+      window.ocrWatchTask = null;
+      if (typeof updateOcrWatchUI === 'function') updateOcrWatchUI();
+      if (typeof renderOCRQueue === 'function') renderOCRQueue();
+    } else {
+      alert(data.message);
+    }
+  } catch (e) {
+    console.error('[OCR-Watch] deleteOcrWatchTask error:', e);
+    alert('删除失败: ' + e.message);
   }
 }
 

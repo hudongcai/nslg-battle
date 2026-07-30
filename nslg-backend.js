@@ -3119,6 +3119,61 @@ app.post('/api/ocr-watch/tasks/:id/ocr-control', requireActiveUser, async (req, 
   }
 });
 
+// 4.6. 删除监听任务（同时级联删除对应的待处理任务）
+app.delete('/api/ocr-watch/tasks/:id', requireActiveUser, async (req, res) => {
+  try {
+    const taskId = Number(req.params.id);
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.json({ code: 400, message: '任务ID无效' });
+    }
+
+    // 检查任务是否存在
+    const [task] = await pool.query(
+      'SELECT id, user_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
+      [taskId, req.authUserId]
+    );
+
+    if (!task.length) {
+      return res.json({ code: 404, message: '任务不存在' });
+    }
+
+    const projectId = task[0].project_id;
+
+    // 1. 删除 ocr_pending_tasks 中对应的待处理任务
+    const [deleteTasksResult] = await pool.query(
+      'DELETE FROM ocr_pending_tasks WHERE user_id = ? AND project_id = ?',
+      [req.authUserId, projectId]
+    );
+
+    // 2. 删除 helper_configs 中的监听任务配置
+    await pool.query(
+      'DELETE FROM helper_configs WHERE id = ? AND user_id = ?',
+      [taskId, req.authUserId]
+    );
+
+    // 3. 清理内存中的任务状态
+    watchTaskStates.delete(taskId);
+
+    // 4. 广播删除事件到前端
+    if (io) {
+      io.to(`project-${projectId}`).emit('task-deleted', { taskId, projectId });
+    }
+
+    console.log(`[OCR-Watch] 已删除监听任务 ${taskId}，级联删除 ${deleteTasksResult.affectedRows} 个待处理任务`);
+    res.json({
+      code: 200,
+      message: '监听任务已删除',
+      data: {
+        deletedPendingTasks: deleteTasksResult.affectedRows
+      }
+    });
+  } catch (err) {
+    console.error('[OCR-Watch] 删除任务失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // 4.5. 本地助手上报目录状态
 // v4.0: 此接口已废弃 - 本地助手不再上报目录状态
 // 保留接口以避免旧版本本地助手报错
