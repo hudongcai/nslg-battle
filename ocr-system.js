@@ -371,14 +371,14 @@ function renderOCRQueue() {
           : item.status === 'done' ? '✅'
           : '❌';
         const statusText = item.status === 'pending' ? '等待中'
-          : item.status === 'processing' ? '处理中...'
+          : item.status === 'processing' ? '解析中...'
           : item.status === 'paused' ? '已暂停'
           : item.status === 'done' ? (item.time ? '完成 ' + item.time : '已完成')
           : (item.error || '自动解析失败');
         return `<div class="queue-item">
           <span class="qi-icon">${statusIcon}</span>
           <span class="qi-name">[自动] ${escHtml(item.name)}</span>
-          <span class="${statusClass}">${escHtml(statusText)}</span>
+          <span class="qi-status ${statusClass}">${escHtml(statusText)}</span>
         </div>`;
       }).join('');
     }
@@ -1284,9 +1284,10 @@ function updateAutoOCRProgress(watchQueueItems) {
   if (watchTask && typeof watchTask.pendingCount === 'number' && typeof watchTask.processedCount === 'number') {
     // 使用后端提供的准确统计
     const pending = watchTask.pendingCount || 0;
+    const processing = watchTask.processingCount || 0;
     done = watchTask.processedCount || 0;
     failed = (typeof watchTask.failedCount === 'number') ? watchTask.failedCount : 0;
-    total = pending + done + failed;
+    total = pending + processing + done + failed;
   } else {
     // fallback: 从前端watchQueueItems计算
     const items = Array.isArray(watchQueueItems) ? watchQueueItems : [];
@@ -1417,9 +1418,11 @@ async function svrWatchRefresh() {
     if (stopBtn) stopBtn.style.display = state.running ? '' : 'none';
     // 缁熻
     const procEl = document.getElementById('svrWatchProcessed');
+    const processingEl = document.getElementById('svrWatchProcessing');
     const errEl = document.getElementById('svrWatchErrors');
     const pendEl = document.getElementById('svrWatchPending');
     if (procEl) procEl.textContent = state.processedCount || 0;
+    if (processingEl) processingEl.textContent = state.processingCount || 0;
     if (errEl) errEl.textContent = state.errorCount || 0;
     if (pendEl) pendEl.textContent = state.pendingFiles || 0;
     // 涓婃鎵弿

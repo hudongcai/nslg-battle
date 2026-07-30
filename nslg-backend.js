@@ -121,6 +121,7 @@ class TaskState {
     this.projectId = projectId;
     this.status = 'idle';
     this.pendingCount = 0;
+    this.processingCount = 0;
     this.processedCount = 0;
     this.failedCount = 0;
     this.pendingFiles = [];  // 待处理文件列表
@@ -137,6 +138,7 @@ class TaskState {
       projectId: this.projectId,
       status: this.status,
       pendingCount: this.pendingCount,
+      processingCount: this.processingCount,
       processedCount: this.processedCount,
       failedCount: this.failedCount,
       pendingFiles: this.pendingFiles,  // 包含文件列表
@@ -396,6 +398,7 @@ async function initWatchTaskStates() {
       const [stats] = await pool.query(
         `SELECT
           COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+          COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
           COUNT(CASE WHEN status = 'done' THEN 1 END) as processed,
           COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
          FROM ocr_pending_tasks WHERE project_id = ?`,
@@ -404,6 +407,7 @@ async function initWatchTaskStates() {
 
       if (stats.length) {
         state.pendingCount = stats[0].pending || 0;
+        state.processingCount = stats[0].processing || 0;
         state.processedCount = stats[0].processed || 0;
         state.failedCount = stats[0].failed || 0;
       }
@@ -530,6 +534,7 @@ async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
   const [stats] = await pool.query(
     `SELECT
       COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+      COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
       COUNT(CASE WHEN status = 'done' THEN 1 END) as processed,
       COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
      FROM ocr_pending_tasks WHERE project_id = ?`,
@@ -538,6 +543,7 @@ async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
 
   if (stats.length) {
     state.pendingCount = stats[0].pending || 0;
+    state.processingCount = stats[0].processing || 0;
     state.processedCount = stats[0].processed || 0;
     state.failedCount = stats[0].failed || 0;
   }
@@ -1765,14 +1771,17 @@ async function processOcrQueue() {
         }
 
         // 获取可处理的任务（最多取 availableSlots 条）
+        // 只处理 ocr_auto_process = 1 的任务（未暂停的）
         const [tasks] = await pool.query(
-          `SELECT id, user_id, project_id, image_base64, image_name,
-                  helper_task_id, label_config
-           FROM ocr_pending_tasks
-           WHERE status = 'pending'
+          `SELECT t.id, t.user_id, t.project_id, t.image_base64, t.image_name,
+                  t.helper_task_id, t.label_config
+           FROM ocr_pending_tasks t
+           LEFT JOIN helper_configs h ON t.helper_task_id = h.id
+           WHERE t.status = 'pending'
+             AND (t.helper_task_id IS NULL OR h.ocr_auto_process = 1)
            ORDER BY
-             CASE WHEN helper_task_id IS NOT NULL THEN 0 ELSE 1 END,
-             created_at ASC
+             CASE WHEN t.helper_task_id IS NOT NULL THEN 0 ELSE 1 END,
+             t.created_at ASC
            LIMIT ?`,
           [availableSlots]
         );
@@ -2907,6 +2916,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
           // v4.0: 移除 folderPath, folderStatus, folderStatusMessage（本地助手不再需要）
           status: state.status,
           pendingCount: state.pendingCount,
+          processingCount: state.processingCount,
           processedCount: state.processedCount,
           failedCount: state.failedCount,
           currentFile: state.currentFile,
@@ -2929,6 +2939,36 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
     }
   } catch (err) {
     console.error('[OCR-Watch] 获取任务失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 诊断接口：检查 processing 任务数量
+app.get('/api/diagnostic/processing-count', async (req, res) => {
+  try {
+    const projectId = Number(req.query.projectId);
+    if (!projectId) {
+      return res.json({ code: 400, message: '缺少 projectId' });
+    }
+
+    const [stats] = await pool.query(`
+      SELECT
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+        COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
+        COUNT(CASE WHEN status = 'done' THEN 1 END) as done,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
+      FROM ocr_pending_tasks
+      WHERE project_id = ?
+    `, [projectId]);
+
+    res.json({
+      code: 200,
+      pending: stats[0].pending || 0,
+      processing: stats[0].processing || 0,
+      done: stats[0].done || 0,
+      failed: stats[0].failed || 0
+    });
+  } catch (err) {
     res.json({ code: 500, message: err.message });
   }
 });

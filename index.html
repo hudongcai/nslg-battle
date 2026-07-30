@@ -181,7 +181,7 @@ body{font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;background:var
 .helper-meta-value{font-size:11px;color:var(--text);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;}
 .helper-task-card .helper-meta-grid{grid-template-columns:1fr;}
 .helper-task-shell{padding:10px 11px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:linear-gradient(180deg,rgba(12,16,27,.96),rgba(10,13,22,.88));box-shadow:0 8px 18px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.03);}
-.helper-stats-grid{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:0;}
+.helper-stats-grid{grid-template-columns:repeat(6,minmax(0,1fr));margin-top:0;}
 .helper-stat{display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 5px;border-radius:8px;background:rgba(13,17,29,.9);border:1px solid rgba(255,255,255,.055);}
 .helper-stat-num{font-size:14px;font-weight:900;color:var(--text);line-height:1;}
 .helper-stat-label{font-size:10px;color:var(--text3);line-height:1;}
@@ -861,6 +861,7 @@ document.addEventListener('click', function(e) {
                 <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">上传</div></div>
                 <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">解析成功</div></div>
               <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">失败</div></div>
+              <div class="helper-stat"><div class="helper-stat-num" id="helperProcessing">0</div><div class="helper-stat-label">解析中</div></div>
               <div class="helper-stat"><div class="helper-stat-num">0</div><div class="helper-stat-label">待处理</div></div>
             </div>
               <div class="helper-control-grid">
@@ -899,7 +900,7 @@ document.addEventListener('click', function(e) {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
           <button class="btn btn-sm btn-primary" id="btnSvrWatchStart" onclick="svrWatchStart()">▶ 启动</button>
           <button class="btn btn-sm btn-danger" id="btnSvrWatchStop" onclick="svrWatchStop()" style="display:none;">⏹ 停止</button>
-          <span style="font-size:11px;color:var(--text3);">已处理 <b id="svrWatchProcessed" style="color:var(--accent)">0</b> 张 · 错误 <b id="svrWatchErrors" style="color:var(--red)">0</b> 张 · 待处理 <b id="svrWatchPending">0</b> 张</span>
+          <span style="font-size:11px;color:var(--text3);">已处理 <b id="svrWatchProcessed" style="color:var(--accent)">0</b> 张 · 解析中 <b id="svrWatchProcessing" style="color:#3498db">0</b> 张 · 错误 <b id="svrWatchErrors" style="color:var(--red)">0</b> 张 · 待处理 <b id="svrWatchPending">0</b> 张</span>
         </div>
         <div id="svrWatchLastScan" style="font-size:10px;color:var(--text3);"></div>
         <div id="svrWatchLastError" style="font-size:10px;color:var(--red);margin-top:2px;"></div>

@@ -48,11 +48,6 @@ function initOcrWatchWebSocket() {
     }
   });
 
-  ocrWatchSocket.on('task-update', (data) => {
-    console.log('[OCR-Watch] 收到任务更新:', data);
-    updateOcrWatchUIFromWebSocket(data);
-  });
-
   ocrWatchSocket.on('task-deleted', (data) => {
     console.log('[OCR-Watch] 收到任务删除事件:', data);
     if (window.ocrWatchTask && window.ocrWatchTask.id === data.taskId) {
@@ -79,6 +74,12 @@ function initOcrWatchWebSocket() {
   ocrWatchSocket.on('helper-status', (data) => {
     console.log('[本地助手] 状态更新:', data);
     handleHelperStatusUpdate(data);
+  });
+
+  // 监听服务端任务状态更新（包含 processingCount 等统计数据）
+  ocrWatchSocket.on('task-update', (data) => {
+    console.log('[服务端任务] 状态更新:', data);
+    updateOcrWatchUIFromWebSocket(data);
   });
 
   ocrWatchSocket.on('disconnect', () => {
@@ -116,6 +117,7 @@ function updateOcrWatchUIFromWebSocket(data) {
   // 更新 UI 元素
   const statusEl = document.getElementById('ocrWatchStatus');
   const pendingEl = document.getElementById('ocrWatchPending');
+  const processingEl = document.getElementById('ocrWatchProcessing');
   const processedEl = document.getElementById('ocrWatchProcessed');
   const folderWarningEl = document.getElementById('ocrWatchFolderWarning');
 
@@ -132,6 +134,10 @@ function updateOcrWatchUIFromWebSocket(data) {
 
   if (pendingEl) {
     pendingEl.textContent = data.pendingCount || 0;
+  }
+
+  if (processingEl) {
+    processingEl.textContent = data.processingCount || 0;
   }
 
   if (processedEl) {
@@ -286,6 +292,10 @@ function replaceOcrWatchPanel() {
       <div style="min-width:80px;text-align:center;">
         <div style="font-size:22px;font-weight:900;color:var(--text);" id="ocrWatchPending">0</div>
         <div style="font-size:11px;color:var(--text3);">待处理</div>
+      </div>
+      <div style="min-width:80px;text-align:center;">
+        <div style="font-size:22px;font-weight:900;color:#3498db;" id="ocrWatchProcessing">0</div>
+        <div style="font-size:11px;color:var(--text3);">解析中</div>
       </div>
       <div style="min-width:80px;text-align:center;">
         <div style="font-size:22px;font-weight:900;color:var(--text);" id="ocrWatchProcessed">0</div>
@@ -583,6 +593,8 @@ function updateOcrWatchUI() {
   // 数量
   var pendingEl = document.getElementById('ocrWatchPending');
   if (pendingEl) pendingEl.textContent = task.pendingCount || 0;
+  var processingEl = document.getElementById('ocrWatchProcessing');
+  if (processingEl) processingEl.textContent = task.processingCount || 0;
   var processedEl = document.getElementById('ocrWatchProcessed');
   if (processedEl) processedEl.textContent = task.processedCount || 0;
 
