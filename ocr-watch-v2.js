@@ -50,7 +50,25 @@ function initOcrWatchWebSocket() {
 
   ocrWatchSocket.on('task-update', (data) => {
     console.log('[OCR-Watch] 收到任务更新:', data);
-    updateOcrWatchUI(data);
+    updateOcrWatchUIFromWebSocket(data);
+  });
+
+  // ========== 本地助手状态监听 ==========
+  ocrWatchSocket.on('helper-online', (data) => {
+    console.log('[本地助手] 上线:', data);
+    updateHelperStatus('online', data);
+    showHelperNotification(`✅ 本地助手已连接 (设备 ${data.helperClientId})`);
+  });
+
+  ocrWatchSocket.on('helper-offline', (data) => {
+    console.log('[本地助手] 离线:', data);
+    updateHelperStatus('offline', data);
+    showHelperNotification(`⚠️ 本地助手已断开连接`);
+  });
+
+  ocrWatchSocket.on('helper-status', (data) => {
+    console.log('[本地助手] 状态更新:', data);
+    handleHelperStatusUpdate(data);
   });
 
   ocrWatchSocket.on('disconnect', () => {
@@ -66,7 +84,7 @@ function initOcrWatchWebSocket() {
 }
 
 // 更新 UI（由 WebSocket 推送触发）
-function updateOcrWatchUI(data) {
+function updateOcrWatchUIFromWebSocket(data) {
   if (!data) return;
 
   // 更新全局状态
@@ -125,6 +143,81 @@ function updateOcrWatchUI(data) {
   // 刷新自动战报解析列表
   if (typeof renderOCRQueue === 'function') {
     renderOCRQueue();
+  }
+}
+
+// ========== 本地助手状态管理 ==========
+window.helperOnlineStatus = null; // 'online' | 'offline' | null
+
+function updateHelperStatus(status, data) {
+  window.helperOnlineStatus = status;
+
+  // 更新UI中的本地助手状态指示器
+  const helperStatusEl = document.getElementById('helperStatusIndicator');
+  if (helperStatusEl) {
+    if (status === 'online') {
+      helperStatusEl.innerHTML = '🟢 本地助手已连接';
+      helperStatusEl.style.color = '#28a745';
+    } else {
+      helperStatusEl.innerHTML = '🔴 本地助手未连接';
+      helperStatusEl.style.color = '#dc3545';
+    }
+  }
+}
+
+function handleHelperStatusUpdate(data) {
+  const { type, payload } = data;
+
+  switch (type) {
+    case 'file-uploaded':
+      // 本地助手上传了新文件
+      console.log(`[本地助手] 已上传: ${payload.fileName}`);
+      showHelperNotification(`✅ 已上传: ${payload.fileName}`);
+
+      // 刷新战报列表
+      if (typeof renderOCRQueue === 'function') {
+        renderOCRQueue();
+      }
+      break;
+
+    case 'file-failed':
+      // 本地助手上传失败
+      console.error(`[本地助手] 上传失败: ${payload.fileName}`, payload.error);
+      showHelperNotification(`❌ 上传失败: ${payload.fileName}`);
+      break;
+
+    case 'task-bound':
+      // 本地助手已绑定任务
+      console.log(`[本地助手] 任务已绑定: ${payload.taskId}`);
+      showHelperNotification('✅ 任务绑定成功');
+      break;
+  }
+}
+
+function showHelperNotification(message) {
+  // 使用页面已有的通知系统（如果存在）
+  if (typeof showCustomDialog === 'function') {
+    // 简单的Toast提示
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: #333;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      z-index: 10000;
+      animation: fadeInOut 3s ease-in-out;
+    `;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
+  } else {
+    console.log('[通知]', message);
   }
 }
 
@@ -484,7 +577,9 @@ function updateOcrWatchUI() {
 
   // 切换按钮
   var btnToggle = document.getElementById('btnOcrWatchToggle');
-  var hasFolder = task.folderPath && task.folderPath.trim();
+  // v4.0: folder_path 不再存储在任务中，从输入框获取
+  var folderInput = document.getElementById('ocrWatchFolder');
+  var hasFolder = folderInput && folderInput.value && folderInput.value.trim();
 
   // 心跳过期导致的 idle：允许用户"开始"来重新激活
   var isStaleIdle = (effectiveStatus === 'idle' && task.status !== 'idle');
@@ -1046,3 +1141,25 @@ async function ensureLocalHelperConnected() {
   helperConnected = true;
   return true;
 }
+
+// ========== 页面加载时检测本地助手连接 ==========
+(function() {
+  // 检测 URL 参数：本地助手首次启动时会打开浏览器并带上 helperConnected 参数
+  const urlParams = new URLSearchParams(window.location.search);
+  const helperClientId = urlParams.get('helperConnected');
+
+  if (helperClientId) {
+    console.log('[本地助手] 检测到首次连接:', helperClientId);
+
+    // 显示欢迎提示
+    setTimeout(() => {
+      showHelperNotification(`🎉 本地助手已成功连接！(设备 ${helperClientId})`);
+    }, 1000);
+
+    // 清理URL参数（避免刷新页面时重复提示）
+    if (window.history && window.history.replaceState) {
+      const newUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }
+})();
