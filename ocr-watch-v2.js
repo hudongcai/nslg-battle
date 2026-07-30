@@ -99,7 +99,8 @@ function updateOcrWatchUIFromWebSocket(data) {
     currentFile: data.currentFile || '',
     lastError: data.lastError || '',
     folderStatus: data.folderStatus || 'unknown',
-    folderStatusMessage: data.folderStatusMessage || ''
+    folderStatusMessage: data.folderStatusMessage || '',
+    ocrAutoProcess: data.ocrAutoProcess !== undefined ? data.ocrAutoProcess : 1  // OCR自动处理状态
   };
 
   // 更新 UI 元素
@@ -813,6 +814,45 @@ async function pauseOcrWatchTask() {
 async function stopOcrWatchTask() {
   if (!window.ocrWatchTask) { console.warn('[OCR-Watch] stop: 无任务'); return; }
   return await ocrWatchControl('stop');
+}
+
+// OCR自动处理控制（暂停/恢复队列处理）
+async function pauseOcrAutoProcess() {
+  if (!window.ocrWatchTask) { console.warn('[OCR-Watch] pauseOcrAutoProcess: 无任务'); return; }
+  return await ocrAutoProcessControl('pause');
+}
+
+async function resumeOcrAutoProcess() {
+  if (!window.ocrWatchTask) { console.warn('[OCR-Watch] resumeOcrAutoProcess: 无任务'); return; }
+  return await ocrAutoProcessControl('resume');
+}
+
+async function ocrAutoProcessControl(action) {
+  console.log('[OCR-Watch] ocrAutoProcessControl:', action);
+  if (!window.ocrWatchTask) return;
+
+  const token = localStorage.getItem('nslg_token');
+  try {
+    const resp = await fetch(ocrWatchApiBase() + '/ocr-watch/tasks/' + window.ocrWatchTask.id + '/ocr-control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ action: action })
+    });
+    const data = await resp.json();
+    console.log('[OCR-Watch] ocrAutoProcessControl response:', data);
+    if (data.code === 200) {
+      // 更新本地状态
+      window.ocrWatchTask.ocrAutoProcess = action === 'resume' ? 1 : 0;
+      // 重新加载任务状态
+      await loadOcrWatchTask(window.ocrWatchTask.projectId);
+      showToast(data.message || (action === 'pause' ? 'OCR处理已暂停' : 'OCR处理已恢复'), 'success');
+    } else {
+      alert(data.message);
+    }
+  } catch (e) {
+    console.error('[OCR-Watch] ocrAutoProcessControl error:', e);
+    alert('操作失败: ' + e.message);
+  }
 }
 
 // 切换开始/暂停

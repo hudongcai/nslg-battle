@@ -318,11 +318,12 @@ function renderOCRQueue() {
   const btnAutoPause = document.getElementById('btnAutoPauseBatch');
   if (btnAutoPause) {
     const hasAutoActive = watchQueueItems.some(item => item.status === 'pending' || item.status === 'processing' || item.status === 'paused');
+    const ocrProcessPaused = window.ocrWatchTask && window.ocrWatchTask.ocrAutoProcess === 0;
     btnAutoPause.disabled = !(hasAutoActive || watchTaskMatchesProject);
-    btnAutoPause.dataset.paused = watchPaused ? '1' : '0';
-    btnAutoPause.textContent = watchPaused ? '▶ 继续' : '⏸ 暂停';
-    btnAutoPause.classList.toggle('is-paused', !!watchPaused);
-    if (autoQueueArea) autoQueueArea.classList.toggle('queue-paused', !!watchPaused);
+    btnAutoPause.dataset.paused = ocrProcessPaused ? '1' : '0';
+    btnAutoPause.textContent = ocrProcessPaused ? '▶ 继续处理' : '⏸ 暂停处理';
+    btnAutoPause.classList.toggle('is-paused', !!ocrProcessPaused);
+    if (autoQueueArea) autoQueueArea.classList.toggle('queue-paused', !!ocrProcessPaused);
   }
 
   if (queueList) {
@@ -850,6 +851,14 @@ async function loadPendingTasksFromBackend() {
 // ========== 鎵归噺澶勭悊 ==========
 async function startBatchProcess() {
   if (ocrRunning) return;
+
+  // 检查OCR自动处理状态
+  if (window.ocrWatchTask && window.ocrWatchTask.ocrAutoProcess === 0) {
+    console.log('[OCR] OCR自动处理已暂停，不启动批量处理');
+    showToast('OCR自动处理已暂停，请先恢复处理', 'warn');
+    return;
+  }
+
   // 先从后端拉取待处理任务（自动监听提交的任务）
   await loadPendingTasksFromBackend();
 
@@ -1629,6 +1638,28 @@ if (typeof window !== 'undefined') {
   };
 }
 
+// 处理自动队列暂停/恢复按钮点击
+async function handleAutoQueuePauseClick(btn) {
+  if (!window.ocrWatchTask) {
+    console.warn('[OCR] 无监听任务');
+    return;
+  }
+
+  const currentState = window.ocrWatchTask.ocrAutoProcess;
+
+  if (currentState === 0) {
+    // 当前已暂停，点击恢复
+    if (typeof resumeOcrAutoProcess === 'function') {
+      await resumeOcrAutoProcess();
+    }
+  } else {
+    // 当前正在运行，点击暂停
+    if (typeof pauseOcrAutoProcess === 'function') {
+      await pauseOcrAutoProcess();
+    }
+  }
+}
+
 // Inline buttons in index.html call these names directly.
 window.initOCR = initOCR;
 window.renderOCRQueue = renderOCRQueue;
@@ -1641,3 +1672,4 @@ window.updateOCRProgress = updateOCRProgress;
 window.updateAutoOCRProgress = updateAutoOCRProgress;
 window.showPointsInsufficientModal = showPointsInsufficientModal;
 window.closePointsInsufficientModal = closePointsInsufficientModal;
+window.handleAutoQueuePauseClick = handleAutoQueuePauseClick;

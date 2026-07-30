@@ -115,7 +115,7 @@ let pool;
 
 // ========== 内存状态管理（WebSocket 实时推送） ==========
 class TaskState {
-  constructor(taskId, userId, projectId) {
+  constructor(taskId, userId, projectId, ocrAutoProcess = 1) {
     this.taskId = taskId;
     this.userId = userId;
     this.projectId = projectId;
@@ -127,6 +127,7 @@ class TaskState {
     this.currentFile = '';
     this.lastError = '';
     this.lastHeartbeat = new Date();
+    this.ocrAutoProcess = ocrAutoProcess;  // OCR自动处理开关：1=自动处理，0=暂停处理
   }
 
   toJSON() {
@@ -141,7 +142,8 @@ class TaskState {
       pendingFiles: this.pendingFiles,  // 包含文件列表
       currentFile: this.currentFile,
       lastError: this.lastError,
-      lastHeartbeat: this.lastHeartbeat.toISOString()
+      lastHeartbeat: this.lastHeartbeat.toISOString(),
+      ocrAutoProcess: this.ocrAutoProcess  // 添加到JSON输出
     };
   }
 }
@@ -337,6 +339,7 @@ async function initDB() {
     await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS helper_client_id BIGINT DEFAULT NULL AFTER project_id`).catch(()=>{});
     await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS folder_status ENUM('unknown','ok','not_found','error') DEFAULT 'unknown' AFTER folder_path`).catch(()=>{});
     await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS folder_status_message VARCHAR(512) DEFAULT '' AFTER folder_status`).catch(()=>{});
+    await pool.query(`ALTER TABLE helper_configs ADD COLUMN IF NOT EXISTS ocr_auto_process TINYINT(1) DEFAULT 1 AFTER folder_status_message`).catch(()=>{});
     await pool.query(`ALTER TABLE label_configs MODIFY COLUMN project_id BIGINT NOT NULL`).catch(()=>{});
     await pool.query(`ALTER TABLE project_player_dict ADD UNIQUE KEY uk_proj_player (project_id, player_name)`).catch(()=>{});
     // OCR 待处理任务表
@@ -379,11 +382,11 @@ async function initWatchTaskStates() {
   try {
     // 从 helper_configs 只加载配置（folder_path），不加载状态
     const [tasks] = await pool.query(
-      'SELECT id, user_id, project_id FROM helper_configs'
+      'SELECT id, user_id, project_id, ocr_auto_process FROM helper_configs'
     );
 
     for (const task of tasks) {
-      const state = new TaskState(task.id, task.user_id, task.project_id);
+      const state = new TaskState(task.id, task.user_id, task.project_id, task.ocr_auto_process || 1);
       // 状态默认为 idle，不从数据库读取
       state.status = 'idle';
       // 清空历史错误（避免"目录不存在"等旧错误导致前端显示异常）
@@ -513,12 +516,12 @@ async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
   if (!state) {
     // 从数据库恢复
     const [rows] = await pool.query(
-      'SELECT user_id, project_id FROM helper_configs WHERE id = ?',
+      'SELECT user_id, project_id, ocr_auto_process FROM helper_configs WHERE id = ?',
       [id]
     );
     if (!rows.length) return;
 
-    state = new TaskState(id, rows[0].user_id, rows[0].project_id);
+    state = new TaskState(id, rows[0].user_id, rows[0].project_id, rows[0].ocr_auto_process || 1);
     state.status = 'idle';  // 状态在内存管理，默认为 idle
     watchTaskStates.set(id, state);
   }
@@ -2888,7 +2891,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
 
       // 查询数据库获取配置信息（不再返回 folder_path）
       const [rows] = await pool.query(
-        'SELECT helper_client_id, device_id, created_at, updated_at FROM helper_configs WHERE id = ?',
+        'SELECT helper_client_id, device_id, ocr_auto_process, created_at, updated_at FROM helper_configs WHERE id = ?',
         [state.taskId]
       );
 
@@ -2911,6 +2914,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
           lastHeartbeat: state.lastHeartbeat.toISOString(),
           helperClientId: rows[0].helper_client_id || null,
           deviceId: rows[0].device_id || null,
+          ocrAutoProcess: rows[0].ocr_auto_process || 0,  // OCR自动处理状态
           createdAt: rows[0].created_at,
           updatedAt: rows[0].updated_at
         });
@@ -3011,7 +3015,7 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
 
     // 检查任务是否存在并获取配置
     const [task] = await pool.query(
-      'SELECT id, helper_client_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
+      'SELECT id, helper_client_id, project_id, ocr_auto_process FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
       [taskId, req.authUserId]
     );
 
@@ -3029,7 +3033,7 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
     // 初始化或更新内存中的任务状态
     let state = watchTaskStates.get(taskId);
     if (!state) {
-      state = new TaskState(taskId, req.authUserId, task[0].project_id);
+      state = new TaskState(taskId, req.authUserId, task[0].project_id, task[0].ocr_auto_process || 1);
       watchTaskStates.set(taskId, state);
     }
 
@@ -3065,6 +3069,52 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
     res.json({ code: 200, message: '操作成功' });
   } catch (err) {
     console.error('[OCR-Watch] 控制任务失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// 4.4. OCR自动处理控制（暂停/继续队列处理）
+app.post('/api/ocr-watch/tasks/:id/ocr-control', requireActiveUser, async (req, res) => {
+  try {
+    const taskId = Number(req.params.id);
+    const { action } = req.body || {};
+
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.json({ code: 400, message: '任务参数无效' });
+    }
+
+    if (action !== 'pause' && action !== 'resume') {
+      return res.json({ code: 400, message: '不支持的操作，仅支持 pause 或 resume' });
+    }
+
+    // 检查任务是否存在
+    const [task] = await pool.query(
+      'SELECT id, user_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
+      [taskId, req.authUserId]
+    );
+
+    if (!task.length) {
+      return res.json({ code: 404, message: '任务不存在' });
+    }
+
+    // 更新 ocr_auto_process 状态
+    const ocrAutoProcess = action === 'resume' ? 1 : 0;
+    await pool.query(
+      'UPDATE helper_configs SET ocr_auto_process = ?, updated_at = NOW() WHERE id = ?',
+      [ocrAutoProcess, taskId]
+    );
+
+    // 更新内存中的任务状态并广播
+    let state = watchTaskStates.get(taskId);
+    if (state) {
+      state.ocrAutoProcess = ocrAutoProcess;
+      broadcastTaskUpdate(taskId);
+    }
+
+    console.log(`[OCR-Control] 任务 ${taskId} OCR自动处理已${action === 'pause' ? '暂停' : '恢复'}`);
+    res.json({ code: 200, message: action === 'pause' ? 'OCR处理已暂停' : 'OCR处理已恢复' });
+  } catch (err) {
+    console.error('[OCR-Control] 控制失败:', err);
     res.json({ code: 500, message: err.message });
   }
 });
