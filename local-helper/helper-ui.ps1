@@ -34,6 +34,7 @@ $script:StopWorkerOnExit = $false
 $script:UiPidPath = Join-Path $PSScriptRoot 'helper-ui.pid'
 $script:LaunchCommandPath = Join-Path $PSScriptRoot 'helper-launch-command.json'
 $script:LastLaunchCommandStamp = ''
+$script:LastLogHash = ''
 
 function Read-HelperConfig {
     if (Test-Path $script:ConfigPath) {
@@ -881,21 +882,43 @@ function Refresh-UiTasks {
 function Show-HelperWindow {
     if ($script:MainForm) {
         if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $true }
+
+        # 如果窗口被最小化，先恢复
+        if ($script:MainForm.WindowState -eq [System.Windows.Forms.FormWindowState]::Minimized) {
+            $script:MainForm.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        }
+
+        # 确保窗口在屏幕范围内
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        if ($script:MainForm.Left -lt $screen.Left -or $script:MainForm.Left -gt $screen.Right -or
+            $script:MainForm.Top -lt $screen.Top -or $script:MainForm.Top -gt $screen.Bottom) {
+            # 窗口在屏幕外，重置到中心
+            $script:MainForm.StartPosition = 'CenterScreen'
+            $script:MainForm.Left = ($screen.Width - $script:MainForm.Width) / 2
+            $script:MainForm.Top = ($screen.Height - $script:MainForm.Height) / 2
+        }
+
+        # 简化显示逻辑，避免过度激活导致闪烁
         $script:MainForm.ShowInTaskbar = $true
-        $script:MainForm.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        $script:MainForm.Visible = $true
         $script:MainForm.Show()
-        $script:MainForm.BringToFront()
-        $script:MainForm.Activate()
-        $script:MainForm.Focus()
+
+        # 简单激活，不使用复杂的 Win32 API 和定时器
+        try {
+            $script:MainForm.BringToFront()
+            $script:MainForm.Activate()
+        } catch {
+            # 激活失败也没关系
+        }
     }
 }
 
 function Hide-HelperWindow {
     if ($script:MainForm) {
         if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $true }
-        $script:MainForm.ShowInTaskbar = $false
-        $script:MainForm.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
+        # 直接隐藏窗口，不要先最小化
         $script:MainForm.Hide()
+        $script:MainForm.ShowInTaskbar = $false
     }
 }
 
@@ -1006,6 +1029,21 @@ function Show-HelperStatus {
             $verifyDetail = 'Token 未配置，无需验证'
         }
 
+        # 5. 监听状态
+        $monitorStatus = '⏸️ 未监听'
+        $monitorDetail = ''
+        if (-not [string]::IsNullOrWhiteSpace([string]$config.folderPath)) {
+            if (Test-Path $config.folderPath) {
+                $monitorStatus = "✅ 正在监听"
+                $monitorDetail = "文件夹: $($config.folderPath)`n项目ID: $($config.projectId)"
+            } else {
+                $monitorStatus = "❌ 文件夹不存在"
+                $monitorDetail = "配置的路径: $($config.folderPath)"
+            }
+        } else {
+            $monitorDetail = '尚未配置监听文件夹，请在网页中选择'
+        }
+
         # 版本信息
         $versionJsonPath = Join-Path $PSScriptRoot 'version.json'
         $versionTime = '未知'
@@ -1048,6 +1086,10 @@ function Show-HelperStatus {
 4️⃣  后端连接码验证状态（自动）
     状态: $verifyStatus
     说明: $verifyDetail
+
+5️⃣  监听状态
+    状态: $monitorStatus
+    说明: $monitorDetail
 "@
 
         $result = [System.Windows.Forms.MessageBox]::Show(
@@ -1064,6 +1106,221 @@ function Show-HelperStatus {
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
+    }
+}
+
+function Show-MonitorLogs {
+    try {
+        # 直接读取日志文件（避免HTTP编码问题）
+        $logFilePath = Join-Path $PSScriptRoot 'local-helper.log.json'
+
+        if (-not (Test-Path $logFilePath)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                '日志文件不存在，请确保本地助手正在运行。',
+                '监听日志',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+            return
+        }
+
+        # 使用 UTF-8 编码读取日志文件
+        $logContent = Get-Content -Path $logFilePath -Raw -Encoding UTF8
+        $logs = $logContent | ConvertFrom-Json
+
+        if ($logs.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show(
+                '暂无监听日志',
+                '监听日志',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+            return
+        }
+
+        # 创建日志窗口
+        $logForm = New-Object System.Windows.Forms.Form
+        $logForm.Text = '本地助手 - 监听日志'
+        $logForm.Size = New-Object System.Drawing.Size(900, 600)
+        $logForm.StartPosition = 'CenterScreen'
+        $logForm.MinimumSize = New-Object System.Drawing.Size(700, 400)
+
+        # 创建 RichTextBox 显示日志
+        $logBox = New-Object System.Windows.Forms.RichTextBox
+        $logBox.Location = New-Object System.Drawing.Point(10, 50)
+        $logBox.Size = New-Object System.Drawing.Size(860, 490)
+        $logBox.Anchor = 'Top,Bottom,Left,Right'
+        $logBox.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)  # 改用微软雅黑，字号10
+        $logBox.ReadOnly = $true
+        $logBox.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)
+        $logBox.WordWrap = $true  # 启用自动换行
+        $logForm.Controls.Add($logBox)
+
+        # 添加标题
+        $titleLabel = New-Object System.Windows.Forms.Label
+        $titleLabel.Text = "监听日志（最近 $($logs.Count) 条）"
+        $titleLabel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 11, [System.Drawing.FontStyle]::Bold)
+        $titleLabel.Location = New-Object System.Drawing.Point(10, 10)
+        $titleLabel.Size = New-Object System.Drawing.Size(500, 30)
+        $logForm.Controls.Add($titleLabel)
+
+        # 添加刷新按钮
+        $refreshButton = New-Object System.Windows.Forms.Button
+        $refreshButton.Text = '刷新'
+        $refreshButton.Location = New-Object System.Drawing.Point(750, 10)
+        $refreshButton.Size = New-Object System.Drawing.Size(120, 30)
+        $refreshButton.Anchor = 'Top,Right'
+        $refreshButton.Add_Click({
+            $logForm.Close()
+            Show-MonitorLogs
+        })
+        $logForm.Controls.Add($refreshButton)
+
+        # 格式化日志内容
+        foreach ($log in $logs) {
+            $timestamp = [DateTime]::Parse($log.timestamp).ToString('yyyy-MM-dd HH:mm:ss')
+            $type = $log.type
+            $message = $log.message
+
+            # 根据类型设置颜色
+            $color = [System.Drawing.Color]::Black
+            $icon = '•'
+            switch ($type) {
+                'scan'   { $color = [System.Drawing.Color]::Blue; $icon = '🔍' }
+                'upload' { $color = [System.Drawing.Color]::Green; $icon = '✅' }
+                'error'  { $color = [System.Drawing.Color]::Red; $icon = '❌' }
+                'info'   { $color = [System.Drawing.Color]::Gray; $icon = 'ℹ️' }
+            }
+
+            # 添加时间戳
+            $logBox.SelectionStart = $logBox.TextLength
+            $logBox.SelectionColor = [System.Drawing.Color]::DarkGray
+            $logBox.AppendText("[$timestamp] ")
+
+            # 添加图标和消息
+            $logBox.SelectionStart = $logBox.TextLength
+            $logBox.SelectionColor = $color
+            $logBox.AppendText("$icon $message")
+
+            # 添加详情（如果有）
+            if ($log.details) {
+                $detailsJson = $log.details | ConvertTo-Json -Compress -Depth 10
+                $logBox.SelectionStart = $logBox.TextLength
+                $logBox.SelectionColor = [System.Drawing.Color]::DarkGray
+                $logBox.AppendText("`n    详情: $detailsJson")
+            }
+
+            $logBox.AppendText("`n`n")
+        }
+
+        # 滚动到底部
+        $logBox.SelectionStart = $logBox.TextLength
+        $logBox.ScrollToCaret()
+
+        $logForm.ShowDialog() | Out-Null
+
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "无法获取监听日志: $($_.Exception.Message)`n`n请确保本地助手正在运行。",
+            '监听日志',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+    }
+}
+
+function Update-LogDisplay {
+    try {
+        # 直接读取日志文件
+        $logFilePath = Join-Path $PSScriptRoot 'local-helper.log.json'
+
+        if (-not (Test-Path $logFilePath)) {
+            if ($script:LogBox) {
+                $script:LogBox.Text = '日志文件不存在，请确保本地助手正在运行。'
+                $script:LogBox.ForeColor = [System.Drawing.Color]::Gray
+            }
+            return
+        }
+
+        # 使用 UTF-8 编码读取日志文件
+        $logContent = Get-Content -Path $logFilePath -Raw -Encoding UTF8
+        $logs = $logContent | ConvertFrom-Json
+
+        if ($logs.Count -eq 0) {
+            if ($script:LogBox) {
+                $script:LogBox.Text = '暂无监听日志'
+                $script:LogBox.ForeColor = [System.Drawing.Color]::Gray
+            }
+            return
+        }
+
+        # 只显示最近20条日志
+        $recentLogs = $logs | Select-Object -Last 20
+
+        # 生成显示内容的哈希（只包含实际显示的消息，不包括时间戳）
+        $displayHash = ($recentLogs | ForEach-Object {
+            # 只用 level 和 message 生成哈希，忽略时间戳和 details
+            "$($_.level):$($_.message)"
+        }) -join '|'
+
+        if ($script:LastLogHash -eq $displayHash) {
+            # 显示内容没有变化，跳过刷新
+            return
+        }
+        $script:LastLogHash = $displayHash
+
+        # 清空日志框
+        if ($script:LogBox) {
+            # 暂停布局更新，减少闪烁
+            $script:LogBox.SuspendLayout()
+            try {
+                $script:LogBox.Clear()
+
+                # 格式化日志内容
+                foreach ($log in $recentLogs) {
+                $timestamp = [DateTime]::Parse($log.timestamp).ToString('yyyy-MM-dd HH:mm:ss')
+                $level = $log.level  # 修复：使用 level 而不是 type
+                $message = $log.message
+
+                # 根据级别设置颜色和图标
+                $color = [System.Drawing.Color]::Black
+                $icon = '•'
+                switch ($level) {
+                    'success' { $color = [System.Drawing.Color]::Green; $icon = '✅' }
+                    'error'   { $color = [System.Drawing.Color]::Red; $icon = '❌' }
+                    'warning' { $color = [System.Drawing.Color]::Orange; $icon = '⚠️' }
+                    'info'    { $color = [System.Drawing.Color]::Blue; $icon = 'ℹ️' }
+                    default   { $color = [System.Drawing.Color]::Black; $icon = '•' }
+                }
+
+                # 添加时间戳
+                $script:LogBox.SelectionStart = $script:LogBox.TextLength
+                $script:LogBox.SelectionColor = [System.Drawing.Color]::DarkGray
+                $script:LogBox.AppendText("[$timestamp] ")
+
+                # 添加图标和消息（纯黑色）
+                $script:LogBox.SelectionStart = $script:LogBox.TextLength
+                $script:LogBox.SelectionColor = [System.Drawing.Color]::Black
+                $script:LogBox.AppendText("$icon $message")
+
+                $script:LogBox.AppendText("`n")
+            }
+
+            # 滚动到底部
+            $script:LogBox.SelectionStart = $script:LogBox.TextLength
+            $script:LogBox.ScrollToCaret()
+
+            } finally {
+                # 恢复布局更新
+                $script:LogBox.ResumeLayout()
+            }
+        }
+
+    } catch {
+        if ($script:LogBox) {
+            $script:LogBox.Text = "日志加载失败: $($_.Exception.Message)"
+            $script:LogBox.ForeColor = [System.Drawing.Color]::Red
+        }
     }
 }
 
@@ -1100,20 +1357,22 @@ function Initialize-NotifyIcon {
             $script:StopWorkerOnExit = $true
             # 立即停止后台服务
             Stop-HelperWorker
+            Stop-ExistingHelperWorkerByPid
+            # 额外：停止所有 local-helper.js 进程（确保彻底停止）
+            Get-Process node -ErrorAction SilentlyContinue | ForEach-Object {
+                try {
+                    $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+                    if ($cmd -like "*local-helper.js*") {
+                        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+                    }
+                } catch {}
+            }
             if ($script:MainForm) { $script:MainForm.Close() }
         })
         $script:NotifyIcon.ContextMenuStrip = $script:NotifyMenu
 
         # 双击托盘图标显示窗口
         $script:NotifyIcon.Add_DoubleClick({ Show-HelperWindow })
-
-        # 单击托盘图标也显示窗口（更容易触发）
-        $script:NotifyIcon.Add_Click({
-            param($sender, $e)
-            if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-                Show-HelperWindow
-            }
-        })
 
         Write-Host "✅ 托盘图标已初始化"
     } catch {
@@ -1162,10 +1421,10 @@ $form.Add_Resize({
 # 主界面：默认使用网页自动激活，连接码仅作为备用入口
 $config = Read-HelperConfig
 
-# 固定窗口大小，确保内容完整显示
-$form.Size = New-Object System.Drawing.Size(720, 520)
-$form.MinimumSize = New-Object System.Drawing.Size(720, 520)
-$form.MaximizeBox = $false
+# 固定窗口大小，增加高度以容纳日志区域
+$form.Size = New-Object System.Drawing.Size(900, 750)
+$form.MinimumSize = New-Object System.Drawing.Size(900, 750)
+$form.MaximizeBox = $true
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = '真武本地助手'
@@ -1179,13 +1438,13 @@ $summary.Text = "网页会自动连接本地助手。通常不需要复制连接
 $summary.Font = New-Object System.Drawing.Font('Segoe UI', 11)
 $summary.ForeColor = [System.Drawing.Color]::FromArgb(55, 55, 55)
 $summary.Location = New-Object System.Drawing.Point(42, 75)
-$summary.Size = New-Object System.Drawing.Size(630, 65)
+$summary.Size = New-Object System.Drawing.Size(810, 50)
 $form.Controls.Add($summary)
 
 $openWebButton = New-Object System.Windows.Forms.Button
 $openWebButton.Text = '打开网页配置自动监听'
 $openWebButton.Font = New-Object System.Drawing.Font('Segoe UI', 11)
-$openWebButton.Location = New-Object System.Drawing.Point(42, 160)
+$openWebButton.Location = New-Object System.Drawing.Point(42, 140)
 $openWebButton.Size = New-Object System.Drawing.Size(300, 50)
 $openWebButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $openWebButton.ForeColor = [System.Drawing.Color]::White
@@ -1198,7 +1457,7 @@ $form.Controls.Add($openWebButton)
 $checkStatusButton = New-Object System.Windows.Forms.Button
 $checkStatusButton.Text = '检查助手状态'
 $checkStatusButton.Font = New-Object System.Drawing.Font('Segoe UI', 11)
-$checkStatusButton.Location = New-Object System.Drawing.Point(370, 160)
+$checkStatusButton.Location = New-Object System.Drawing.Point(370, 140)
 $checkStatusButton.Size = New-Object System.Drawing.Size(300, 50)
 $checkStatusButton.Add_Click({ Show-HelperStatus })
 $form.Controls.Add($checkStatusButton)
@@ -1207,15 +1466,15 @@ $hint = New-Object System.Windows.Forms.Label
 $hint.Text = '提示：监听目录请在网页里选择。这个窗口可以关闭，助手会留在托盘后台运行。'
 $hint.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $hint.ForeColor = [System.Drawing.Color]::FromArgb(95, 95, 95)
-$hint.Location = New-Object System.Drawing.Point(42, 230)
-$hint.Size = New-Object System.Drawing.Size(630, 30)
+$hint.Location = New-Object System.Drawing.Point(42, 205)
+$hint.Size = New-Object System.Drawing.Size(810, 25)
 $form.Controls.Add($hint)
 
 $advancedGroup = New-Object System.Windows.Forms.GroupBox
 $advancedGroup.Text = '手动连接码（备用）'
 $advancedGroup.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-$advancedGroup.Location = New-Object System.Drawing.Point(40, 280)
-$advancedGroup.Size = New-Object System.Drawing.Size(640, 110)
+$advancedGroup.Location = New-Object System.Drawing.Point(40, 240)
+$advancedGroup.Size = New-Object System.Drawing.Size(810, 90)
 $form.Controls.Add($advancedGroup)
 
 $advancedHint = New-Object System.Windows.Forms.Label
@@ -1250,9 +1509,40 @@ $script:StatusLabel = New-Object System.Windows.Forms.Label
 $script:StatusLabel.Text = '状态: 等待网页自动连接...'
 $script:StatusLabel.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $script:StatusLabel.ForeColor = [System.Drawing.Color]::DimGray
-$script:StatusLabel.Location = New-Object System.Drawing.Point(42, 415)
-$script:StatusLabel.Size = New-Object System.Drawing.Size(630, 40)
+$script:StatusLabel.Location = New-Object System.Drawing.Point(42, 345)
+$script:StatusLabel.Size = New-Object System.Drawing.Size(810, 25)
 $form.Controls.Add($script:StatusLabel)
+
+# 添加监听日志标题
+$logTitleLabel = New-Object System.Windows.Forms.Label
+$logTitleLabel.Text = '监听日志（自动刷新）'
+$logTitleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+$logTitleLabel.Location = New-Object System.Drawing.Point(42, 375)
+$logTitleLabel.Size = New-Object System.Drawing.Size(810, 25)
+$form.Controls.Add($logTitleLabel)
+
+# 添加日志显示区域（占50%高度）
+$script:LogBox = New-Object System.Windows.Forms.RichTextBox
+$script:LogBox.Location = New-Object System.Drawing.Point(42, 405)
+$script:LogBox.Size = New-Object System.Drawing.Size(810, 300)
+$script:LogBox.Anchor = 'Top,Bottom,Left,Right'
+$script:LogBox.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+$script:LogBox.ReadOnly = $true
+$script:LogBox.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)
+$script:LogBox.WordWrap = $true
+$script:LogBox.Text = '正在加载日志...'
+$form.Controls.Add($script:LogBox)
+
+# 添加定时器，每3秒刷新一次日志
+$script:LogTimer = New-Object System.Windows.Forms.Timer
+$script:LogTimer.Interval = 3000  # 3秒刷新一次
+$script:LogTimer.Add_Tick({
+    Update-LogDisplay
+})
+$script:LogTimer.Start()
+
+# 初始加载日志
+Update-LogDisplay
 
 # Hidden grid kept for legacy launch/bind helpers that still use Refresh-UiTasks.
 $script:TaskGrid = New-Object System.Windows.Forms.DataGridView

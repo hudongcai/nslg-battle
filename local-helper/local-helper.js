@@ -15,21 +15,63 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
+const { io } = require('socket.io-client');
 
 // ========== 配置 ==========
 const CONFIG_PATH = path.join(__dirname, 'local-helper.config.json');
 const PID_PATH = path.join(__dirname, 'local-helper.pid');
+const LOG_JSON_PATH = path.join(__dirname, 'local-helper.log.json');  // UI 界面读取的日志
 const DEFAULT_API_BASE = 'https://api.zhenwu.fun/api';
 const POLL_INTERVAL = 5;  // 轮询间隔（秒）
 const HELPER_PORT = 9999;  // HTTP 服务端口
+const MAX_LOG_ENTRIES = 500;  // 最多保留的日志条数
 
 let httpServer = null;
+let wsClient = null;  // WebSocket 客户端连接
+let logEntries = [];  // 内存中的日志条目
 
 // ========== 工具函数 ==========
 
+// 写入 JSON 格式日志（供 UI 界面显示）
+function writeJsonLog(level, message, details = null) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level: level,  // 'info' | 'success' | 'error' | 'warning'
+    message: message,
+    details: details
+  };
+
+  // 添加到内存
+  logEntries.push(entry);
+
+  // 限制日志条数
+  if (logEntries.length > MAX_LOG_ENTRIES) {
+    logEntries = logEntries.slice(-MAX_LOG_ENTRIES);
+  }
+
+  // 写入文件（同步，确保编码正确）
+  try {
+    fs.writeFileSync(LOG_JSON_PATH, JSON.stringify(logEntries, null, 2), { encoding: 'utf8' });
+  } catch (err) {
+    console.error('[日志写入失败]', err.message);
+  }
+}
+
+// 增强版 console.log（同时输出到控制台和 JSON 日志）
+function log(message, level = 'info', details = null) {
+  console.log(message);
+  writeJsonLog(level, message, details);
+}
+
 function readJson(fp, fallback) {
   try {
-    return JSON.parse(fs.readFileSync(fp, 'utf8'));
+    let content = fs.readFileSync(fp, 'utf8');
+    // 移除 UTF-8 BOM（如果存在）
+    if (content.charCodeAt(0) === 0xFEFF) {
+      content = content.slice(1);
+    }
+    const parsed = JSON.parse(content);
+    return parsed;
   } catch (e) {
     return fallback;
   }
@@ -45,6 +87,163 @@ function normalizeApiBase(apiBase) {
     return 'https://api.zhenwu.fun/api';
   }
   return value.replace(/\/$/, '');
+}
+
+// ========== WebSocket 连接管理 ==========
+
+function connectWebSocket(config) {
+  if (wsClient) {
+    console.log('[WebSocket] 已存在连接，跳过');
+    return;
+  }
+
+  if (!config.helperToken || !config.helperClientId) {
+    console.log('[WebSocket] 未配置，跳过连接');
+    return;
+  }
+
+  const apiBase = normalizeApiBase(config.apiBase);
+  // 将 http://localhost:3000/api 转换为 ws://localhost:3000
+  const wsUrl = apiBase
+    .replace(/^https?:\/\//, (match) => match === 'https://' ? 'wss://' : 'ws://')
+    .replace(/\/api\/?$/, '');
+
+  console.log(`[WebSocket] 连接到: ${wsUrl}`);
+
+  wsClient = io(wsUrl, {
+    path: '/ws',
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 3000,
+    reconnectionAttempts: Infinity
+  });
+
+  wsClient.on('connect', () => {
+    console.log('✅ [WebSocket] 已连接到服务器');
+    log('✅ WebSocket 已连接到服务器', 'success');
+
+    // 注册本地助手身份
+    wsClient.emit('helper-register', {
+      helperClientId: config.helperClientId,
+      deviceId: config.deviceId || null,
+      token: config.helperToken
+    });
+  });
+
+  wsClient.on('helper-registered', (data) => {
+    console.log('✅ [WebSocket] 注册成功:', data.message);
+    log('✅ WebSocket 注册成功', 'success', { message: data.message });
+
+    // 首次连接成功，打开浏览器（仅首次）
+    openBrowserOnFirstConnection(config);
+  });
+
+  wsClient.on('helper-command', (data) => {
+    console.log('[WebSocket] 收到服务器命令:', data.command);
+    handleServerCommand(data, config);
+  });
+
+  wsClient.on('helper-error', (data) => {
+    console.error('❌ [WebSocket] 错误:', data.message);
+  });
+
+  wsClient.on('disconnect', (reason) => {
+    console.log(`⚠️  [WebSocket] 连接断开: ${reason}`);
+    log('⚠️ WebSocket 连接断开', 'warning', { reason });
+  });
+
+  wsClient.on('connect_error', (error) => {
+    console.error(`❌ [WebSocket] 连接错误: ${error.message}`);
+    log('❌ WebSocket 连接错误', 'error', { error: error.message });
+  });
+
+  wsClient.on('reconnect', (attemptNumber) => {
+    console.log(`🔄 [WebSocket] 重新连接成功 (尝试 ${attemptNumber} 次)`);
+  });
+
+  wsClient.on('reconnect_error', (error) => {
+    console.warn(`⚠️  [WebSocket] 重连失败:`, error.message);
+  });
+}
+
+function disconnectWebSocket() {
+  if (wsClient) {
+    wsClient.disconnect();
+    wsClient = null;
+    console.log('[WebSocket] 已断开连接');
+  }
+}
+
+// 处理服务器命令
+function handleServerCommand(data, config) {
+  const { command, payload } = data;
+
+  switch (command) {
+    case 'bind-task':
+      // 服务器通知：网页创建了新任务，请绑定文件夹
+      console.log(`[命令] 绑定任务: taskId=${payload.taskId}`);
+      // TODO: 通过 helper-ui.ps1 显示文件夹选择对话框
+      // 这里可以通过 IPC 或状态文件通知 UI 进程
+      break;
+
+    case 'start-task':
+      console.log(`[命令] 开始任务: taskId=${payload.taskId}`);
+      break;
+
+    case 'stop-task':
+      console.log(`[命令] 停止任务: taskId=${payload.taskId}`);
+      break;
+
+    default:
+      console.log(`[命令] 未知命令: ${command}`);
+  }
+}
+
+// 上报状态到服务器
+function reportToServer(type, payload) {
+  if (wsClient && wsClient.connected) {
+    wsClient.emit('helper-report', { type, payload });
+  }
+}
+
+// 首次连接打开浏览器
+function openBrowserOnFirstConnection(config) {
+  const firstRunFlagPath = path.join(__dirname, '.first-run-completed');
+
+  // 如果已经打开过，跳过
+  if (fs.existsSync(firstRunFlagPath)) {
+    console.log('[首次启动] 已完成过，跳过打开浏览器');
+    return;
+  }
+
+  // 标记为已完成
+  fs.writeFileSync(firstRunFlagPath, new Date().toISOString(), 'utf8');
+
+  const apiBase = normalizeApiBase(config.apiBase);
+  const webUrl = apiBase
+    .replace(/\/api\/?$/, '/')
+    + `?helperConnected=${config.helperClientId}`;
+
+  console.log(`[首次启动] 打开浏览器: ${webUrl}`);
+
+  // 根据平台打开浏览器
+  const { exec } = require('child_process');
+  const platform = process.platform;
+  let command;
+
+  if (platform === 'win32') {
+    command = `start "" "${webUrl}"`;
+  } else if (platform === 'darwin') {
+    command = `open "${webUrl}"`;
+  } else {
+    command = `xdg-open "${webUrl}"`;
+  }
+
+  exec(command, (error) => {
+    if (error) {
+      console.error('[首次启动] 打开浏览器失败:', error.message);
+    }
+  });
 }
 
 function removeFileQuietly(fp) {
@@ -275,11 +474,25 @@ async function processTask(config, task) {
   // 计算新文件
   const newFiles = localFiles.filter(name => !processedFiles.has(name));
 
+  // 输出扫描结果日志（每次扫描都显示）
+  const scanResult = `扫描文件夹: 本地 ${localFiles.length} 个, 已上传 ${processedFiles.size} 个, 新增 ${newFiles.length} 个`;
+  console.log(`[任务${taskKey}] ${scanResult}`);
+  log(`📊 ${scanResult}`, 'info', {
+    taskId: task.id,
+    localCount: localFiles.length,
+    uploadedCount: processedFiles.size,
+    newCount: newFiles.length
+  });
+
   if (newFiles.length === 0) {
     return;  // 无新文件，直接返回
   }
 
-  console.log(`[任务${taskKey}] 发现 ${newFiles.length} 个新文件`);
+  console.log(`[任务${taskKey}] 开始上传新文件: ${newFiles.join(', ')}`);
+  log(`📤 开始上传 ${newFiles.length} 个新文件`, 'info', {
+    taskId: task.id,
+    files: newFiles
+  });
 
   // 逐个上传
   for (let i = 0; i < newFiles.length; i++) {
@@ -309,8 +522,25 @@ async function processTask(config, task) {
     try {
       await uploadFile(config, task, fullPath, fileName);
       console.log(`[任务${taskKey}] ✅ ${fileName}`);
+      log(`✅ 上传成功: ${fileName}`, 'success', { taskId: task.id, fileName });
+
+      // 上报上传进度到服务器（通过 WebSocket）
+      reportToServer('file-uploaded', {
+        taskId: task.id,
+        fileName: fileName,
+        timestamp: new Date().toISOString()
+      });
     } catch (e) {
       console.error(`[任务${taskKey}] ❌ ${fileName}: ${e.message}`);
+      log(`❌ 上传失败: ${fileName}`, 'error', { taskId: task.id, fileName, error: e.message });
+
+      // 上报上传失败
+      reportToServer('file-failed', {
+        taskId: task.id,
+        fileName: fileName,
+        error: e.message,
+        timestamp: new Date().toISOString()
+      });
     }
   }
 }
@@ -520,31 +750,142 @@ async function main() {
   acquireSingleInstanceLock();
 
   // 读取配置
+  console.log('[调试] CONFIG_PATH =', CONFIG_PATH);
+  console.log('[调试] 配置文件存在?', fs.existsSync(CONFIG_PATH));
+
   let config = readJson(CONFIG_PATH, null);
   if (!config) {
     console.log('⚠️  未找到配置文件，使用默认配置（仅支持文件夹选择）');
+    log('⚠️ 未找到配置文件，使用默认配置', 'warning');
     config = {
       apiBase: DEFAULT_API_BASE,
       helperToken: null,
       taskFolders: {}
     };
+  } else {
+    console.log('[调试] 配置已加载:', {
+      apiBase: config.apiBase,
+      hasToken: !!config.helperToken,
+      helperClientId: config.helperClientId
+    });
+    log(`✅ 配置已加载 (助手ID: ${config.helperClientId})`, 'success', {
+      apiBase: config.apiBase,
+      helperClientId: config.helperClientId
+    });
   }
 
   // 启动 HTTP 服务
   startHttpServer(config);
 
+  // 连接 WebSocket（如果已配置）
+  connectWebSocket(config);
+
+  // 统计任务文件夹数量
+  const taskFolderCount = config.taskFolders ? Object.keys(config.taskFolders).length : 0;
+
   console.log('🚀 本地助手已启动 v3.0-refactored');
   console.log(`   API: ${config.apiBase || DEFAULT_API_BASE}`);
   console.log(`   配置: ${config.helperToken ? '已配置' : '未配置'}`);
+  console.log(`   任务文件夹: ${taskFolderCount} 个`);
+
+  log('🚀 本地助手已启动', 'success', {
+    version: 'v3.0-refactored',
+    apiBase: config.apiBase || DEFAULT_API_BASE,
+    configured: !!config.helperToken,
+    taskFolderCount: taskFolderCount
+  });
+
+  // 完善启动日志：显示配置状态
+  if (!config.helperToken) {
+    log('⚠️ 未配置 Token，请在界面中激活助手', 'warning');
+  } else if (taskFolderCount === 0) {
+    log('ℹ️ 未绑定任务，等待配置任务文件夹...', 'info');
+  } else {
+    log(`✅ 已绑定 ${taskFolderCount} 个任务文件夹`, 'success', {
+      taskFolders: Object.keys(config.taskFolders)
+    });
+  }
 
   // 主循环：扫描任务 + 上传文件
+  let isFirstLoop = true;  // 标记是否第一次循环
   while (true) {
     try {
       // 重新读取配置（支持热更新）
+      const oldToken = config.helperToken;
+      const oldTaskFolderCount = config.taskFolders ? Object.keys(config.taskFolders).length : 0;
       config = readJson(CONFIG_PATH, config);
+      const newTaskFolderCount = config.taskFolders ? Object.keys(config.taskFolders).length : 0;
+
+      // 检测 Token 变化并输出日志
+      const hasTokenNow = !!config.helperToken;
+      const hadTokenBefore = !!oldToken;
+
+      console.log('[调试-Token检测]', {
+        oldToken: oldToken ? '(存在)' : '(空)',
+        newToken: config.helperToken ? '(存在)' : '(空)',
+        hadTokenBefore,
+        hasTokenNow,
+        changed: hasTokenNow !== hadTokenBefore
+      });
+
+      if (hasTokenNow !== hadTokenBefore) {
+        if (hasTokenNow) {
+          log(`✅ Token 已配置 (助手ID: ${config.helperClientId})`, 'success', {
+            helperClientId: config.helperClientId,
+            apiBase: config.apiBase
+          });
+        } else {
+          log('⚠️ Token 已清空', 'warning');
+        }
+      }
+
+      // Token 变化时重新连接 WebSocket
+      if (config.helperToken !== oldToken) {
+        disconnectWebSocket();
+        connectWebSocket(config);
+      }
+
+      // 第一次循环时，如果已有配置，输出当前状态
+      if (isFirstLoop && hasTokenNow && hasTokenNow === hadTokenBefore) {
+        log(`✅ 配置已加载 (助手ID: ${config.helperClientId})`, 'success', {
+          helperClientId: config.helperClientId,
+          apiBase: config.apiBase
+        });
+      }
+
+      // 检测任务文件夹变化
+      if (newTaskFolderCount !== oldTaskFolderCount) {
+        if (newTaskFolderCount > 0) {
+          log(`✅ 已绑定 ${newTaskFolderCount} 个任务文件夹`, 'success', {
+            taskFolders: Object.keys(config.taskFolders)
+          });
+        } else if (oldTaskFolderCount > 0) {
+          log('⚠️ 任务文件夹已清空', 'warning');
+        }
+      } else if (isFirstLoop && newTaskFolderCount > 0 && oldTaskFolderCount === newTaskFolderCount) {
+        // 第一次循环时，如果已有任务文件夹，输出当前状态
+        log(`✅ 已绑定 ${newTaskFolderCount} 个任务文件夹`, 'success', {
+          taskFolders: Object.keys(config.taskFolders)
+        });
+      }
+
+      isFirstLoop = false;  // 第一次循环结束
 
       // 如果没有 Token，跳过任务处理
       if (!config.helperToken) {
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL * 1000));
+        continue;
+      }
+
+      // 检查任务文件夹配置
+      const taskFolderCount = config.taskFolders ? Object.keys(config.taskFolders).length : 0;
+      if (taskFolderCount === 0) {
+        // 每 30 秒提醒一次（避免日志过多）
+        const now = Math.floor(Date.now() / 1000);
+        if (!global.lastNoTaskWarning || now - global.lastNoTaskWarning >= 30) {
+          log('ℹ️ 未绑定任务，等待配置任务文件夹...', 'info');
+          global.lastNoTaskWarning = now;
+        }
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL * 1000));
         continue;
       }

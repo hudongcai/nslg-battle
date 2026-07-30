@@ -751,7 +751,8 @@ async function leRunTestSingle() {
   const label = b.def.label;
   _showTestModal(`⏳ 正在识别"${label}"...`);
   const token = typeof getToken === 'function' ? getToken() : '';
-  // 只打包选中的单个框
+
+  // 单框测试：只发送当前选中的框
   const singleCategories = {};
   if (!singleCategories[b.def.cat]) singleCategories[b.def.cat] = { boxes: [] };
   singleCategories[b.def.cat].boxes.push({
@@ -759,6 +760,7 @@ async function leRunTestSingle() {
     rx1: +b.rx1.toFixed(4), ry1: +b.ry1.toFixed(4),
     rx2: +b.rx2.toFixed(4), ry2: +b.ry2.toFixed(4),
   });
+
   try {
     const base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : '/api';
     const resp = await fetch(base + '/ocr-preview/test', {

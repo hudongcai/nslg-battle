@@ -33,6 +33,35 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(__dirname, { maxAge: 0 }));
 
+// ========== 本地助手代理 ==========
+// 代理所有 /helper/* 请求到 127.0.0.1:9998
+app.use('/helper', (req, res) => {
+  const options = {
+    hostname: '127.0.0.1',
+    port: 9998,
+    path: req.path + (Object.keys(req.query).length > 0 ? '?' + new URLSearchParams(req.query).toString() : ''),
+    method: req.method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    res.status(proxyRes.statusCode);
+    Object.keys(proxyRes.headers).forEach(key => {
+      res.setHeader(key, proxyRes.headers[key]);
+    });
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (e) => {
+    res.status(503).json({ code: 503, message: '本地助手连接失败: ' + e.message });
+  });
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    proxyReq.write(JSON.stringify(req.body));
+  }
+  proxyReq.end();
+});
+
 // ========== Token ==========
 function extractPhoneFromToken(token) {
   if (!token) return null;
@@ -135,10 +164,14 @@ function findTaskStateByProject(projectId) {
   return null;
 }
 
-// WebSocket 连接管理
+// ========== 本地助手连接管理 ==========
+const helperConnections = new Map(); // helperClientId -> { socket, deviceId, connectedAt }
+
+// WebSocket 连接管理 - 网页客户端
 io.on('connection', (socket) => {
   console.log(`[WebSocket] 客户端连接: ${socket.id}`);
 
+  // 网页加入项目房间
   socket.on('join-project', (projectId) => {
     const roomName = `project-${projectId}`;
     socket.join(roomName);
@@ -151,10 +184,123 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 本地助手注册连接
+  socket.on('helper-register', (data) => {
+    const { helperClientId, deviceId, token } = data || {};
+
+    if (!helperClientId || !token) {
+      socket.emit('helper-error', { message: '缺少必要参数' });
+      return;
+    }
+
+    // TODO: 验证 token 是否有效
+    // 简化版本：直接接受注册
+
+    helperConnections.set(helperClientId, {
+      socket: socket,
+      deviceId: deviceId || null,
+      connectedAt: new Date(),
+      socketId: socket.id
+    });
+
+    socket.helperClientId = helperClientId;
+    socket.isHelper = true;
+
+    console.log(`[Helper-WS] 本地助手已注册: clientId=${helperClientId}, deviceId=${deviceId}, socket=${socket.id}`);
+
+    // 通知本地助手注册成功
+    socket.emit('helper-registered', {
+      helperClientId,
+      message: '连接成功'
+    });
+
+    // 广播给所有网页客户端：本地助手上线
+    io.emit('helper-online', {
+      helperClientId,
+      deviceId,
+      connectedAt: new Date()
+    });
+  });
+
+  // 服务器向本地助手发送命令（由网页触发）
+  socket.on('send-to-helper', (data) => {
+    const { helperClientId, command, payload } = data || {};
+
+    if (!helperClientId || !command) {
+      socket.emit('error', { message: '缺少参数' });
+      return;
+    }
+
+    const helperConn = helperConnections.get(helperClientId);
+    if (!helperConn) {
+      socket.emit('error', { message: '本地助手未连接' });
+      return;
+    }
+
+    console.log(`[Helper-WS] 发送命令到助手: clientId=${helperClientId}, command=${command}`);
+    helperConn.socket.emit('helper-command', { command, payload });
+  });
+
+  // 本地助手上报状态/进度
+  socket.on('helper-report', (data) => {
+    if (!socket.isHelper) return;
+
+    const { type, payload } = data || {};
+    console.log(`[Helper-WS] 助手上报: type=${type}, clientId=${socket.helperClientId}`);
+
+    // 广播给网页客户端
+    io.emit('helper-status', {
+      helperClientId: socket.helperClientId,
+      type,
+      payload,
+      timestamp: new Date()
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log(`[WebSocket] 客户端断开: ${socket.id}`);
+
+    // 如果是本地助手断开
+    if (socket.isHelper && socket.helperClientId) {
+      const helperClientId = socket.helperClientId;
+      helperConnections.delete(helperClientId);
+
+      console.log(`[Helper-WS] 本地助手离线: clientId=${helperClientId}`);
+
+      // 广播给网页客户端：本地助手离线
+      io.emit('helper-offline', {
+        helperClientId,
+        disconnectedAt: new Date()
+      });
+    }
   });
 });
+
+// 辅助函数：向指定本地助手发送命令
+function sendCommandToHelper(helperClientId, command, payload) {
+  const helperConn = helperConnections.get(helperClientId);
+  if (!helperConn) {
+    console.warn(`[Helper-WS] 本地助手未连接: clientId=${helperClientId}`);
+    return false;
+  }
+
+  helperConn.socket.emit('helper-command', { command, payload });
+  return true;
+}
+
+// 辅助函数：获取在线的本地助手列表
+function getOnlineHelpers() {
+  const helpers = [];
+  for (const [clientId, conn] of helperConnections.entries()) {
+    helpers.push({
+      helperClientId: clientId,
+      deviceId: conn.deviceId,
+      connectedAt: conn.connectedAt,
+      socketId: conn.socketId
+    });
+  }
+  return helpers;
+}
 
 async function initDB() {
   try {
@@ -243,14 +389,14 @@ async function initWatchTaskStates() {
       // 清空历史错误（避免"目录不存在"等旧错误导致前端显示异常）
       state.lastError = '';
 
-      // 从 ocr_pending_tasks 统计当前状态
+      // 从 ocr_pending_tasks 统计当前状态（按 project_id 过滤，避免脏数据）
       const [stats] = await pool.query(
         `SELECT
           COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
           COUNT(CASE WHEN status = 'done' THEN 1 END) as processed,
           COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
-         FROM ocr_pending_tasks WHERE helper_task_id = ?`,
-        [task.id]
+         FROM ocr_pending_tasks WHERE project_id = ?`,
+        [task.project_id]
       );
 
       if (stats.length) {
@@ -377,14 +523,14 @@ async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
     watchTaskStates.set(id, state);
   }
 
-  // 从 ocr_pending_tasks 实时统计
+  // 从 ocr_pending_tasks 实时统计（按 project_id 过滤，避免脏数据）
   const [stats] = await pool.query(
     `SELECT
       COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
       COUNT(CASE WHEN status = 'done' THEN 1 END) as processed,
       COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
-     FROM ocr_pending_tasks WHERE helper_task_id = ?`,
-    [id]
+     FROM ocr_pending_tasks WHERE project_id = ?`,
+    [state.projectId]
   );
 
   if (stats.length) {
@@ -393,12 +539,12 @@ async function refreshOcrWatchTaskStats(helperTaskId, extra = {}) {
     state.failedCount = stats[0].failed || 0;
   }
 
-  // 查询待处理文件列表（最多50个，按创建时间排序）
+  // 查询待处理文件列表（最多50个，按创建时间排序，按 project_id 过滤）
   const [pendingRows] = await pool.query(
     `SELECT image_name FROM ocr_pending_tasks
-     WHERE helper_task_id = ? AND status = 'pending'
+     WHERE project_id = ? AND status = 'pending'
      ORDER BY created_at ASC LIMIT 50`,
-    [id]
+    [state.projectId]
   );
   state.pendingFiles = pendingRows.map(row => row.image_name);
 
@@ -500,6 +646,65 @@ app.get('/api/ping', (req, res) => {
       version: '1.7'
     }
   });
+});
+
+// ========== OCR统计信息（匿名可访问）==========
+app.get('/api/ocr-stats', async (req, res) => {
+  try {
+    const projectId = req.query.projectId ? Number(req.query.projectId) : null;
+
+    // 查询 ocr_pending_tasks 总数和状态分布（可选按项目过滤）
+    let ocrQuery = `
+      SELECT
+        COUNT(*) as total,
+        COUNT(CASE WHEN status = 'done' THEN 1 END) as done,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+        COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed
+      FROM ocr_pending_tasks
+    `;
+    const ocrParams = [];
+    if (projectId) {
+      ocrQuery += ' WHERE project_id = ?';
+      ocrParams.push(projectId);
+    }
+    const [ocrStats] = await pool.query(ocrQuery, ocrParams);
+
+    // 查询 battle_gallery 总数（历史累积数据，可选按项目过滤）
+    let battleGalleryQuery = 'SELECT COUNT(*) as count FROM battle_gallery';
+    const battleGalleryParams = [];
+    if (projectId) {
+      battleGalleryQuery += ' WHERE project_id = ?';
+      battleGalleryParams.push(projectId);
+    }
+    const [battleGalleryCount] = await pool.query(battleGalleryQuery, battleGalleryParams);
+
+    res.json({
+      code: 200,
+      data: {
+        projectId: projectId || null,
+        autoReports: {
+          processed: ocrStats[0].done,      // ocr_pending_tasks 已完成数量
+          total: ocrStats[0].total          // ocr_pending_tasks 全部数量
+        },
+        totalRecords: battleGalleryCount[0].count,  // battle_gallery 该项目的所有记录
+        ocrTasks: {
+          total: ocrStats[0].total,
+          done: ocrStats[0].done,
+          pending: ocrStats[0].pending,
+          processing: ocrStats[0].processing,
+          failed: ocrStats[0].failed
+        }
+      }
+    });
+  } catch (err) {
+    console.error('查询OCR统计失败:', err);
+    res.status(500).json({
+      code: 500,
+      message: '查询统计信息失败',
+      error: err.message
+    });
+  }
 });
 
 // ========== 认证 ==========
@@ -1161,8 +1366,7 @@ app.post('/api/battles/ocr-tasks', requireOcrUploadActor, async (req, res) => {
       await refreshOcrWatchTaskStats(helperTaskId, { currentFile: normalizedImageName, lastError: '' });
     }
 
-    // 触发队列处理（不阻塞响应）
-    setImmediate(() => processOcrQueue());
+    // 队列处理器会自动轮询处理，无需手动触发
 
     res.json({ code: 200, message: '任务已加入队列', data: { taskId: result.insertId } });
   } catch (err) {
@@ -1533,63 +1737,100 @@ let queueStats = {
 
 async function processOcrQueue() {
   if (isProcessingQueue) {
-    pendingQueueTrigger = true;
-    return;
+    return;  // 已经有队列处理器在运行，直接返回
   }
 
   isProcessingQueue = true;
   queueProcessorHeartbeat = Date.now();
 
+  const CONCURRENT_LIMIT = 2;  // 并发处理任务数
+  let activeTaskCount = 0;     // 当前正在处理的任务数
+
+  console.log(`[OCR-Queue] 队列处理器开始持续轮询（并发数：${CONCURRENT_LIMIT}）...`);
+
   try {
-    do {
-      pendingQueueTrigger = false;
-
-      // 获取下一个待处理任务
-      const [tasks] = await pool.query(
-        `SELECT id, user_id, project_id, image_base64, image_name,
-                helper_task_id, label_config
-         FROM ocr_pending_tasks
-         WHERE status = 'pending'
-         ORDER BY
-           CASE WHEN helper_task_id IS NOT NULL THEN 0 ELSE 1 END,
-           created_at ASC
-         LIMIT 1`
-      );
-
-      if (!tasks.length) break;
-
-      const task = tasks[0];
-
-      // 标记为处理中
-      await pool.query(
-        'UPDATE ocr_pending_tasks SET status = ?, updated_at = NOW() WHERE id = ?',
-        ['processing', task.id]
-      );
-
-      // 推送状态更新
-      if (task.helper_task_id) {
-        await refreshOcrWatchTaskStats(task.helper_task_id, {
-          currentFile: task.image_name,
-          lastError: ''
-        });
-      }
-
-      // 执行OCR识别
+    while (isProcessingQueue) {
       try {
-        await processOcrTask(task);
-      } catch (e) {
-        console.error(`[OCR-Queue] 任务 ${task.id} 处理失败:`, e.message);
+        // 计算还能处理多少任务
+        const availableSlots = CONCURRENT_LIMIT - activeTaskCount;
+
+        if (availableSlots <= 0) {
+          // 所有槽位都在使用，等待1秒后重试
+          await new Promise(r => setTimeout(r, 1000));
+          queueProcessorHeartbeat = Date.now();
+          continue;
+        }
+
+        // 获取可处理的任务（最多取 availableSlots 条）
+        const [tasks] = await pool.query(
+          `SELECT id, user_id, project_id, image_base64, image_name,
+                  helper_task_id, label_config
+           FROM ocr_pending_tasks
+           WHERE status = 'pending'
+           ORDER BY
+             CASE WHEN helper_task_id IS NOT NULL THEN 0 ELSE 1 END,
+             created_at ASC
+           LIMIT ?`,
+          [availableSlots]
+        );
+
+        if (!tasks.length) {
+          // 没有待处理任务，等待5秒后继续检查
+          await new Promise(r => setTimeout(r, 5000));
+          queueProcessorHeartbeat = Date.now();
+          continue;
+        }
+
+        // 并发处理所有任务
+        for (const task of tasks) {
+          activeTaskCount++;
+
+          // 立即标记为处理中
+          await pool.query(
+            'UPDATE ocr_pending_tasks SET status = ?, updated_at = NOW() WHERE id = ?',
+            ['processing', task.id]
+          );
+
+          // 异步处理任务（不等待完成）
+          (async () => {
+            try {
+              // 推送状态更新
+              if (task.helper_task_id) {
+                await refreshOcrWatchTaskStats(task.helper_task_id, {
+                  currentFile: task.image_name,
+                  lastError: ''
+                });
+              }
+
+              // 执行OCR识别
+              await processOcrTask(task);
+              console.log(`[OCR-Queue] 任务 ${task.id} (${task.image_name}) 处理完成`);
+
+            } catch (e) {
+              console.error(`[OCR-Queue] 任务 ${task.id} 处理失败:`, e.message);
+            } finally {
+              activeTaskCount--;
+              queueProcessorHeartbeat = Date.now();
+            }
+          })();
+        }
+
+        // 短暂等待后继续下一轮检查
+        await new Promise(r => setTimeout(r, 1000));
+        queueProcessorHeartbeat = Date.now();
+
+      } catch (loopErr) {
+        console.error('[OCR-Queue] 循环内部错误:', loopErr.message);
+        // 出错后等待5秒再继续，避免错误导致死循环
+        await new Promise(r => setTimeout(r, 5000));
+        queueProcessorHeartbeat = Date.now();
       }
-
-      // 冷却3秒后处理下一张
-      await new Promise(r => setTimeout(r, 3000));
-
-      queueProcessorHeartbeat = Date.now();
-
-    } while (pendingQueueTrigger);
-
+    }
+  } catch (err) {
+    console.error('[OCR-Queue] 队列处理器崩溃:', err.message);
   } finally {
     isProcessingQueue = false;
+    console.log('[OCR-Queue] 队列处理器已停止');
   }
 }
 
@@ -1861,15 +2102,31 @@ app.get('/api/gallery/imagenames', requireOcrUploadActor, async (req, res) => {
   try {
     let query, params = [req.authUserId];
     const projectId = req.query.projectId || '';
-    if (req.query.successOnly === 'true') {
-      query = `SELECT DISTINCT bg.original_name FROM battle_gallery bg INNER JOIN battle_records br ON bg.battle_id = br.id WHERE bg.uploaded_by = ? AND bg.original_name != '' AND bg.status = 1 AND br.left_general_1 IS NOT NULL AND br.left_general_1 != ''`;
-      if (projectId) { query += ` AND bg.project_id = ?`; params.push(projectId); }
+
+    // 查询 battle_gallery（图库）+ ocr_pending_tasks（待处理）
+    // 避免重复上传：已在图库的 + 正在队列中的 都算"已上传"
+    if (projectId) {
+      query = `
+        SELECT DISTINCT image_name AS name FROM ocr_pending_tasks
+        WHERE user_id = ? AND project_id = ? AND image_name != ''
+        UNION
+        SELECT DISTINCT original_name AS name FROM battle_gallery
+        WHERE uploaded_by = ? AND project_id = ? AND original_name != '' AND status = 1
+      `;
+      params = [req.authUserId, projectId, req.authUserId, projectId];
     } else {
-      query = `SELECT DISTINCT original_name FROM battle_gallery WHERE uploaded_by = ? AND original_name != '' AND status = 1`;
-      if (projectId) { query += ` AND project_id = ?`; params.push(projectId); }
+      query = `
+        SELECT DISTINCT image_name AS name FROM ocr_pending_tasks
+        WHERE user_id = ? AND image_name != ''
+        UNION
+        SELECT DISTINCT original_name AS name FROM battle_gallery
+        WHERE uploaded_by = ? AND original_name != '' AND status = 1
+      `;
+      params = [req.authUserId, req.authUserId];
     }
+
     const [rows] = await pool.query(query, params);
-    res.json({ code: 200, data: rows.map(r => r.original_name) });
+    res.json({ code: 200, data: rows.map(r => r.name) });
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
 
@@ -2164,6 +2421,19 @@ app.post('/api/ocr-preview/test', requireSuperAdmin, async (req, res) => {
     const { projectId, imageBase64, imageToken, categories, playerNames, allianceNames } = req.body;
     if (!imageBase64 && !imageToken) return res.json({ code: 400, message: '缺少 imageBase64 或 imageToken' });
     const cats = await _getCategories(projectId, categories);
+
+    // 调试日志：打印发送给Python的配置
+    console.log('[ocr-test] projectId:', projectId);
+    console.log('[ocr-test] categories keys:', Object.keys(cats));
+    if (cats.stars) {
+      console.log('[ocr-test] stars框数量:', cats.stars.boxes?.length || 0);
+      if (cats.stars.boxes && cats.stars.boxes.length > 0) {
+        console.log('[ocr-test] stars框列表:', cats.stars.boxes.map(b => b.key).join(', '));
+        const testBox = cats.stars.boxes[0];
+        console.log('[ocr-test] 第一个框详情:', testBox);
+      }
+    }
+
     const catKeys = Object.keys(cats);
     const [heroRows, tacticRows] = await Promise.all([
       catKeys.includes('heroNames') ? pool.query('SELECT name FROM ocr_hero_dict ORDER BY id').then(([r]) => r) : Promise.resolve([]),
@@ -2179,6 +2449,16 @@ app.post('/api/ocr-preview/test-stars', requireSuperAdmin, async (req, res) => {
     const { projectId, imageBase64, imageToken, categories, mode = 'both' } = req.body;
     if (!imageBase64 && !imageToken) return res.json({ code: 400, message: '缺少 imageBase64 或 imageToken' });
     const cats = await _getCategories(projectId, categories);
+
+    // 调试日志：打印发送给Python的配置
+    console.log('[test-stars] projectId:', projectId);
+    console.log('[test-stars] mode:', mode);
+    console.log('[test-stars] categories.stars:', cats.stars);
+    console.log('[test-stars] 豆豆框数量:', cats.stars?.boxes?.length || 0);
+    if (cats.stars?.boxes && cats.stars.boxes.length > 0) {
+      console.log('[test-stars] L2豆豆框:', cats.stars.boxes.find(b => b.key === 'L2'));
+    }
+
     const pyResp = await fetch(PADDLE_STARS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imageToken ? '' : imageBase64, imageToken: imageToken || '', categories: cats, mode }), signal: AbortSignal.timeout(180000) });
     res.json({ code: 200, data: await pyResp.json() });
   } catch (err) { res.json({ code: 500, message: err.message }); }
@@ -2524,7 +2804,69 @@ function randomToken(prefix, size = 18) {
   return `${prefix}${crypto.randomBytes(size).toString('hex')}`;
 }
 
+// ========== 本地助手连接状态查询 ==========
+// 查询在线的本地助手列表
+app.get('/api/helpers/online', requireActiveUser, (req, res) => {
+  try {
+    const helpers = getOnlineHelpers();
+    res.json({ code: 200, data: helpers });
+  } catch (err) {
+    console.error('[API] 查询在线助手失败:', err);
+    res.status(500).json({ code: 500, message: '查询失败' });
+  }
+});
+
+// ========== OCR 监听任务管理 ==========
+
+// 公开接口：供监控页面使用（不需要身份验证）
+app.get('/api/ocr-watch/tasks/monitor', async (req, res) => {
+  try {
+    const userId = Number(req.query.userId);
+    if (!userId || !Number.isInteger(userId) || userId <= 0) {
+      return res.json({ code: 400, message: '缺少有效的 userId 参数' });
+    }
+
+    // 从内存获取任务状态
+    const tasks = [];
+    for (const state of watchTaskStates.values()) {
+      // 只返回指定用户的任务
+      if (state.userId !== userId) continue;
+
+      // 查询数据库获取配置信息
+      const [rows] = await pool.query(
+        'SELECT helper_client_id, device_id, created_at, updated_at FROM helper_configs WHERE id = ?',
+        [state.taskId]
+      );
+
+      if (rows.length) {
+        tasks.push({
+          id: state.taskId,
+          projectId: state.projectId,
+          status: state.status,
+          pendingCount: state.pendingCount,
+          processedCount: state.processedCount,
+          failedCount: state.failedCount,
+          currentFile: state.currentFile,
+          lastError: state.lastError,
+          lastHeartbeat: state.lastHeartbeat.toISOString(),
+          helperClientId: rows[0].helper_client_id || null,
+          deviceId: rows[0].device_id || null,
+          createdAt: rows[0].created_at,
+          updatedAt: rows[0].updated_at
+        });
+      }
+    }
+
+    res.json({ code: 200, data: tasks });
+  } catch (err) {
+    console.error('[OCR-Watch] 获取任务失败:', err);
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 // 1. 获取当前项目任务（从内存读取）
+// v4.0: 此接口已废弃 - 本地助手不再从后端获取任务列表
+// 保留接口仅用于前端查询任务状态
 app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
   try {
     const rawProjectId = req.query?.projectId;
@@ -2544,9 +2886,9 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
       // 如果指定了项目，只返回该项目的任务
       if (hasProjectFilter && state.projectId !== projectId) continue;
 
-      // 查询数据库获取 folder_path 等配置信息
+      // 查询数据库获取配置信息（不再返回 folder_path）
       const [rows] = await pool.query(
-        'SELECT folder_path, folder_status, folder_status_message, helper_client_id, device_id, created_at, updated_at FROM helper_configs WHERE id = ?',
+        'SELECT helper_client_id, device_id, created_at, updated_at FROM helper_configs WHERE id = ?',
         [state.taskId]
       );
 
@@ -2559,9 +2901,7 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
         tasks.push({
           id: state.taskId,
           projectId: state.projectId,
-          folderPath: rows[0].folder_path || '',
-          folderStatus: rows[0].folder_status || 'unknown',
-          folderStatusMessage: rows[0].folder_status_message || '',
+          // v4.0: 移除 folderPath, folderStatus, folderStatusMessage（本地助手不再需要）
           status: state.status,
           pendingCount: state.pendingCount,
           processedCount: state.processedCount,
@@ -2589,17 +2929,17 @@ app.get('/api/ocr-watch/tasks', requireOcrUploadActor, async (req, res) => {
   }
 });
 
-// 2. 创建/更新任务
+// v4.0: 此接口已废弃 - 本地助手不再通过后端管理文件夹路径
+// 保留接口仅用于设备绑定和 token 管理
 app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
   try {
-    const { projectId, folderPath, helperClientId, deviceId } = req.body || {};
+    const { projectId, helperClientId, deviceId } = req.body || {};
     const normalizedProjectId = Number(projectId);
 
     if (!Number.isInteger(normalizedProjectId) || normalizedProjectId <= 0) {
       return res.json({ code: 400, message: '项目参数无效' });
     }
 
-    const normalizedFolder = String(folderPath || '').trim().slice(0, 512);
     const normalizedDeviceId = deviceId ? String(deviceId).slice(0, 128) : null;
 
     // 检查是否已存在
@@ -2609,21 +2949,10 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
     );
 
     if (existing.length) {
-      // 更新
+      // 更新设备绑定信息
       const updateFields = ['updated_at = NOW()'];
       const updateParams = [];
 
-      if (normalizedFolder !== undefined) {
-        updateFields.push('folder_path = ?');
-        updateParams.push(normalizedFolder);
-        // 修改目录时：重置状态为 unknown，清空待处理队列
-        updateFields.push('folder_status = ?');
-        updateParams.push('unknown');
-        updateFields.push('folder_status_message = ?');
-        updateParams.push('');
-      }
-
-      // 保存设备绑定信息
       if (helperClientId !== undefined) {
         updateFields.push('helper_client_id = ?');
         updateParams.push(helperClientId);
@@ -2635,15 +2964,6 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
 
       updateParams.push(existing[0].id);
       await pool.query(`UPDATE helper_configs SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
-
-      // 清空该任务的待处理队列
-      if (normalizedFolder !== undefined) {
-        await pool.query(
-          `DELETE FROM ocr_pending_tasks WHERE helper_task_id = ?`,
-          [existing[0].id]
-        );
-        console.log(`[OCR-Watch] 任务 ${existing[0].id} 修改目录，已清空待处理队列`);
-      }
 
       res.json({ code: 200, data: { id: existing[0].id } });
     } else {
@@ -2661,9 +2981,10 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
         helperToken = randomToken('helper-auth-');
       }
 
+      // v4.0: 不再保存 folder_path
       const [result] = await pool.query(
-        'INSERT INTO helper_configs (user_id, project_id, folder_path, helper_client_id, device_id, access_token, token_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NOW(), NOW())',
-        [req.authUserId, normalizedProjectId, normalizedFolder, helperClientId || null, normalizedDeviceId, helperToken]
+        'INSERT INTO helper_configs (user_id, project_id, helper_client_id, device_id, access_token, token_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, NOW(), NOW())',
+        [req.authUserId, normalizedProjectId, helperClientId || null, normalizedDeviceId, helperToken]
       );
       res.json({ code: 200, data: { id: result.insertId } });
     }
@@ -2690,7 +3011,7 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
 
     // 检查任务是否存在并获取配置
     const [task] = await pool.query(
-      'SELECT id, folder_path, helper_client_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
+      'SELECT id, helper_client_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
       [taskId, req.authUserId]
     );
 
@@ -2698,11 +3019,7 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
       return res.json({ code: 404, message: '任务不存在' });
     }
 
-    // 检查目录是否已设置
-    if (!task[0].folder_path && actionMap[action] === 'running') {
-      return res.json({ code: 400, message: '请先设置监听目录' });
-    }
-
+    // v4.0: 移除 folder_path 检查（文件夹路径由本地助手管理）
     if (!task[0].helper_client_id && actionMap[action] === 'running') {
       return res.json({ code: 400, message: '监听任务未绑定本地助手，请重新选择监听目录' });
     }
@@ -2753,57 +3070,18 @@ app.post('/api/ocr-watch/tasks/:id/control', requireActiveUser, async (req, res)
 });
 
 // 4.5. 本地助手上报目录状态
+// v4.0: 此接口已废弃 - 本地助手不再上报目录状态
+// 保留接口以避免旧版本本地助手报错
 app.post('/api/ocr-watch/tasks/:id/folder-status', requireOcrUploadActor, async (req, res) => {
-  try {
-    const taskId = Number(req.params.id);
-    const { status, message } = req.body || {};
-
-    if (!Number.isInteger(taskId) || taskId <= 0) {
-      return res.json({ code: 400, message: '任务参数无效' });
-    }
-
-    const validStatuses = ['unknown', 'ok', 'not_found', 'error'];
-    if (!status || !validStatuses.includes(status)) {
-      return res.json({ code: 400, message: '状态参数无效' });
-    }
-
-    // 更新数据库
-    await pool.query(
-      'UPDATE helper_configs SET folder_status = ?, folder_status_message = ?, updated_at = NOW() WHERE id = ?',
-      [status, String(message || '').slice(0, 512), taskId]
-    );
-
-    // 广播状态更新
-    broadcastTaskUpdate(taskId);
-
-    res.json({ code: 200, message: '状态已更新' });
-  } catch (err) {
-    console.error('[OCR-Watch] 更新目录状态失败:', err);
-    res.json({ code: 500, message: err.message });
-  }
+  // 静默接受请求，不做任何处理
+  res.json({ code: 200, message: '此接口已废弃（v4.0），本地助手不再需要上报目录状态' });
 });
 
-// 4.6. 本地助手心跳更新
+// v4.0: 此接口已废弃 - 本地助手不再发送心跳
+// 保留接口以避免旧版本本地助手报错
 app.post('/api/ocr-watch/tasks/:id/heartbeat', requireOcrUploadActor, async (req, res) => {
-  try {
-    const taskId = Number(req.params.id);
-
-    if (!Number.isInteger(taskId) || taskId <= 0) {
-      return res.json({ code: 400, message: '任务参数无效' });
-    }
-
-    // 只更新心跳时间，不重新统计数据库
-    const state = watchTaskStates.get(taskId);
-    if (state) {
-      state.lastHeartbeat = new Date();
-      broadcastTaskUpdate(taskId);
-    }
-
-    res.json({ code: 200, message: '心跳已更新' });
-  } catch (err) {
-    console.error('[OCR-Watch] 更新心跳失败:', err);
-    res.json({ code: 500, message: err.message });
-  }
+  // 静默接受请求，不做任何处理
+  res.json({ code: 200, message: '此接口已废弃（v4.0），本地助手不再需要发送心跳' });
 });
 
 // 4. 助手进度上报（改为内存状态 + WebSocket 推送）

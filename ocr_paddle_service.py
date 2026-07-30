@@ -1421,8 +1421,7 @@ def test_ocr(req: TestOcrRequest):
             result['rightGenerals'] = right_generals
 
         # ── 豆豆（双校验）──
-        left_stars = [0, 0, 0]
-        right_stars = [0, 0, 0]
+        stars_result = {}  # 单框测试：只返回实际识别的框
         if 'stars' in cats:
             for box in cats['stars'].get('boxes', []):
                 key = box.get('key', '')
@@ -1434,32 +1433,40 @@ def test_ocr(req: TestOcrRequest):
                     log(f'[豆豆-{key}] ⚠️ 区域无效')
                     continue
                 crop = img_arr[y1:y2, x1:x2]
+                ch2, cw2 = crop.shape[:2]
+
+                # 调试：保存裁剪区域到磁盘
+                debug_crop_path = os.path.join(_here, f'debug_crop_{key}.png')
+                crop_bgr_for_save = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(debug_crop_path, crop_bgr_for_save)
+                log(f'[豆豆-{key}] 裁剪区域: ({x1},{y1})-({x2},{y2}) {cw2}x{ch2}px → {debug_crop_path}')
+
                 crop_bgr2 = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
                 crop_gray2 = cv2.cvtColor(crop_bgr2, cv2.COLOR_BGR2GRAY)
-                ch2, cw2 = crop.shape[:2]
                 clahe2 = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                 crop_clahe2 = clahe2.apply(crop_gray2)
                 ref_h2, ref_w2 = _DOT_TPL_GRAY.shape[:2]
                 scales2 = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20]
                 tpl_n, tpl_info2 = 0, 'no_match'
-                for feat2, feat_name2, th2 in [(crop_clahe2, 'clahe', 0.70), (crop_gray2, 'raw', 0.70)]:
+                # 降低阈值：0.60 → 0.55 → 0.50
+                for feat2, feat_name2, th2 in [(crop_clahe2, 'clahe', 0.60), (crop_gray2, 'raw', 0.60)]:
                     c2, info2 = _match_all_templates(feat2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, th2, cw2, ch2, feat_name2)
                     if c2 > tpl_n: tpl_n, tpl_info2 = c2, info2
                     if tpl_n >= 5: break
                 if tpl_n == 0:
-                    c2, info2 = _match_all_templates(crop_clahe2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, 0.55, cw2, ch2, 'lo')
+                    c2, info2 = _match_all_templates(crop_clahe2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, 0.55, cw2, ch2, 'mid')
+                    if c2 > 0: tpl_n, tpl_info2 = c2, info2
+                if tpl_n == 0:
+                    c2, info2 = _match_all_templates(crop_clahe2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, 0.50, cw2, ch2, 'lo')
                     if c2 > 0: tpl_n, tpl_info2 = c2, info2
                 if tpl_n > 0:
                     log(f'[豆豆-{key}] ✅ {tpl_n} 颗 ({tpl_info2})')
                 else:
                     log(f'[豆豆-{key}] ❌ 未匹配 ({tpl_info2})')
-                n = tpl_n
-                side2, idx2 = key[0], int(key[1]) - 1
-                if side2 == 'L': left_stars[idx2] = n
-                else: right_stars[idx2] = n
-        if 'stars' in cats:
-            result['leftStars'] = left_stars
-            result['rightStars'] = right_stars
+                # 单框模式：按key单独返回，不汇总成数组
+                stars_result[key] = tpl_n
+        if stars_result:
+            result['stars'] = stars_result
 
         # ── 战损 ──
         if 'damages' in cats:
