@@ -43,8 +43,8 @@ foreach ($file in $files) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $packageDir $file) -Force
 }
 
-# 复制新版本的 local-helper.minimal.js 作为 local-helper.js
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\local-helper.minimal.js') -Destination (Join-Path $packageDir 'local-helper.js') -Force
+# 复制最新版本的 local-helper.js（包含日志功能）
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'local-helper.js') -Destination (Join-Path $packageDir 'local-helper.js') -Force
 
 # 写入版本信息文件（打包时间）
 $versionInfo = @{
