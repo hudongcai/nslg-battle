@@ -3168,9 +3168,9 @@ app.delete('/api/ocr-watch/tasks/:id', requireActiveUser, async (req, res) => {
       return res.json({ code: 400, message: '任务ID无效' });
     }
 
-    // 检查任务是否存在
+    // 检查任务是否存在，并获取关联的本地助手ID
     const [task] = await pool.query(
-      'SELECT id, user_id, project_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
+      'SELECT id, user_id, project_id, helper_client_id FROM helper_configs WHERE id = ? AND user_id = ? LIMIT 1',
       [taskId, req.authUserId]
     );
 
@@ -3179,6 +3179,7 @@ app.delete('/api/ocr-watch/tasks/:id', requireActiveUser, async (req, res) => {
     }
 
     const projectId = task[0].project_id;
+    const helperClientId = task[0].helper_client_id;
 
     // 1. 删除 ocr_pending_tasks 中对应的待处理任务
     const [deleteTasksResult] = await pool.query(
@@ -3195,7 +3196,15 @@ app.delete('/api/ocr-watch/tasks/:id', requireActiveUser, async (req, res) => {
     // 3. 清理内存中的任务状态
     watchTaskStates.delete(taskId);
 
-    // 4. 广播删除事件到前端
+    // 4. 通知本地助手清理配置
+    if (helperClientId) {
+      const sent = sendCommandToHelper(helperClientId, 'delete-task', { taskId, projectId });
+      if (sent) {
+        console.log(`[OCR-Watch] 已通知本地助手清理配置: clientId=${helperClientId}`);
+      }
+    }
+
+    // 5. 广播删除事件到前端
     if (io) {
       io.to(`project-${projectId}`).emit('task-deleted', { taskId, projectId });
     }

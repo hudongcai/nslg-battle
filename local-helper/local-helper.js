@@ -194,8 +194,41 @@ function handleServerCommand(data, config) {
       console.log(`[命令] 停止任务: taskId=${payload.taskId}`);
       break;
 
+    case 'delete-task':
+      // 服务器通知：监听任务已被删除，清理本地配置
+      console.log(`[命令] 删除任务: taskId=${payload.taskId}, projectId=${payload.projectId}`);
+      handleDeleteTask(payload, config);
+      break;
+
     default:
       console.log(`[命令] 未知命令: ${command}`);
+  }
+}
+
+// 处理删除任务命令
+function handleDeleteTask(payload, config) {
+  const { taskId, projectId } = payload;
+
+  try {
+    // 清理本地配置中与该项目相关的监听信息
+    if (config.projectId === projectId) {
+      console.log(`[删除任务] 清理本地配置: projectId=${projectId}`);
+
+      // 清空监听文件夹路径
+      config.folderPath = '';
+      config.projectId = null;
+
+      // 保存更新后的配置
+      writeJson(CONFIG_PATH, config);
+
+      log(`✅ 监听任务已删除，本地配置已清理`, 'success');
+      console.log(`[删除任务] 本地配置已清理: projectId=${projectId}`);
+    } else {
+      console.log(`[删除任务] 项目ID不匹配，跳过清理: 当前=${config.projectId}, 删除=${projectId}`);
+    }
+  } catch (err) {
+    console.error(`[删除任务] 清理配置失败:`, err);
+    log(`❌ 清理配置失败: ${err.message}`, 'error');
   }
 }
 
