@@ -1,0 +1,6 @@
+@echo off
+echo 正在下载最新诊断脚本...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.zhenwu.fun/diagnose-helper-ui.ps1' -OutFile 'diagnose-helper-ui.ps1'"
+echo 下载完成，正在运行诊断...
+powershell -ExecutionPolicy Bypass -File diagnose-helper-ui.ps1
+pause
