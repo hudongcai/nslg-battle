@@ -23,8 +23,13 @@ $files = @(
 foreach ($file in $files) {
     $fullPath = Join-Path $scriptDir $file
     $exists = Test-Path $fullPath
-    $status = if ($exists) { "✅ 存在" } else { "❌ 不存在" }
-    $color = if ($exists) { "Green" } else { "Red" }
+    if ($exists) {
+        $status = "✅ 存在"
+        $color = "Green"
+    } else {
+        $status = "❌ 不存在"
+        $color = "Red"
+    }
 
     Write-Host "   $status $file" -ForegroundColor $color
     if ($exists) {
