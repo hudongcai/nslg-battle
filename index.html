@@ -754,7 +754,7 @@ document.addEventListener('click', function(e) {
 </head>
 <body>
 <div class="header">
-  <div class="header-main"><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">最新发布 2026.07.31 22:37</span></h1></div>
+  <div class="header-main"><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">最新发布 2026.07.31 23:15</span></h1></div>
   <div class="header-actions">
     <div class="ocr-status" id="ocrStatus"><span class="ocr-dot" id="ocrDot"></span><span id="ocrText">OCR 待检测</span></div>
     <div id="headerStats" style="display:flex;gap:14px;">
@@ -2484,6 +2484,84 @@ if (document.readyState === 'loading') {
 } else {
   // DOMContentLoaded 已触发，直接调用
   appInit();
+}
+</script>
+<script>
+// ========== 本地助手：文件夹选择与配置保存 ==========
+const HELPER_HTTP_BASE = 'http://127.0.0.1:9999';
+
+// 调用本地助手选择文件夹
+async function svrPickFolder() {
+  try {
+    const currentPath = document.getElementById('svrWatchPath')?.value || '';
+    const url = currentPath
+      ? `${HELPER_HTTP_BASE}/select-folder?initialPath=${encodeURIComponent(currentPath)}`
+      : `${HELPER_HTTP_BASE}/select-folder`;
+
+    const resp = await fetch(url);
+    const result = await resp.json();
+
+    if (result.code === 200 && result.data?.path) {
+      document.getElementById('svrWatchPath').value = result.data.path;
+      showToast('已选择文件夹: ' + result.data.path, 'success');
+    } else if (result.code === 200 && !result.data?.path) {
+      showToast('未选择文件夹', 'info');
+    } else {
+      showToast('选择文件夹失败: ' + (result.message || '未知错误'), 'error');
+    }
+  } catch (err) {
+    console.error('[本地助手] 选择文件夹失败:', err);
+    showToast('无法连接本地助手，请确保本地助手正在运行', 'error');
+  }
+}
+
+// 保存监听配置（将文件夹路径绑定到任务）
+async function saveSvrWatchConfig() {
+  try {
+    const folderPath = document.getElementById('svrWatchPath')?.value?.trim();
+    if (!folderPath) {
+      showToast('请先选择监听文件夹', 'warning');
+      return;
+    }
+
+    // 获取当前项目ID
+    const projectId = window.currentProject?.id;
+    if (!projectId) {
+      showToast('请先选择项目', 'warning');
+      return;
+    }
+
+    // 查询该项目的任务ID
+    const taskResp = await fetch('/api/ocr-watch/tasks?projectId=' + projectId, {
+      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('authToken') }
+    });
+    const taskResult = await taskResp.json();
+
+    if (taskResult.code !== 200 || !taskResult.data) {
+      showToast('未找到监听任务，请先创建任务', 'warning');
+      return;
+    }
+
+    const taskId = taskResult.data.id;
+
+    // 调用本地助手的 /bind-task 接口
+    const bindResp = await fetch(`${HELPER_HTTP_BASE}/bind-task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, folderPath })
+    });
+
+    const bindResult = await bindResp.json();
+
+    if (bindResult.code === 200) {
+      showToast('✅ 配置已保存', 'success');
+    } else {
+      showToast('保存配置失败: ' + (bindResult.message || '未知错误'), 'error');
+    }
+  } catch (err) {
+    console.error('[本地助手] 保存配置失败:', err);
+    showToast('无法连接本地助手，请确保本地助手正在运行', 'error');
+  }
 }
 </script>
 <script>
