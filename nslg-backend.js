@@ -3009,7 +3009,17 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
       updateParams.push(existing[0].id);
       await pool.query(`UPDATE helper_configs SET ${updateFields.join(', ')} WHERE id = ?`, updateParams);
 
-      res.json({ code: 200, data: { id: existing[0].id } });
+      // 🔥 确保内存状态存在（如果不存在则创建）
+      const existingTaskId = existing[0].id;
+      if (!watchTaskStates.has(existingTaskId)) {
+        const newState = new TaskState(existingTaskId, req.authUserId, normalizedProjectId, 1);
+        newState.status = 'idle';
+        newState.lastError = '';
+        watchTaskStates.set(existingTaskId, newState);
+        console.log(`✅ 任务已同步到内存: taskId=${existingTaskId}, projectId=${normalizedProjectId}`);
+      }
+
+      res.json({ code: 200, data: { id: existingTaskId } });
     } else {
       // 创建新任务配置
       // 检查用户是否已有 token，如果没有则生成
@@ -3030,7 +3040,16 @@ app.post('/api/ocr-watch/tasks', requireActiveUser, async (req, res) => {
         'INSERT INTO helper_configs (user_id, project_id, helper_client_id, device_id, access_token, token_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, NOW(), NOW())',
         [req.authUserId, normalizedProjectId, helperClientId || null, normalizedDeviceId, helperToken]
       );
-      res.json({ code: 200, data: { id: result.insertId } });
+
+      // 🔥 立即同步到内存状态，避免需要重启服务才能生效
+      const newTaskId = result.insertId;
+      const newState = new TaskState(newTaskId, req.authUserId, normalizedProjectId, 1);
+      newState.status = 'idle';
+      newState.lastError = '';
+      watchTaskStates.set(newTaskId, newState);
+      console.log(`✅ 任务已创建并同步到内存: taskId=${newTaskId}, projectId=${normalizedProjectId}`);
+
+      res.json({ code: 200, data: { id: newTaskId } });
     }
   } catch (err) {
     console.error('[OCR-Watch] 创建/更新任务失败:', err);
