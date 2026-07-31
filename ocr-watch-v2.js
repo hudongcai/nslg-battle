@@ -82,6 +82,44 @@ function initOcrWatchWebSocket() {
     updateOcrWatchUIFromWebSocket(data);
   });
 
+  // 🔥 新增：监听战报创建事件，实时更新数据底表
+  // 注意：只通知其他客户端，OCR上传的客户端已经在 ocr-system.js 中添加过了
+  ocrWatchSocket.on('battle-created', async (data) => {
+    console.log('[战报创建] 收到新战报推送:', data);
+    if (!data || !data.record) return;
+
+    // 只处理当前项目的战报
+    if (window.currentProjectId && String(data.projectId) !== String(window.currentProjectId)) {
+      console.log('[战报创建] 跳过其他项目的战报:', data.projectId, '当前项目:', window.currentProjectId);
+      return;
+    }
+
+    try {
+      // 检查本地是否已存在（避免OCR客户端重复添加）
+      if (typeof allRecords !== 'undefined' && allRecords.find(r => r.id === data.id)) {
+        console.log('[战报创建] 本地已存在，跳过添加:', data.id);
+        return;
+      }
+
+      // 将新战报添加到本地 IndexedDB（使用 dbAddLocal，不触发二次云端同步）
+      if (typeof dbAddLocal === 'function') {
+        const record = data.record;
+        record.id = data.id;
+        record.cloudId = data.id;
+        record.projectId = data.projectId;
+        await dbAddLocal(record);
+        console.log('[战报创建] 已添加到本地 IndexedDB:', data.id);
+
+        // 显示提示
+        if (typeof showToast === 'function') {
+          showToast(`✅ 新战报已添加 (${record.leftPlayer || '未知'} vs ${record.rightPlayer || '未知'})`, 'success');
+        }
+      }
+    } catch (e) {
+      console.error('[战报创建] 添加到本地 IndexedDB 失败:', e);
+    }
+  });
+
   ocrWatchSocket.on('disconnect', () => {
     console.log('[OCR-Watch] WebSocket 断开连接');
   });

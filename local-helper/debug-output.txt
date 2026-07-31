@@ -1,0 +1,266 @@
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.pid, 长度: 60
+[readJson] 解析成功, keys: pid, startedAt
+[调试] CONFIG_PATH = C:\nslg-battle\local-helper\local-helper.config.json
+[调试] 配置文件存在? true
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试] 配置已加载: {
+  apiBase: 'http://localhost:3000/api',
+  hasToken: true,
+  helperClientId: 1
+}
+✅ 配置已加载 (助手ID: 1)
+[WebSocket] 连接到: ws://localhost:3000
+🚀 本地助手已启动 v3.0-refactored
+   API: http://localhost:3000/api
+   配置: 已配置
+   任务文件夹: 1 个
+🚀 本地助手已启动
+✅ 已绑定 1 个任务文件夹
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+✅ 配置已加载 (助手ID: 1)
+✅ 已绑定 1 个任务文件夹
+🌐 HTTP 服务: http://127.0.0.1:9999
+❌ WebSocket 连接错误
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误
+[readJson] 检测到并移除 UTF-8 BOM: C:\nslg-battle\local-helper\local-helper.config.json
+[readJson] 读取文件: C:\nslg-battle\local-helper\local-helper.config.json, 长度: 388
+[readJson] 解析成功, keys: apiBase, helperToken, taskFolders, helperClientId, deviceId, lastFolderPath, clientId
+[调试-Token检测] {
+  oldToken: '(存在)',
+  newToken: '(存在)',
+  hadTokenBefore: true,
+  hasTokenNow: true,
+  changed: false
+}
+❌ WebSocket 连接错误

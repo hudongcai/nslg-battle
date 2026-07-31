@@ -59,6 +59,9 @@ if (Test-Path $nodeModulesSource) {
         'socket.io-parser',
         '@socket.io',
         'engine.io-client',
+        'engine.io-parser',
+        'xmlhttprequest-ssl',
+        'ws',
         'debug',
         'ms'
     )

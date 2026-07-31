@@ -1,0 +1,2113 @@
+[
+  {
+    "timestamp": "2026-07-30T17:01:58.472Z",
+    "level": "success",
+    "message": "✅ 配置已加载 (助手ID: 1)",
+    "details": {
+      "apiBase": "http://localhost:3000/api",
+      "helperClientId": 1
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:01:58.548Z",
+    "level": "success",
+    "message": "🚀 本地助手已启动",
+    "details": {
+      "version": "v3.0-refactored",
+      "apiBase": "http://localhost:3000/api",
+      "configured": true,
+      "taskFolderCount": 1
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:01:58.556Z",
+    "level": "success",
+    "message": "✅ 已绑定 1 个任务文件夹",
+    "details": {
+      "taskFolders": [
+        "1"
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:01:58.560Z",
+    "level": "success",
+    "message": "✅ 配置已加载 (助手ID: 1)",
+    "details": {
+      "helperClientId": 1,
+      "apiBase": "http://localhost:3000/api"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:01:58.562Z",
+    "level": "success",
+    "message": "✅ 已绑定 1 个任务文件夹",
+    "details": {
+      "taskFolders": [
+        "1"
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:01:58.675Z",
+    "level": "success",
+    "message": "✅ WebSocket 已连接到服务器",
+    "details": null
+  },
+  {
+    "timestamp": "2026-07-30T17:01:58.688Z",
+    "level": "success",
+    "message": "✅ WebSocket 注册成功",
+    "details": {
+      "message": "连接成功"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:20:54.885Z",
+    "level": "warning",
+    "message": "⚠️ WebSocket 连接断开",
+    "details": {
+      "reason": "transport close"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:20:56.955Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:21:01.980Z",
+    "level": "success",
+    "message": "✅ WebSocket 已连接到服务器",
+    "details": null
+  },
+  {
+    "timestamp": "2026-07-30T17:21:01.995Z",
+    "level": "success",
+    "message": "✅ WebSocket 注册成功",
+    "details": {
+      "message": "连接成功"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:21:45.144Z",
+    "level": "warning",
+    "message": "⚠️ WebSocket 连接断开",
+    "details": {
+      "reason": "transport close"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:21:47.545Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:21:52.076Z",
+    "level": "success",
+    "message": "✅ WebSocket 已连接到服务器",
+    "details": null
+  },
+  {
+    "timestamp": "2026-07-30T17:21:52.089Z",
+    "level": "success",
+    "message": "✅ WebSocket 注册成功",
+    "details": {
+      "message": "连接成功"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:29:29.886Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:29:34.918Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:29:39.949Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:29:44.976Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:29:49.996Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:29:55.036Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:00.093Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:05.123Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:10.179Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:15.212Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:20.241Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:25.269Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:30.292Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:35.320Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:40.361Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:45.394Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:50.419Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:30:55.443Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:00.817Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:05.856Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 1 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 1
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:05.860Z",
+    "level": "info",
+    "message": "📤 开始上传 1 个新文件",
+    "details": {
+      "taskId": 1,
+      "files": [
+        "shot_20260612_232436.png"
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:06.299Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232436.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260612_232436.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:11.321Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:16.370Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:21.395Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:26.417Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:31.438Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:36.460Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:41.500Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:46.527Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:51.574Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:31:56.609Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:01.725Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:06.780Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:11.812Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:16.909Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:21.934Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:26.969Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:32.006Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:37.027Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:42.059Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:47.098Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:52.127Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:32:57.165Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:02.204Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:07.254Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:12.304Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:17.340Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:22.363Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:27.410Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:32.446Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:37.486Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:42.523Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:47.561Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:52.600Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:33:57.634Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:02.656Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:07.694Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:12.727Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:17.791Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:22.846Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:27.900Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:32.924Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:37.951Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:42.999Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:48.033Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:53.062Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:34:58.099Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:03.145Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:08.184Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:13.222Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:18.261Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:23.299Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:28.347Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:33.415Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:40.527Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:45.565Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 10 个, 新增 7 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 10,
+      "newCount": 7
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:45.571Z",
+    "level": "info",
+    "message": "📤 开始上传 7 个新文件",
+    "details": {
+      "taskId": 1,
+      "files": [
+        "shot_20260615_112214.png",
+        "shot_20260615_112233.png",
+        "shot_20260615_112244.png",
+        "shot_20260615_112403.png",
+        "shot_20260615_112425.png",
+        "shot_20260615_112455.png",
+        "test_monitor_20260717_124838.png"
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:45.950Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260615_112214.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260615_112214.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:46.209Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260615_112233.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260615_112233.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:46.444Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260615_112244.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260615_112244.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:46.723Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260615_112403.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260615_112403.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:46.956Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260615_112425.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260615_112425.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:47.166Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260615_112455.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "shot_20260615_112455.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:47.408Z",
+    "level": "success",
+    "message": "✅ 上传成功: test_monitor_20260717_124838.png",
+    "details": {
+      "taskId": 1,
+      "fileName": "test_monitor_20260717_124838.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:52.433Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:35:57.459Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:02.481Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:07.506Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:12.539Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:17.562Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:22.634Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:27.661Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:32.688Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:37.787Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:42.817Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:47.901Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:52.928Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:36:57.954Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:02.979Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:08.001Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:13.024Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:18.056Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:23.094Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:28.132Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:33.166Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:38.200Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:43.229Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:48.287Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:53.332Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:37:58.366Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:03.391Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:08.451Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:13.505Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:18.557Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:23.586Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:28.620Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:33.652Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:38.693Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:43.718Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:48.763Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:53.799Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:38:58.827Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:39:04.086Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 7 个, 已上传 17 个, 新增 0 个",
+    "details": {
+      "taskId": 1,
+      "localCount": 7,
+      "uploadedCount": 17,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:39:06.381Z",
+    "level": "warning",
+    "message": "⚠️ WebSocket 连接断开",
+    "details": {
+      "reason": "transport close"
+    }
+  },
+  {
+    "timestamp": "2026-07-30T17:39:09.640Z",
+    "level": "success",
+    "message": "✅ WebSocket 已连接到服务器",
+    "details": null
+  },
+  {
+    "timestamp": "2026-07-30T17:39:09.645Z",
+    "level": "success",
+    "message": "✅ WebSocket 注册成功",
+    "details": {
+      "message": "连接成功"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T14:55:34.415Z",
+    "level": "success",
+    "message": "✅ 已绑定 2 个任务文件夹",
+    "details": {
+      "taskFolders": [
+        "1",
+        "6"
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:02.964Z",
+    "level": "warning",
+    "message": "⚠️ WebSocket 连接断开",
+    "details": {
+      "reason": "transport close"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:06.442Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:11.451Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:16.458Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:21.467Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:26.474Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:31.480Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:36.485Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:10:41.497Z",
+    "level": "success",
+    "message": "✅ WebSocket 已连接到服务器",
+    "details": null
+  },
+  {
+    "timestamp": "2026-07-31T15:10:41.504Z",
+    "level": "success",
+    "message": "✅ WebSocket 注册成功",
+    "details": {
+      "message": "连接成功"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:52.858Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 0 个, 新增 9 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 0,
+      "newCount": 9
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:52.861Z",
+    "level": "info",
+    "message": "📤 开始上传 9 个新文件",
+    "details": {
+      "taskId": 6,
+      "files": [
+        "444.png",
+        "shot_20260612_232218.png",
+        "shot_20260612_232227.png",
+        "shot_20260612_232250.png",
+        "shot_20260612_232402.png",
+        "shot_20260612_232421.png",
+        "shot_20260612_232446.png",
+        "shot_20260612_232455.png",
+        "shot_20260612_232506.png"
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:53.091Z",
+    "level": "success",
+    "message": "✅ 上传成功: 444.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "444.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:53.323Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232218.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232218.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:53.632Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232227.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232227.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:53.861Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232250.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232250.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:54.039Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232402.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232402.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:54.224Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232421.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232421.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:54.441Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232446.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232446.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:54.622Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232455.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232455.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:54.847Z",
+    "level": "success",
+    "message": "✅ 上传成功: shot_20260612_232506.png",
+    "details": {
+      "taskId": 6,
+      "fileName": "shot_20260612_232506.png"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:13:59.874Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:04.904Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:09.933Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:14.966Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:20.000Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:25.034Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:30.063Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:35.104Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:40.124Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:45.153Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:50.181Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:14:55.203Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:00.225Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:05.265Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:10.293Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:15.320Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:20.355Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:25.380Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:30.409Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 9 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 9,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:35.435Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:40.457Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:45.479Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:50.508Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:15:55.540Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:00.596Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:05.618Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:10.639Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:15.673Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:20.717Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:25.791Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:30.810Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:35.892Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:40.912Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:45.928Z",
+    "level": "info",
+    "message": "📊 扫描文件夹: 本地 9 个, 已上传 10 个, 新增 0 个",
+    "details": {
+      "taskId": 6,
+      "localCount": 9,
+      "uploadedCount": 10,
+      "newCount": 0
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:49.715Z",
+    "level": "warning",
+    "message": "⚠️ WebSocket 连接断开",
+    "details": {
+      "reason": "transport close"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:52.007Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:16:57.013Z",
+    "level": "error",
+    "message": "❌ WebSocket 连接错误",
+    "details": {
+      "error": "websocket error"
+    }
+  },
+  {
+    "timestamp": "2026-07-31T15:17:02.028Z",
+    "level": "success",
+    "message": "✅ WebSocket 已连接到服务器",
+    "details": null
+  },
+  {
+    "timestamp": "2026-07-31T15:17:02.037Z",
+    "level": "success",
+    "message": "✅ WebSocket 注册成功",
+    "details": {
+      "message": "连接成功"
+    }
+  }
+]

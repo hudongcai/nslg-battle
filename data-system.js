@@ -558,6 +558,23 @@ async function switchTab(tabId, btn) {
   }
 
   console.log('[switchTab] 切换到:', tabId);
+
+  // 🔥 方案A优化：切换到数据tab时，如果有项目ID，先从云端同步最新数据
+  if (tabId === 'data' && window.currentProjectId && window.cloudSync && typeof window.cloudSync.syncProjectRecords === 'function') {
+    // 异步后台同步，不阻塞UI切换
+    (async () => {
+      try {
+        const result = await window.cloudSync.syncProjectRecords(window.currentProjectId);
+        console.log('[switchTab] 云端同步完成:', result);
+        // 同步完成后重新加载数据并刷新显示
+        if (typeof loadAllRecords === 'function') await loadAllRecords();
+        if (typeof renderDataTable === 'function') renderDataTable();
+        if (typeof renderGallery === 'function') renderGallery();
+      } catch(e) {
+        console.warn('[switchTab] 云端同步失败:', e);
+      }
+    })();
+  }
   try { localStorage.setItem('lastTab', tabId); } catch(e) {}
 
   // 先隐藏所有 tab-content（强制用 !important 等价于设置 inline style）

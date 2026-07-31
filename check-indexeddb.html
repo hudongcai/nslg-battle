@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>检查 IndexedDB 数据</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    button { padding: 8px 16px; margin: 5px; cursor: pointer; }
+    pre { background: #2d2d2d; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    .record { border-bottom: 1px solid #444; padding: 5px 0; }
+    .highlight { color: #4ec9b0; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>IndexedDB 数据检查工具</h2>
+  <button onclick="checkData()">检查 IndexedDB 数据</button>
+  <button onclick="clearOldData()">清理非当前项目的数据</button>
+  <button onclick="clearAll()">清空所有 IndexedDB 数据</button>
+  <div id="output"></div>
+
+  <script>
+    const projectId = 1778470540662;
+
+    async function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open('SanmoBattleDB', 5);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function getAllRecords() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(['records'], 'readonly');
+        const store = tx.objectStore('records');
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function checkData() {
+      const output = document.getElementById('output');
+      output.innerHTML = '<h3>正在检查...</h3>';
+
+      try {
+        const records = await getAllRecords();
+
+        const currentProject = records.filter(r => String(r.projectId) === String(projectId));
+        const otherProjects = records.filter(r => String(r.projectId) !== String(projectId));
+
+        let html = `
+          <h3>检查结果</h3>
+          <p>IndexedDB 总记录数: <span class="highlight">${records.length}</span></p>
+          <p>当前项目 (${projectId}) 记录数: <span class="highlight">${currentProject.length}</span></p>
+          <p>其他项目记录数: <span class="highlight">${otherProjects.length}</span></p>
+          <hr>
+          <h4>当前项目的记录 (${currentProject.length} 条)</h4>
+        `;
+
+        currentProject.forEach((r, i) => {
+          html += `<div class="record">${i + 1}. ID=${r.id}, cloudId=${r.cloudId || r.cloud_id || 'N/A'}, projectId=${r.projectId}, attacker=${r.attacker_name || r.leftPlayer || 'N/A'}, enemy=${r.enemy_name || r.rightPlayer || 'N/A'}</div>`;
+        });
+
+        if (otherProjects.length > 0) {
+          html += `<h4 style="color: #ce9178;">其他项目的记录 (${otherProjects.length} 条) - 这些可能是多余的</h4>`;
+          const projectGroups = {};
+          otherProjects.forEach(r => {
+            const pid = r.projectId || 'unknown';
+            if (!projectGroups[pid]) projectGroups[pid] = [];
+            projectGroups[pid].push(r);
+          });
+
+          Object.keys(projectGroups).forEach(pid => {
+            html += `<p style="color: #dcdcaa;">项目 ${pid}: ${projectGroups[pid].length} 条记录</p>`;
+          });
+        }
+
+        output.innerHTML = html;
+      } catch (err) {
+        output.innerHTML = `<p style="color: #f48771;">错误: ${err.message}</p>`;
+      }
+    }
+
+    async function clearOldData() {
+      if (!confirm(`确定要删除非当前项目 (${projectId}) 的所有数据吗？`)) return;
+
+      const output = document.getElementById('output');
+      output.innerHTML = '<h3>正在清理...</h3>';
+
+      try {
+        const db = await openDB();
+        const records = await getAllRecords();
+        const toDelete = records.filter(r => String(r.projectId) !== String(projectId));
+
+        const tx = db.transaction(['records'], 'readwrite');
+        const store = tx.objectStore('records');
+
+        let deleted = 0;
+        for (const r of toDelete) {
+          store.delete(r.id);
+          deleted++;
+        }
+
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+
+        output.innerHTML = `<p style="color: #4ec9b0;">✓ 成功删除 ${deleted} 条旧数据</p>`;
+        setTimeout(checkData, 500);
+      } catch (err) {
+        output.innerHTML = `<p style="color: #f48771;">错误: ${err.message}</p>`;
+      }
+    }
+
+    async function clearAll() {
+      if (!confirm('⚠️ 确定要清空所有 IndexedDB 数据吗？此操作不可恢复！')) return;
+
+      const output = document.getElementById('output');
+      try {
+        await new Promise((resolve, reject) => {
+          const req = indexedDB.deleteDatabase('SanmoBattleDB');
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+        output.innerHTML = `<p style="color: #4ec9b0;">✓ 已清空所有数据</p>`;
+      } catch (err) {
+        output.innerHTML = `<p style="color: #f48771;">错误: ${err.message}</p>`;
+      }
+    }
+  </script>
+</body>
+</html>

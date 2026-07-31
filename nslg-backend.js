@@ -1727,6 +1727,17 @@ app.post('/api/battles/ocr-upload', requireOcrUploadActor, async (req, res) => {
 
     record.id = newId; record.cloudId = newId; record.projectId = projectId;
     record.attackerName = record.leftPlayer || ''; record.enemyName = record.rightPlayer || '';
+
+    // 🔥 新增：推送战报创建事件到前端，触发实时更新
+    if (projectId) {
+      io.to(`project-${projectId}`).emit('battle-created', {
+        id: newId,
+        projectId: projectId,
+        record: record
+      });
+      console.log(`[WebSocket] 推送战报创建事件: battleId=${newId}, project=${projectId}`);
+    }
+
     res.json({ code: 200, data: record });
   } catch (err) { console.error('[OCR-Upload]', err); res.json({ code: 500, message: err.message }); }
 });

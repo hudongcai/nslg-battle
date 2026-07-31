@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>本地助手状态测试</title>
+</head>
+<body>
+    <h1>本地助手状态测试</h1>
+    <button onclick="testStatus()">测试状态接口</button>
+    <button onclick="testSelectFolder()">测试选择文件夹</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testStatus() {
+            try {
+                const resp = await fetch('http://127.0.0.1:9999/status');
+                const data = await resp.json();
+                document.getElementById('result').textContent =
+                    'HTTP Status: ' + resp.status + '\n' +
+                    'Response OK: ' + resp.ok + '\n' +
+                    'Data:\n' + JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('result').textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function testSelectFolder() {
+            try {
+                const resp = await fetch('http://127.0.0.1:9999/select-folder?initialPath=C%3A%5C');
+                const data = await resp.json();
+                document.getElementById('result').textContent =
+                    'HTTP Status: ' + resp.status + '\n' +
+                    'Response OK: ' + resp.ok + '\n' +
+                    'Data:\n' + JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('result').textContent = 'Error: ' + e.message;
+            }
+        }
+    </script>
+</body>
+</html>

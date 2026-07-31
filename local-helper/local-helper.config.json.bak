@@ -1,0 +1,11 @@
+﻿{
+    "apiBase":  "http://localhost:3000/api",
+    "helperToken":  "helper-auth-398976a352767055230ff524c36e801f7411",
+    "taskFolders":  {
+                        "1":  "C:\\nslg-battle\\screenshots\\4"
+                    },
+    "helperClientId":  1,
+    "deviceId":  "device-1785377462977",
+    "lastFolderPath":  "C:\\nslg-battle\\screenshots\\4",
+    "clientId":  null
+}

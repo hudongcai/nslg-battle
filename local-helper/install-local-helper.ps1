@@ -53,6 +53,22 @@ foreach ($file in $payloadFiles) {
     Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $installDir $file) -Force
 }
 
+# 复制 node_modules 目录（如果存在）
+$nodeModulesSource = Join-Path $sourceDir 'node_modules'
+if (Test-Path $nodeModulesSource) {
+    $nodeModulesDest = Join-Path $installDir 'node_modules'
+    # 先删除旧的 node_modules（如果存在）
+    if (Test-Path $nodeModulesDest) {
+        Remove-Item -LiteralPath $nodeModulesDest -Recurse -Force
+    }
+    # 创建目标目录
+    New-Item -ItemType Directory -Path $nodeModulesDest -Force | Out-Null
+    # 复制 node_modules 下的所有内容（不是目录本身）
+    Get-ChildItem -LiteralPath $nodeModulesSource | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $nodeModulesDest -Recurse -Force
+    }
+}
+
 Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'ensure-app-icon.ps1') -OutputPath (Join-Path $installDir 'helper-app.ico') } 'Failed to create the helper icon.'
 
 Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'register-protocol.ps1') } 'Failed to register the local helper protocol.'
