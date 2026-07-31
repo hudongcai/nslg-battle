@@ -6,7 +6,7 @@ Write-Host ""
 
 # 1. 当前脚本所在目录
 $scriptDir = $PSScriptRoot
-Write-Host "1. 脚本所在目录 (\$PSScriptRoot):" -ForegroundColor Yellow
+Write-Host "1. 脚本所在目录:" -ForegroundColor Yellow
 Write-Host "   $scriptDir" -ForegroundColor White
 Write-Host ""
 
@@ -23,19 +23,14 @@ $files = @(
 foreach ($file in $files) {
     $fullPath = Join-Path $scriptDir $file
     $exists = Test-Path $fullPath
-    if ($exists) {
-        $status = "✅ 存在"
-        $color = "Green"
-    } else {
-        $status = "❌ 不存在"
-        $color = "Red"
-    }
 
-    Write-Host "   $status $file" -ForegroundColor $color
     if ($exists) {
+        Write-Host "   [OK] $file" -ForegroundColor Green
         $size = (Get-Item $fullPath).Length
-        Write-Host "      路径: $fullPath" -ForegroundColor Gray
-        Write-Host "      大小: $size 字节" -ForegroundColor Gray
+        Write-Host "        路径: $fullPath" -ForegroundColor Gray
+        Write-Host "        大小: $size 字节" -ForegroundColor Gray
+    } else {
+        Write-Host "   [NO] $file" -ForegroundColor Red
     }
 }
 Write-Host ""
@@ -44,12 +39,12 @@ Write-Host ""
 Write-Host "3. 检查运行中的进程:" -ForegroundColor Yellow
 $nodeProcesses = Get-Process -Name node -ErrorAction SilentlyContinue
 if ($nodeProcesses) {
-    Write-Host "   ✅ 找到 $($nodeProcesses.Count) 个 node.exe 进程" -ForegroundColor Green
+    Write-Host "   找到 $($nodeProcesses.Count) 个 node.exe 进程" -ForegroundColor Green
     foreach ($proc in $nodeProcesses) {
-        Write-Host "      PID: $($proc.Id), 工作目录: $($proc.Path)" -ForegroundColor Gray
+        Write-Host "      PID: $($proc.Id)" -ForegroundColor Gray
     }
 } else {
-    Write-Host "   ❌ 未找到 node.exe 进程" -ForegroundColor Red
+    Write-Host "   未找到 node.exe 进程" -ForegroundColor Red
 }
 Write-Host ""
 
@@ -66,13 +61,13 @@ if (Test-Path $logPath) {
             Write-Host "   [$($log.time)] $($log.level): $($log.message)" -ForegroundColor Cyan
         }
         Write-Host ""
-        Write-Host "   ✅ 日志文件可以正常读取，共 $($logs.Count) 条记录" -ForegroundColor Green
+        Write-Host "   日志文件可以正常读取，共 $($logs.Count) 条记录" -ForegroundColor Green
     } catch {
-        Write-Host "   ❌ 读取日志文件失败: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "   读取日志文件失败: $($_.Exception.Message)" -ForegroundColor Red
     }
 } else {
     Write-Host "4. 日志文件:" -ForegroundColor Yellow
-    Write-Host "   ❌ local-helper.log.json 不存在于 $scriptDir" -ForegroundColor Red
+    Write-Host "   local-helper.log.json 不存在于 $scriptDir" -ForegroundColor Red
 }
 Write-Host ""
 
@@ -87,12 +82,12 @@ $possiblePaths = @(
 
 foreach ($path in $possiblePaths) {
     if (Test-Path $path) {
-        Write-Host "   ✅ 找到: $path" -ForegroundColor Green
+        Write-Host "   找到: $path" -ForegroundColor Green
         $logInPath = Join-Path $path 'local-helper.log.json'
         if (Test-Path $logInPath) {
-            Write-Host "      ✅ 该目录下有日志文件" -ForegroundColor Green
+            Write-Host "      该目录下有日志文件" -ForegroundColor Green
         } else {
-            Write-Host "      ⚠️  该目录下无日志文件" -ForegroundColor Yellow
+            Write-Host "      该目录下无日志文件" -ForegroundColor Yellow
         }
     }
 }
