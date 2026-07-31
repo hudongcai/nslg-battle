@@ -46,6 +46,40 @@ foreach ($file in $files) {
 # 复制最新版本的 local-helper.js（包含日志功能）
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'local-helper.js') -Destination (Join-Path $packageDir 'local-helper.js') -Force
 
+# 复制必要的 node_modules 依赖（只复制 socket.io-client 及其依赖）
+$nodeModulesSource = Join-Path $PSScriptRoot '..\node_modules'
+$nodeModulesDest = Join-Path $packageDir 'node_modules'
+if (Test-Path $nodeModulesSource) {
+    Write-Host "正在复制必要的依赖模块..."
+    New-Item -ItemType Directory -Path $nodeModulesDest -Force | Out-Null
+
+    # socket.io-client 及其必要依赖
+    $requiredModules = @(
+        'socket.io-client',
+        'socket.io-parser',
+        '@socket.io',
+        'engine.io-client',
+        'debug',
+        'ms'
+    )
+
+    foreach ($module in $requiredModules) {
+        $srcPath = Join-Path $nodeModulesSource $module
+        if (Test-Path $srcPath) {
+            $destPath = Join-Path $nodeModulesDest $module
+            Copy-Item -LiteralPath $srcPath -Destination $destPath -Recurse -Force
+            Write-Host "  ✅ 已复制: $module"
+        } else {
+            Write-Warning "  ⚠️  未找到: $module"
+        }
+    }
+
+    Write-Host "✅ 依赖模块复制完成"
+} else {
+    Write-Error "❌ 未找到 node_modules，请先运行 npm install"
+    exit 1
+}
+
 # 写入版本信息文件（打包时间）
 $versionInfo = @{
     buildTime = (Get-Date).ToString('yyyy-MM-dd HH:mm')
