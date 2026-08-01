@@ -1365,11 +1365,10 @@ app.post('/api/battles/ocr-tasks', requireOcrUploadActor, async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO ocr_pending_tasks
-       (user_id, project_id, image_base64, image_name, label_config, battle_date, helper_task_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
+       (user_id, project_id, image_base64, image_name, label_config, helper_task_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
       [userId, projectId || null, cleanImage, normalizedImageName,
        labelConfig ? JSON.stringify(labelConfig) : null,
-       battleDate || null,
        helperTaskId || null]
     );
 
@@ -1513,7 +1512,7 @@ app.post('/api/battles/ocr-execute', requireActiveUser, async (req, res) => {
     }
 
     const now = new Date();
-    record.battleDate = task.battle_date || now.toISOString().split('T')[0];
+    record.battleDate = now.toISOString().split('T')[0];
     record.time = now.toLocaleString('zh-CN');
 
     const fv = v => (v && v !== '') ? v : null;
@@ -1932,7 +1931,7 @@ async function processOcrTask(task) {
 
     // 7. 保存战报数据
     const now = new Date();
-    record.battleDate = task.battle_date || now.toISOString().split('T')[0];
+    record.battleDate = now.toISOString().split('T')[0];
     record.time = now.toLocaleString('zh-CN');
 
     const fv = v => (v && v !== '') ? v : null;
