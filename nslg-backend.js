@@ -1365,9 +1365,12 @@ app.post('/api/battles/ocr-tasks', requireOcrUploadActor, async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO ocr_pending_tasks
-       (user_id, project_id, image_base64, image_name, helper_task_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
-      [userId, projectId || null, cleanImage, normalizedImageName, helperTaskId || null]
+       (user_id, project_id, image_base64, image_name, label_config, battle_date, helper_task_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
+      [userId, projectId || null, cleanImage, normalizedImageName,
+       labelConfig ? JSON.stringify(labelConfig) : null,
+       battleDate || null,
+       helperTaskId || null]
     );
 
     // 如果是自动监听任务，更新 helper_configs 的 pending_count
@@ -1911,6 +1914,10 @@ async function processOcrTask(task) {
     }
 
     const { record, paddleRaw, paddleProcessError } = ocrResult;
+
+    // 🔍 调试：输出OCR原始结果
+    console.log('[OCR-Debug] paddleRaw:', JSON.stringify(paddleRaw, null, 2));
+    console.log('[OCR-Debug] record:', JSON.stringify(record, null, 2));
 
     // 6. 处理失败情况
     if (paddleProcessError) {
