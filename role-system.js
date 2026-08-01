@@ -89,14 +89,14 @@ const BUILTIN_ROLES = [
   {
     id: 'member',
     name: '普通成员',
-    description: '仅可访问被分配的项目，无管理权限',
+    description: '可访问被分配的项目，可导入战报和查看克制分析',
     isBuiltIn: true,
     permissions: {
       projectManage:true, library:false, ranking:false, peijiang:false, yanwu:false, systemConfig:false,
       rolemanage:false, userManage:false, dataperm:false, dataManage:false, cloudService:false, syslog:false,
       projCreate:false, projEdit:false, projDelete:false, projMember:false, projVisibilityToggle:false,
-      dataImport:false, dataBatchSelect:false, dataRecordDelete:false, dataTableDelete:false, dataExport:false,
-      winrateAnalysis:false,
+      dataImport:true, dataBatchSelect:false, dataRecordDelete:false, dataTableDelete:false, dataExport:false,
+      winrateAnalysis:true,
     },
   },
 ];
