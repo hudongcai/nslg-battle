@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Silent
 )
 
@@ -69,7 +69,15 @@ if (Test-Path $nodeModulesSource) {
     }
 }
 
-Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'ensure-app-icon.ps1') -OutputPath (Join-Path $installDir 'helper-app.ico') } 'Failed to create the helper icon.'
+# 创建图标
+$iconScriptPath = Join-Path $installDir 'ensure-app-icon.ps1'
+$iconOutputPath = Join-Path $installDir 'helper-app.ico'
+Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File $iconScriptPath -OutputPath $iconOutputPath } 'Failed to create the helper icon.'
 
-Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'register-protocol.ps1') } 'Failed to register the local helper protocol.'
-Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'create-shortcuts.ps1') } 'Failed to create the desktop shortcut.'
+# 注册协议
+$registerScriptPath = Join-Path $installDir 'register-protocol.ps1'
+Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File $registerScriptPath } 'Failed to register the local helper protocol.'
+
+# 创建快捷方式
+$shortcutScriptPath = Join-Path $installDir 'create-shortcuts.ps1'
+Invoke-Step { & powershell -NoProfile -ExecutionPolicy Bypass -File $shortcutScriptPath } 'Failed to create the desktop shortcut.'
