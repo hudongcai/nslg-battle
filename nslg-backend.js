@@ -2052,6 +2052,19 @@ async function processOcrTask(task) {
       });
     }
 
+    // 🔥 新增：推送战报创建事件到前端，触发实时更新
+    if (task.project_id) {
+      record.id = newId;
+      record.cloudId = newId;
+      record.projectId = task.project_id;
+      io.to(`project-${task.project_id}`).emit('battle-created', {
+        id: newId,
+        projectId: task.project_id,
+        record: record
+      });
+      console.log(`[WebSocket] 推送战报创建事件: battleId=${newId}, project=${task.project_id}`);
+    }
+
     // 13. 更新统计
     const processTime = Date.now() - startTime;
     queueStats.lastProcessTime = processTime;

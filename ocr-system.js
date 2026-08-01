@@ -1194,7 +1194,10 @@ async function startBatchProcess() {
     const autoQueueAreaDone = document.getElementById('autoQueueArea');
     if (queueAreaDone) queueAreaDone.classList.remove('queue-paused');
     if (autoQueueAreaDone) autoQueueAreaDone.classList.remove('queue-paused');
-    throttledRenderAll();
+
+    // 🔥 批处理完成后立即刷新UI，不使用节流（确保数据立即显示）
+    _doRenderAll();
+
     updateOCRProgress();
     updateOCRStatus('ok', 'OCR 就绪');
     clearBatchProgress();
