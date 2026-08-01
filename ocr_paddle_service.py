@@ -267,53 +267,49 @@ def _process_template_rgba(tpl_rgba: np.ndarray):
     return gray, edge
 
 def _load_dot_template():
-    """加载所有豆豆模板（原始 + 从样本提取的暗/亮模板）"""
+    """加载单豆模板（暗色和亮色各一个）"""
     global _DOT_TPL_GRAY, _DOT_TPL_EDGE, _DOT_TPL_LIST
 
-    # 1) 加载原始主模板（如果不存在，稍后从额外模板加载第一个作为主模板）
-    tpl_path = os.path.join(_here, 'dot_template.png')
-    main_loaded = False
-    if os.path.exists(tpl_path):
-        tpl_rgba = cv2.imread(tpl_path, cv2.IMREAD_UNCHANGED)
-        if tpl_rgba is not None and len(tpl_rgba.shape) == 3 and tpl_rgba.shape[2] == 4:
-            _DOT_TPL_GRAY, _DOT_TPL_EDGE = _process_template_rgba(tpl_rgba)
-            _DOT_TPL_LIST.append(('original', _DOT_TPL_GRAY, _DOT_TPL_EDGE))
-            main_loaded = True
-            _debug_msg('加载主模板: ' + tpl_path)
-        else:
-            _debug_msg('主模板加载失败（格式错误），将使用备用模板: ' + tpl_path)
-    else:
-        _debug_msg('主模板不存在，将使用备用模板: ' + tpl_path)
+    # 1) 加载暗色和亮色单豆模板（从专用目录）
+    template_dir = os.path.join(_here, 'dot_templates')
+    dark_path = os.path.join(template_dir, 'dot_dark.png')
+    light_path = os.path.join(template_dir, 'dot_light.png')
 
-    # 2) 加载额外模板 (从样本提取的)
-    tpl_dir = os.path.join(_here, 'dot_templates_out')
-    if os.path.isdir(tpl_dir):
-        import glob as _glob
-        ref_files = sorted(_glob.glob(os.path.join(tpl_dir, '*_ref.png')))
-        loaded = 0
-        for ref_path in ref_files:
-            name = os.path.basename(ref_path).replace('_ref.png', '')
-            tpl_rgba = cv2.imread(ref_path, cv2.IMREAD_UNCHANGED)
-            if tpl_rgba is None or len(tpl_rgba.shape) < 3 or tpl_rgba.shape[2] != 4:
-                continue
-            gray, edge = _process_template_rgba(tpl_rgba)
-            if gray is not None:
-                # 如果主模板未加载，使用第一个额外模板作为主模板
-                if not main_loaded:
-                    _DOT_TPL_GRAY, _DOT_TPL_EDGE = gray, edge
-                    _DOT_TPL_LIST.append(('original_from_' + name, gray, edge))
-                    main_loaded = True
-                    _debug_msg('使用备用模板作为主模板: ' + ref_path)
-                else:
-                    _DOT_TPL_LIST.append((name, gray, edge))
-                loaded += 1
-        _debug_msg('加载额外模板: %d 个 (total=%d)' % (loaded, len(_DOT_TPL_LIST)))
+    main_loaded = False
+
+    # 加载暗色模板
+    if os.path.exists(dark_path):
+        dark_rgba = cv2.imread(dark_path, cv2.IMREAD_UNCHANGED)
+        if dark_rgba is not None and len(dark_rgba.shape) == 3 and dark_rgba.shape[2] == 4:
+            dark_gray, dark_edge = _process_template_rgba(dark_rgba)
+            _DOT_TPL_LIST.append(('dark', dark_gray, dark_edge))
+            if not main_loaded:
+                _DOT_TPL_GRAY, _DOT_TPL_EDGE = dark_gray, dark_edge
+                main_loaded = True
+            _debug_msg('加载暗色单豆模板: ' + dark_path)
+        else:
+            _debug_msg('暗色模板加载失败（格式错误）: ' + dark_path)
     else:
-        _debug_msg('模板目录不存在: %s, 仅使用原始模板' % tpl_dir)
+        _debug_msg('暗色模板不存在: ' + dark_path)
+
+    # 加载亮色模板
+    if os.path.exists(light_path):
+        light_rgba = cv2.imread(light_path, cv2.IMREAD_UNCHANGED)
+        if light_rgba is not None and len(light_rgba.shape) == 3 and light_rgba.shape[2] == 4:
+            light_gray, light_edge = _process_template_rgba(light_rgba)
+            _DOT_TPL_LIST.append(('light', light_gray, light_edge))
+            if not main_loaded:
+                _DOT_TPL_GRAY, _DOT_TPL_EDGE = light_gray, light_edge
+                main_loaded = True
+            _debug_msg('加载亮色单豆模板: ' + light_path)
+        else:
+            _debug_msg('亮色模板加载失败（格式错误）: ' + light_path)
+    else:
+        _debug_msg('亮色模板不存在: ' + light_path)
 
     # 最终检查：确保至少加载了一个模板
     if not main_loaded or _DOT_TPL_GRAY is None:
-        raise RuntimeError('无法加载任何豆豆模板，请检查 dot_template.png 或 dot_templates_out 目录')
+        raise RuntimeError('无法加载任何豆豆模板，请检查 dot_templates/dot_dark.png 和 dot_light.png')
 
     _debug_msg('豆豆模板: %dx%d edge=%d (total_templates=%d)' % (
         _DOT_TPL_GRAY.shape[1], _DOT_TPL_GRAY.shape[0],
@@ -327,7 +323,11 @@ _COUNT_TPLS: list = []  # [(count, label, gray, mask_uint8), ...]
 
 def _load_count_templates():
     global _COUNT_TPLS
-    tpl_dir = os.path.join(_here, '字典库', '02-豆豆')
+    # 优先从doudou目录加载
+    tpl_dir = os.path.join(_here, 'doudou')
+    if not os.path.isdir(tpl_dir):
+        # 回退到字典库目录
+        tpl_dir = os.path.join(_here, '字典库', '02-豆豆')
     if not os.path.isdir(tpl_dir):
         _debug_msg('整体豆豆模板目录不存在: ' + tpl_dir)
         return
@@ -345,7 +345,7 @@ def _load_count_templates():
             blended = rgb * a_f[:, :, np.newaxis] + 128.0 * (1 - a_f[:, :, np.newaxis])
             gray  = cv2.cvtColor(blended.astype(np.uint8), cv2.COLOR_RGB2GRAY)
             _COUNT_TPLS.append((n, f'{variant}{n}', gray, alpha))
-    _debug_msg(f'整体豆豆模板: {len(_COUNT_TPLS)} 个')
+    _debug_msg(f'整体豆豆模板: {len(_COUNT_TPLS)} 个 (from {tpl_dir})')
 
 _load_count_templates()
 
@@ -426,7 +426,7 @@ def _match_one(crop_feat: np.ndarray, tpl: np.ndarray,
         scores = res[ys, xs]
         pts = sorted(zip(xs.tolist(), ys.tolist(), scores.tolist()),
                      key=lambda p: p[2], reverse=True)
-        nms_dist = max(20, int(sw * 0.65))
+        nms_dist = max(10, int(sw * 0.35))
         kept = _dot_nms(pts, min_dist=nms_dist)
         count = min(5, len(kept))
         if count > best_count:
@@ -459,75 +459,360 @@ def _match_all_templates(crop_feat: np.ndarray, tpl_list: list,
     return best_count, best_info
 
 
-def _count_stars_by_color(crop_rgb: np.ndarray) -> int:
-    """用橙红火焰色统计亮豆豆数量（主方法）。
-    亮豆豆：HSV H<25°, S>80, V>150（来自 doudou/ 样本校准）
-    暗豆豆：V<130，不计入。
+def _count_stars_by_color(crop_rgb: np.ndarray, debug_label: str = '') -> tuple:
+    """用橙红火焰色统计豆豆数量（优化版）。
+
+    检测亮豆豆和暗豆豆，通过水平投影计数。
+    返回 (count, debug_info)
     """
     ch, cw = crop_rgb.shape[:2]
     if cw < 8 or ch < 4:
-        return 0
+        return 0, 'too_small'
     bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
 
-    # 亮橙红掩码（含 H≈0/180 两端红色）
-    m1 = cv2.inRange(hsv, np.array([0, 80, 150]), np.array([25, 255, 255]))
-    m2 = cv2.inRange(hsv, np.array([160, 80, 150]), np.array([180, 255, 255]))
-    mask = cv2.bitwise_or(m1, m2)
+    # 平衡的颜色阈值
+    # 亮豆豆：高饱和度+高亮度
+    m1 = cv2.inRange(hsv, np.array([0, 110, 190]), np.array([30, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([155, 110, 190]), np.array([180, 255, 255]))
 
-    # 形态学膨胀，连通同一豆豆内的碎片
+    # 暗豆豆：中等饱和度+中等亮度
+    m3 = cv2.inRange(hsv, np.array([0, 75, 65]), np.array([35, 255, 190]))
+    m4 = cv2.inRange(hsv, np.array([150, 75, 65]), np.array([180, 255, 190]))
+
+    # 合并所有掩码
+    mask = cv2.bitwise_or(cv2.bitwise_or(m1, m2), cv2.bitwise_or(m3, m4))
+
+    # 形态学操作：先开运算去除小噪点，再闭运算填充豆豆内部
+    k_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_small, iterations=1)
+
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    mask = cv2.dilate(mask, k, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=1)
 
     # 水平投影：每列的亮像素数
     proj = np.sum(mask > 0, axis=0).astype(float)
 
-    # 平滑后找峰值，最少间距 = 区域宽度 / 8（5个豆豆中最小间距）
+    # 平滑后找峰值
     from scipy.signal import find_peaks
     from scipy.ndimage import gaussian_filter1d
-    proj_smooth = gaussian_filter1d(proj, sigma=3)
-    min_dist = max(8, cw // 8)
-    threshold = max(2.0, proj_smooth.max() * 0.25)
-    peaks, _ = find_peaks(proj_smooth, height=threshold, distance=min_dist)
-    return min(5, len(peaks))
+    proj_smooth = gaussian_filter1d(proj, sigma=3.2)
+
+    # 平衡的峰值检测参数
+    min_dist = max(13, cw // 6)  # 适中的最小间距
+    threshold = max(6.0, proj_smooth.max() * 0.25)  # 降低到25%阈值
+
+    # 降低峰值显著性要求
+    peaks, properties = find_peaks(proj_smooth, height=threshold, distance=min_dist, prominence=threshold * 0.20)
+
+    count = min(5, len(peaks))
+
+    # 构建调试信息
+    mask_pixels = np.count_nonzero(mask)
+    debug_info = f'peaks={len(peaks)} mask_px={mask_pixels} th={threshold:.1f} dist={min_dist}'
+
+    return count, debug_info
+
+
+def _count_stars_by_contours(crop_rgb: np.ndarray, debug_label: str = '') -> tuple:
+    """基于连通域+面积估算的豆豆计数。
+
+    检测橙红色区域，用连通域分析统计独立的豆豆数量。
+    对于连接在一起的大区域，使用面积估算。
+    返回 (count, debug_info)
+    """
+    ch, cw = crop_rgb.shape[:2]
+    if cw < 8 or ch < 4:
+        return 0, 'too_small'
+
+    bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+
+    # 检测橙红色豆豆（亮+暗）
+    m1 = cv2.inRange(hsv, np.array([0, 100, 160]), np.array([30, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([155, 100, 160]), np.array([180, 255, 255]))
+    m3 = cv2.inRange(hsv, np.array([0, 70, 60]), np.array([35, 255, 160]))
+    m4 = cv2.inRange(hsv, np.array([150, 70, 60]), np.array([180, 255, 160]))
+
+    mask = cv2.bitwise_or(cv2.bitwise_or(m1, m2), cv2.bitwise_or(m3, m4))
+
+    # 轻度形态学操作
+    k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_open, iterations=1)
+
+    # 查找连通域
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # 分析每个连通域
+    valid_regions = []
+    # 根据区域宽度估算单豆的平均面积（更准确）
+    # 假设5个豆豆水平排列，每个豆豆宽度约为 cw/5，面积约为 (cw/5)*(ch*0.8)
+    single_bean_area = (cw / 5.0) * (ch * 0.8) * 0.6  # 0.6是豆豆的填充率
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < single_bean_area * 0.2:  # 太小，噪音
+            continue
+
+        x, y, w, h = cv2.boundingRect(cnt)
+        aspect_ratio = float(w) / h if h > 0 else 0
+
+        # 判断是否是单个豆豆
+        if area <= single_bean_area * 1.8 and 0.2 <= aspect_ratio <= 2.5:
+            # 单个豆豆，直接计数
+            valid_regions.append((x, 1, area))
+        else:
+            # 可能是多个豆豆连接在一起
+            # 根据宽度估算更准确：宽度 / (区域宽度/5)
+            estimated_by_width = max(1, min(5, int(round(w / (cw / 5.0)))))
+            # 根据面积估算
+            estimated_by_area = max(1, min(5, int(round(area / single_bean_area))))
+            # 取两者的平均值（四舍五入）
+            estimated_count = max(1, min(5, int(round((estimated_by_width + estimated_by_area) / 2.0))))
+            valid_regions.append((x, estimated_count, area))
+
+    # 按x坐标排序
+    valid_regions.sort(key=lambda r: r[0])
+
+    # 计算总数
+    total_count = sum(r[1] for r in valid_regions)
+    count = min(5, total_count)
+
+    # 构建调试信息
+    mask_pixels = np.count_nonzero(mask)
+    region_info = [f"{r[1]}豆a{int(r[2])}" for r in valid_regions[:5]]
+    debug_info = f'regions={len(valid_regions)} total={count} sba={int(single_bean_area)} [{",".join(region_info)}]'
+
+    return count, debug_info
+    """用橙红火焰色统计豆豆数量（优化版）。
+
+    检测亮豆豆和暗豆豆，通过水平投影计数。
+    返回 (count, debug_info)
+    """
+    ch, cw = crop_rgb.shape[:2]
+    if cw < 8 or ch < 4:
+        return 0, 'too_small'
+    bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+
+    # 平衡的颜色阈值
+    # 亮豆豆：高饱和度+高亮度
+    m1 = cv2.inRange(hsv, np.array([0, 110, 190]), np.array([30, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([155, 110, 190]), np.array([180, 255, 255]))
+
+    # 暗豆豆：中等饱和度+中等亮度
+    m3 = cv2.inRange(hsv, np.array([0, 75, 65]), np.array([35, 255, 190]))
+    m4 = cv2.inRange(hsv, np.array([150, 75, 65]), np.array([180, 255, 190]))
+
+    # 合并所有掩码
+    mask = cv2.bitwise_or(m1, m2)
+    mask = cv2.bitwise_or(mask, m3)
+    mask = cv2.bitwise_or(mask, m4)
+
+    # 形态学操作：先开运算去除小噪点，再闭运算填充豆豆内部
+    k_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, k_small, iterations=1)
+
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k, iterations=1)
+
+    # 水平投影：每列的亮像素数
+    proj = np.sum(mask > 0, axis=0).astype(float)
+
+    # 平滑后找峰值
+    from scipy.signal import find_peaks
+    from scipy.ndimage import gaussian_filter1d
+    proj_smooth = gaussian_filter1d(proj, sigma=3.2)
+
+    # 平衡的峰值检测参数
+    min_dist = max(13, cw // 6)  # 适中的最小间距
+    threshold = max(6.0, proj_smooth.max() * 0.25)  # 降低到25%阈值
+
+    # 降低峰值显著性要求
+    peaks, properties = find_peaks(proj_smooth, height=threshold, distance=min_dist, prominence=threshold * 0.20)
+
+    count = min(5, len(peaks))
+
+    # 构建调试信息
+    mask_pixels = np.count_nonzero(mask)
+    debug_info = f'peaks={len(peaks)} mask_px={mask_pixels} th={threshold:.1f} dist={min_dist}'
+
+    return count, debug_info
+
+
+def _count_stars_sliding_window(crop_rgb: np.ndarray, debug_label: str = '') -> tuple:
+    """单豆滑窗法统计豆豆数量。
+
+    用单个豆豆模板在区域内滑动匹配，通过NMS去重后统计数量。
+    返回 (count, debug_info)
+    """
+    ch, cw = crop_rgb.shape[:2]
+    if cw < 8 or ch < 4:
+        return 0, 'too_small'
+
+    crop_bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    crop_gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+
+    # 对比度增强
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    crop_enhanced = clahe.apply(crop_gray)
+
+    # 使用两个单豆模板（暗色和亮色）
+    if not _DOT_TPL_LIST or len(_DOT_TPL_LIST) < 2:
+        return 0, 'no_templates'
+
+    all_matches = []
+
+    # 对每个模板进行多尺度滑窗匹配
+    for tpl_name, tpl_gray, tpl_edge in _DOT_TPL_LIST[:2]:  # 只用暗色和亮色
+        tpl_h, tpl_w = tpl_gray.shape[:2]
+
+        # 多尺度：根据区域大小动态调整
+        base_scale = min(cw / (tpl_w * 5), ch / tpl_h)  # 假设5个豆豆水平排列
+        scales = [base_scale * r for r in [0.7, 0.85, 1.0, 1.15, 1.3]]
+
+        for scale in scales:
+            if scale < 0.5 or scale > 2.0:
+                continue
+
+            # 缩放模板
+            new_w = max(5, int(tpl_w * scale))
+            new_h = max(5, int(tpl_h * scale))
+            if new_w >= cw or new_h >= ch:
+                continue
+
+            tpl_resized = cv2.resize(tpl_gray, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+            # 模板匹配
+            result = cv2.matchTemplate(crop_enhanced, tpl_resized, cv2.TM_CCOEFF_NORMED)
+
+            # 找到所有高于阈值的匹配
+            threshold = 0.55  # 降低阈值，提高灵敏度
+            locations = np.where(result >= threshold)
+
+            for pt in zip(*locations[::-1]):  # (x, y)
+                score = result[pt[1], pt[0]]
+                # 记录匹配位置、尺寸、分数
+                all_matches.append({
+                    'x': pt[0],
+                    'y': pt[1],
+                    'w': new_w,
+                    'h': new_h,
+                    'score': score,
+                    'cx': pt[0] + new_w // 2,  # 中心点
+                    'cy': pt[1] + new_h // 2
+                })
+
+    if len(all_matches) == 0:
+        return 0, 'no_matches'
+
+    # 自适应阈值过滤：只保留分数较高的匹配
+    # 如果有很多低分匹配，提高阈值；如果匹配很少，降低阈值
+    scores = [m['score'] for m in all_matches]
+    max_score = max(scores)
+    mean_score = sum(scores) / len(scores)
+
+    # 动态阈值：介于mean和max之间，降低过滤强度
+    adaptive_threshold = mean_score + (max_score - mean_score) * 0.25  # 进一步降低到0.25
+    adaptive_threshold = max(0.50, min(0.60, adaptive_threshold))  # 限制在0.50-0.60之间
+
+    # 过滤低分匹配
+    filtered_matches = [m for m in all_matches if m['score'] >= adaptive_threshold]
+
+    if len(filtered_matches) == 0:
+        return 0, f'filtered_all raw={len(all_matches)} th={adaptive_threshold:.3f}'
+
+    all_matches = filtered_matches
+
+    # NMS (非极大值抑制) 去除重叠的匹配
+    # 按分数降序排序
+    all_matches.sort(key=lambda m: m['score'], reverse=True)
+
+    final_matches = []
+    # 估算单豆的平均宽度
+    estimated_single_width = cw / 5.0  # 假设5个豆豆水平排列
+
+    for match in all_matches:
+        # 检查是否与已选择的匹配重叠
+        overlap = False
+        for selected in final_matches:
+            # 计算中心点距离
+            dist = ((match['cx'] - selected['cx'])**2 + (match['cy'] - selected['cy'])**2)**0.5
+            # 最小距离：使用估算的单豆宽度的60%
+            min_dist = estimated_single_width * 0.6
+
+            if dist < min_dist:
+                overlap = True
+                break
+
+        if not overlap:
+            final_matches.append(match)
+
+    count = min(5, len(final_matches))
+
+    # 构建调试信息
+    avg_score = sum(m['score'] for m in final_matches[:5]) / max(1, len(final_matches[:5]))
+    debug_info = f'raw={len(all_matches)} nms={len(final_matches)} avg_score={avg_score:.3f}'
+
+    return count, debug_info
 
 
 def count_stars(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int, debug_label: str = '') -> int:
-    """统计豆豆数量（0-5）。优先整体模板匹配，回退到单豆滑窗法。"""
+    """混合方法统计豆豆数量（0-5）。
+
+    优先使用整体模板匹配，置信度低时fallback到单豆滑窗法。
+    """
     h, w = img_array.shape[:2]
     x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
     if x2 <= x1 or y2 <= y1:
         return 0
 
     crop_rgb = img_array[y1:y2, x1:x2]
-    ch, cw = crop_rgb.shape[:2]
-
-    crop_bgr  = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+    crop_bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
     crop_gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
 
-    # ── 单豆滑窗法（主）──────────────────────────────────────────────────
-    clahe_fn = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    crop_clahe = clahe_fn.apply(crop_gray)
-    ref_h, ref_w = _DOT_TPL_GRAY.shape[:2]
-    scales = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20] if w <= 2000 else \
-             [0.12, 0.14, 0.16, 0.18, 0.20, 0.22, 0.25, 0.28]
-    tpl_count, tpl_info = 0, 'no_match'
-    for feat, feat_name, th in [
-        (crop_clahe, 'clahe', 0.70),
-        (crop_gray,  'raw',   0.70),
-    ]:
-        count, info = _match_all_templates(feat, _DOT_TPL_LIST, scales, ref_h, ref_w, th, cw, ch, feat_name)
-        if count > tpl_count:
-            tpl_count, tpl_info = count, info
-        if tpl_count >= 5:
-            break
-    if tpl_count == 0:
-        count, info = _match_all_templates(crop_clahe, _DOT_TPL_LIST, scales, ref_h, ref_w, 0.55, cw, ch, 'lo')
-        if count > 0:
-            tpl_count, tpl_info = count, info
+    # 方法1：整体模板匹配
+    holistic_count, holistic_score, holistic_label, all_scores = _count_stars_holistic(crop_gray)
 
-    _debug_msg('count_stars %s -> %d | %s' % (debug_label, tpl_count, tpl_info))
-    return tpl_count
+    # 如果整体匹配置信度非常高，直接采用
+    if holistic_count > 0 and holistic_score >= 0.55:  # 提高阈值到0.55，只有非常确定时才用
+        msg = 'count_stars %s -> %d | holistic_%s=%.3f' % (debug_label, holistic_count, holistic_label, holistic_score)
+        _debug_msg(msg)
+        count_stars._last_info = 'holistic_%s=%.3f' % (holistic_label, holistic_score)
+        return holistic_count
+
+    # 方法2：单豆滑窗法（fallback）
+    sliding_count, sliding_info = _count_stars_sliding_window(crop_rgb, debug_label)
+
+    # 如果两种方法都有结果，选择置信度更高的
+    if holistic_count > 0 and sliding_count > 0:
+        # 比较置信度
+        # 整体模板的置信度已经低于0.45，滑窗法优先
+        msg = 'count_stars %s -> %d | sliding(%s) vs holistic_%s=%.3f' % (
+            debug_label, sliding_count, sliding_info, holistic_label, holistic_score
+        )
+        _debug_msg(msg)
+        count_stars._last_info = 'sliding_preferred'
+        return sliding_count
+
+    # 只有一种方法有结果
+    if sliding_count > 0:
+        msg = 'count_stars %s -> %d | sliding_only(%s)' % (debug_label, sliding_count, sliding_info)
+        _debug_msg(msg)
+        count_stars._last_info = 'sliding_only'
+        return sliding_count
+
+    if holistic_count > 0:
+        msg = 'count_stars %s -> %d | holistic_only_%s=%.3f' % (debug_label, holistic_count, holistic_label, holistic_score)
+        _debug_msg(msg)
+        count_stars._last_info = 'holistic_only'
+        return holistic_count
+
+    # 两种方法都没检测到
+    msg = 'count_stars %s -> 0 | both_failed' % debug_label
+    _debug_msg(msg)
+    count_stars._last_info = 'both_failed'
+    return 0
 
 
 # ── 坐标辅助 ──────────────────────────────────────────────────────────
@@ -575,7 +860,7 @@ def extract_troops(blocks):
             return max(int(a['text']), int(nb['text']))
     return 0
 
-def extract_player_alliance(blocks, side, img_h):
+def extract_player_alliance(blocks, side, img_h, img_array=None, img_w=0):
     """从顶部区域提取玩家名和同盟名"""
     # 先尝试标签格式
     player   = next((re.search(r'(?:玩家|player)[：:]\s*(.+)', b['text'], re.I) for b in blocks
@@ -600,12 +885,49 @@ def extract_player_alliance(blocks, side, img_h):
              and 2 <= len(b['text']) <= 12],
             key=lambda b: b['x']
         )
+
+        # 🔥 新增：如果右侧顶部文本太少，说明OCR漏识别了，需要针对性补扫
+        if side == 'right' and len(top_texts) < 2 and img_array is not None and img_w > 0:
+            print(f'[补扫] 右侧顶部文本不足({len(top_texts)}个)，启动补扫...', file=sys.stderr, flush=True)
+            # 右侧顶部联盟名区域通常在 x: 50%-75%, y: 5%-25%
+            x1 = int(img_w * 0.50)
+            x2 = int(img_w * 0.75)
+            y1 = int(img_h * 0.05)
+            y2 = int(img_h * 0.25)
+            print(f'[补扫] 扫描区域: ({x1},{y1})-({x2},{y2})', file=sys.stderr, flush=True)
+            # 对右侧顶部区域单独OCR（提高识别率）
+            extra_blocks = ocr_region(img_array, x1, y1, x2, y2)
+            print(f'[补扫] 识别到 {len(extra_blocks)} 个文本块', file=sys.stderr, flush=True)
+            for b in extra_blocks:
+                text = b['text']
+                # 过滤掉明显不是玩家名/联盟名的文本
+                if (2 <= len(text) <= 12
+                    and not match_hero(text)
+                    and not match_tactic(text)
+                    and not match_formation(text)
+                    and text not in WINNERS
+                    and not re.match(r'^[\d×/：:]+$', text)
+                    and not re.search(r'战损|总兵|补给|战果|统计|战报', text)
+                    and not re.match(r'^S\d+$', text, re.IGNORECASE)
+                    and not re.match(r'^[.。…·]+$', text)):
+                    # 检查是否已存在
+                    if not any(abs(b['x'] - t['x']) < 50 for t in top_texts):
+                        print(f'[补扫] 添加文本: "{text}" at x={b["x"]}', file=sys.stderr, flush=True)
+                        top_texts.append(b)
+                    else:
+                        print(f'[补扫] 跳过重复文本: "{text}"', file=sys.stderr, flush=True)
+            top_texts = sorted(top_texts, key=lambda b: b['x'])
+            print(f'[补扫] 补扫后共 {len(top_texts)} 个文本', file=sys.stderr, flush=True)
+
         if side == 'left':
             if len(top_texts) >= 1: player   = top_texts[0]['text']
             if len(top_texts) >= 2: alliance = top_texts[-1]['text']
         else:
-            if len(top_texts) >= 1: player   = top_texts[-1]['text']
-            if len(top_texts) >= 2: alliance = top_texts[0]['text']
+            # 右侧：最右边是玩家名，左边是联盟名
+            if len(top_texts) >= 1:
+                player = top_texts[-1]['text']
+            if len(top_texts) >= 2:
+                alliance = top_texts[0]['text']
     return player, alliance
 
 
@@ -629,7 +951,7 @@ def process_side(img_array: np.ndarray, blocks: list, side: str, img_w: int, img
 
     damage = find_number_near(blocks, '战损', 300, 30)
     troops = extract_troops(blocks)
-    player, alliance = extract_player_alliance(blocks, side, img_h)
+    player, alliance = extract_player_alliance(blocks, side, img_h, img_array, img_w)
 
     # ── 武将名检测 ───────────────────────────────────────────────
     hero_blocks = []
@@ -1445,20 +1767,10 @@ def test_ocr(req: TestOcrRequest):
                 crop_gray2 = cv2.cvtColor(crop_bgr2, cv2.COLOR_BGR2GRAY)
                 clahe2 = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                 crop_clahe2 = clahe2.apply(crop_gray2)
-                ref_h2, ref_w2 = _DOT_TPL_GRAY.shape[:2]
-                scales2 = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20]
-                tpl_n, tpl_info2 = 0, 'no_match'
-                # 降低阈值：0.60 → 0.55 → 0.50
-                for feat2, feat_name2, th2 in [(crop_clahe2, 'clahe', 0.60), (crop_gray2, 'raw', 0.60)]:
-                    c2, info2 = _match_all_templates(feat2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, th2, cw2, ch2, feat_name2)
-                    if c2 > tpl_n: tpl_n, tpl_info2 = c2, info2
-                    if tpl_n >= 5: break
-                if tpl_n == 0:
-                    c2, info2 = _match_all_templates(crop_clahe2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, 0.55, cw2, ch2, 'mid')
-                    if c2 > 0: tpl_n, tpl_info2 = c2, info2
-                if tpl_n == 0:
-                    c2, info2 = _match_all_templates(crop_clahe2, _DOT_TPL_LIST, scales2, ref_h2, ref_w2, 0.50, cw2, ch2, 'lo')
-                    if c2 > 0: tpl_n, tpl_info2 = c2, info2
+                # 直接调用统一的 count_stars() 函数
+                tpl_n = count_stars(img_arr, x1, y1, x2, y2, key)
+                # 获取详细信息用于前端日志
+                tpl_info2 = getattr(count_stars, '_last_info', 'no_info')
                 if tpl_n > 0:
                     log(f'[豆豆-{key}] ✅ {tpl_n} 颗 ({tpl_info2})')
                 else:
@@ -1542,13 +1854,21 @@ def test_stars(req: TestStarsRequest):
         if req.imageToken and req.imageToken in _img_cache:
             img_arr, img_w, img_h = _img_cache[req.imageToken]
             log(f'[图像] {img_w}x{img_h} / 模式: {req.mode} [缓存命中 token={req.imageToken}]')
-        else:
+        elif req.image:
+            # 从base64加载图像
             b64 = re.sub(r'^data:[^;]+;base64,', '', req.image)
             img_bytes = base64.b64decode(b64)
             img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
             img_arr = np.array(img)
             img_w, img_h = img.width, img.height
             log(f'[图像] {img_w}x{img_h} / 模式: {req.mode}')
+            # 如果有token，缓存图像以便下次使用
+            if req.imageToken:
+                _img_cache[req.imageToken] = (img_arr, img_w, img_h)
+                log(f'[缓存] 已缓存图像 token={req.imageToken}')
+        else:
+            log('[错误] 缺少图像数据：imageToken缓存未命中且未提供image base64')
+            return {'ok': False, 'error': '缺少图像数据', 'logs': logs}
 
         cats = req.categories
         star_boxes = cats.get('stars', {}).get('boxes', [])
@@ -1567,32 +1887,20 @@ def test_stars(req: TestStarsRequest):
                 log(f'[豆豆-{key}] ⚠️ 区域无效 ({x1},{y1})-({x2},{y2})')
                 result[key] = {'color': -1, 'template': -1, 'final': -1}
                 continue
-            crop = img_arr[y1:y2, x1:x2]
-            log(f'[豆豆-{key}] 区域 ({x1},{y1})-({x2},{y2}) 尺寸 {crop.shape[1]}x{crop.shape[0]}')
 
-            # 滑窗法（唯一方法，mode 字段保留兼容但不再区分）
-            crop_gray3 = cv2.cvtColor(cv2.cvtColor(crop, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
-            ch3, cw3 = crop.shape[:2]
-            clahe3 = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            crop_clahe3 = clahe3.apply(crop_gray3)
-            ref_h3, ref_w3 = _DOT_TPL_GRAY.shape[:2]
-            scales3 = [0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.20]
-            tpl_n = 0
-            tpl_info = 'no_match'
-            for feat3, feat_name3, th3 in [(crop_clahe3, 'clahe', 0.70), (crop_gray3, 'raw', 0.70)]:
-                c3, info3 = _match_all_templates(feat3, _DOT_TPL_LIST, scales3, ref_h3, ref_w3, th3, cw3, ch3, feat_name3)
-                if c3 > tpl_n: tpl_n, tpl_info = c3, info3
-                if tpl_n >= 5: break
-            if tpl_n == 0:
-                c3, info3 = _match_all_templates(crop_clahe3, _DOT_TPL_LIST, scales3, ref_h3, ref_w3, 0.55, cw3, ch3, 'lo')
-                if c3 > 0: tpl_n, tpl_info = c3, info3
-            final = tpl_n
-            if tpl_n > 0:
-                log(f'[豆豆-{key}] ✅ {tpl_n} 颗 ({tpl_info})')
+            w = x2 - x1
+            h = y2 - y1
+            log(f'[豆豆-{key}] 区域 ({x1},{y1})-({x2},{y2}) 尺寸 {w}x{h}')
+
+            # 使用统一的 count_stars 函数（HSV颜色投影法）
+            final = count_stars(img_arr, x1, y1, x2, y2, key)
+
+            if final > 0:
+                log(f'[豆豆-{key}] ✅ {final} 颗 ({count_stars._last_info})')
             else:
-                log(f'[豆豆-{key}] ❌ 未匹配 ({tpl_info})')
+                log(f'[豆豆-{key}] ❌ 未匹配 ({count_stars._last_info})')
 
-            result[key] = {'template': tpl_n, 'final': final}
+            result[key] = {'color': final, 'template': final, 'final': final}
 
         return {'ok': True, 'result': result, 'logs': logs}
 

@@ -711,8 +711,9 @@ async function leRefFromProject() {
 function _testBody(extra) {
   const allianceNames = [...new Set(_getTestAllianceSlots().map(x => x.allianceName).filter(Boolean))];
   const body = { projectId: _leProjectId, playerNames: _leTestPlayerNames, allianceNames, ...extra };
+  // 同时发送 token 和 image，让后端优先使用缓存，缓存失效时自动fallback
   if (_leImageToken) body.imageToken = _leImageToken;
-  else body.imageBase64 = _leCurrentImageB64;
+  body.imageBase64 = _leCurrentImageB64;
   return JSON.stringify(body);
 }
 
