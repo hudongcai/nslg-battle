@@ -524,6 +524,7 @@ window.doLoginPwd = async function doLoginPwd(){
           if(cloudUser.points !== undefined && cloudUser.points !== user.points){ user.points = cloudUser.points; updated = true; }
           if(cloudUser.avatar !== undefined && cloudUser.avatar !== user.avatar){ user.avatar = cloudUser.avatar; updated = true; }
           if(cloudUser.status !== undefined && cloudUser.status !== user.status){ user.status = cloudUser.status; updated = true; }
+          if(cloudUser.role !== undefined && cloudUser.role !== user.role){ user.role = cloudUser.role; updated = true; }
           if(cloudUser.nickname || cloudUser.name){
             const n = cloudUser.nickname || cloudUser.name;
             if(n !== user.name){ user.name = n; updated = true; }
