@@ -1436,7 +1436,7 @@ function exportDataCSV(scope = 'all') {
     if (typeof addSysLog === 'function') {
       addSysLog('operation', '导出战报CSV(' + (scope==='page'?'本页':'全部') + '): ' + data.length + ' 条' + (window.currentProjectId ? ' [项目ID:' + window.currentProjectId + ']' : ''));
     }
-    const headers = ['序号', '时间', '结果', '左侧玩家', '左侧同盟', '左侧武将', '左侧战法', '左侧阵型', '左侧战损', '左侧总兵力', '左侧战损率', '右侧玩家', '右侧同盟', '右侧武将', '右侧战法', '右侧阵型', '右侧战损', '右侧总兵力', '右侧战损率'];
+    const headers = ['序号', '时间', '结果', '左侧玩家', '左侧同盟', '左侧武将', '左侧红度', '左侧战法', '左侧阵型', '左侧战损', '左侧总兵力', '左侧战损率', '右侧玩家', '右侧同盟', '右侧武将', '右侧红度', '右侧战法', '右侧阵型', '右侧战损', '右侧总兵力', '右侧战损率'];
     function tacStr(generals, tactics) {
       if (!generals || generals.length === 0) return '-';
       return generals.slice(0, 3).map((g, i) => {
@@ -1445,6 +1445,13 @@ function exportDataCSV(scope = 'all') {
         return g + (t.length ? '[' + t.join('/') + ']' : '');
       }).join(' | ');
     }
+    function starsStr(rec, side) {
+      const p = side === 'left' ? 'leftGeneral' : 'rightGeneral';
+      const s1 = rec[p + '1Stars'] != null && rec[p + '1Stars'] !== '' ? rec[p + '1Stars'] : '-';
+      const s2 = rec[p + '2Stars'] != null && rec[p + '2Stars'] !== '' ? rec[p + '2Stars'] : '-';
+      const s3 = rec[p + '3Stars'] != null && rec[p + '3Stars'] !== '' ? rec[p + '3Stars'] : '-';
+      return s1 + '/' + s2 + '/' + s3;
+    }
     const rows = data.map((r, i) => [
       i + 1,
       r.time || '',
@@ -1452,6 +1459,7 @@ function exportDataCSV(scope = 'all') {
       r.leftPlayer || '',
       r.leftAlliance || '',
       getTeamKey(getGenerals(r, 'left')),
+      starsStr(r, 'left'),
       tacStr(getGenerals(r, 'left'), getTactics(r, 'left')),
       r.leftFormation || '',
       r.leftLoss || 0,
@@ -1460,6 +1468,7 @@ function exportDataCSV(scope = 'all') {
       r.rightPlayer || '',
       r.rightAlliance || '',
       getTeamKey(getGenerals(r, 'right')),
+      starsStr(r, 'right'),
       tacStr(getGenerals(r, 'right'), getTactics(r, 'right')),
       r.rightFormation || '',
       r.rightLoss || 0,
@@ -1478,7 +1487,7 @@ function openCSVWindowFallback() {
   try {
     let data = getFilteredData();
     let csv = '\uFEFF';
-    csv += '序号,时间,结果,左侧玩家,左侧同盟,左侧武将,左侧战法,左阵型,左战损,左总兵力,左战损率,右侧玩家,右侧同盟,右侧武将,右侧战法,右阵型,右战损,右总兵力,右战损率\n';
+    csv += '序号,时间,结果,左侧玩家,左侧同盟,左侧武将,左侧红度,左侧战法,左阵型,左战损,左总兵力,左战损率,右侧玩家,右侧同盟,右侧武将,右侧红度,右侧战法,右阵型,右战损,右总兵力,右战损率\n';
     data.forEach((r, i) => {
       function ts(g, t) {
         if (!g || !g.length) return '-';
@@ -1488,7 +1497,14 @@ function openCSVWindowFallback() {
           return gn + (tc.length ? '[' + tc.join('/') + ']' : '');
         }).join(' | ');
       }
-      csv += `${i + 1},"${r.time || ''}","${r.result || ''}","${r.leftPlayer || ''}","${r.leftAlliance || ''}","${getTeamKey(getGenerals(r,'left'))}","${ts(getGenerals(r,'left'), getTactics(r,'left'))}","${r.leftFormation || ''}",${r.leftLoss || 0},${r.leftTotal || 0},"${r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-'}","${r.rightPlayer || ''}","${r.rightAlliance || ''}","${getTeamKey(getGenerals(r,'right'))}","${ts(getGenerals(r,'right'), getTactics(r,'right'))}","${r.rightFormation || ''}",${r.rightLoss || 0},${r.rightTotal || 0},"${r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'}"\n`;
+      function ss(rec, side) {
+        const p = side === 'left' ? 'leftGeneral' : 'rightGeneral';
+        const s1 = rec[p + '1Stars'] != null && rec[p + '1Stars'] !== '' ? rec[p + '1Stars'] : '-';
+        const s2 = rec[p + '2Stars'] != null && rec[p + '2Stars'] !== '' ? rec[p + '2Stars'] : '-';
+        const s3 = rec[p + '3Stars'] != null && rec[p + '3Stars'] !== '' ? rec[p + '3Stars'] : '-';
+        return s1 + '/' + s2 + '/' + s3;
+      }
+      csv += `${i + 1},"${r.time || ''}","${r.result || ''}","${r.leftPlayer || ''}","${r.leftAlliance || ''}","${getTeamKey(getGenerals(r,'left'))}","${ss(r,'left')}","${ts(getGenerals(r,'left'), getTactics(r,'left'))}","${r.leftFormation || ''}",${r.leftLoss || 0},${r.leftTotal || 0},"${r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-'}","${r.rightPlayer || ''}","${r.rightAlliance || ''}","${getTeamKey(getGenerals(r,'right'))}","${ss(r,'right')}","${ts(getGenerals(r,'right'), getTactics(r,'right'))}","${r.rightFormation || ''}",${r.rightLoss || 0},${r.rightTotal || 0},"${r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'}"\n`;
     });
     const w = window.open('', '_blank');
     if (w) {
