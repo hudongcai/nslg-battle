@@ -1450,7 +1450,7 @@ function exportDataCSV(scope = 'all') {
       const s1 = rec[p + '1Stars'] != null && rec[p + '1Stars'] !== '' ? rec[p + '1Stars'] : '-';
       const s2 = rec[p + '2Stars'] != null && rec[p + '2Stars'] !== '' ? rec[p + '2Stars'] : '-';
       const s3 = rec[p + '3Stars'] != null && rec[p + '3Stars'] !== '' ? rec[p + '3Stars'] : '-';
-      return s1 + '-' + s2 + '-' + s3;
+      return '\t' + s1 + '-' + s2 + '-' + s3;
     }
     const rows = data.map((r, i) => [
       i + 1,
@@ -1502,7 +1502,7 @@ function openCSVWindowFallback() {
         const s1 = rec[p + '1Stars'] != null && rec[p + '1Stars'] !== '' ? rec[p + '1Stars'] : '-';
         const s2 = rec[p + '2Stars'] != null && rec[p + '2Stars'] !== '' ? rec[p + '2Stars'] : '-';
         const s3 = rec[p + '3Stars'] != null && rec[p + '3Stars'] !== '' ? rec[p + '3Stars'] : '-';
-        return s1 + '-' + s2 + '-' + s3;
+        return '\t' + s1 + '-' + s2 + '-' + s3;
       }
       csv += `${i + 1},"${r.time || ''}","${r.result || ''}","${r.leftPlayer || ''}","${r.leftAlliance || ''}","${getTeamKey(getGenerals(r,'left'))}","${ss(r,'left')}","${ts(getGenerals(r,'left'), getTactics(r,'left'))}","${r.leftFormation || ''}",${r.leftLoss || 0},${r.leftTotal || 0},"${r.leftLossRate != null ? r.leftLossRate.toFixed(1) + '%' : '-'}","${r.rightPlayer || ''}","${r.rightAlliance || ''}","${getTeamKey(getGenerals(r,'right'))}","${ss(r,'right')}","${ts(getGenerals(r,'right'), getTactics(r,'right'))}","${r.rightFormation || ''}",${r.rightLoss || 0},${r.rightTotal || 0},"${r.rightLossRate != null ? r.rightLossRate.toFixed(1) + '%' : '-'}"\n`;
     });
