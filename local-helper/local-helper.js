@@ -25,6 +25,7 @@ const DEFAULT_API_BASE = 'https://api.zhenwu.fun/api';
 const POLL_INTERVAL = 5;  // 轮询间隔（秒）
 const HELPER_PORT = 9999;  // HTTP 服务端口
 const MAX_LOG_ENTRIES = 500;  // 最多保留的日志条数
+const CONCURRENT_UPLOAD = 5;  // 并发上传数量
 
 let httpServer = null;
 let wsClient = null;  // WebSocket 客户端连接
@@ -399,26 +400,27 @@ async function getProcessedFiles(config, projectId) {
 
 // ========== 核心功能4：上传文件 ==========
 
-async function uploadFile(config, task, filePath, fileName) {
+async function uploadFile(config, task, filePath, fileName, labelConfig = null) {
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
 
-  // 获取项目标注配置
-  let labelConfig = null;
-  try {
-    const projectId = task.projectId || 0;
-    const configResp = await fetch(
-      normalizeApiBase(config.apiBase) + `/label-config/${projectId}`,
-      { headers: { 'Authorization': 'Bearer ' + config.helperToken } }
-    );
-    if (configResp.ok) {
-      const configData = await configResp.json();
-      if (configData.code === 200 && configData.data && configData.data.categories) {
-        labelConfig = configData.data.categories;
+  // 如果没有传入labelConfig，则获取项目标注配置
+  if (!labelConfig) {
+    try {
+      const projectId = task.projectId || 0;
+      const configResp = await fetch(
+        normalizeApiBase(config.apiBase) + `/label-config/${projectId}`,
+        { headers: { 'Authorization': 'Bearer ' + config.helperToken } }
+      );
+      if (configResp.ok) {
+        const configData = await configResp.json();
+        if (configData.code === 200 && configData.data && configData.data.categories) {
+          labelConfig = configData.data.categories;
+        }
       }
+    } catch (e) {
+      console.warn('[标注配置] 获取失败，使用自动检测模式:', e.message);
     }
-  } catch (e) {
-    console.warn('[标注配置] 获取失败，使用自动检测模式:', e.message);
   }
 
   // 上传文件
@@ -527,11 +529,26 @@ async function processTask(config, task) {
     files: newFiles
   });
 
-  // 逐个上传
-  for (let i = 0; i < newFiles.length; i++) {
-    const fileName = newFiles[i];
-    const fullPath = path.join(folderPath, fileName);
+  // 获取标注配置（只获取一次，所有文件复用）
+  let labelConfig = null;
+  try {
+    const projectId = task.projectId || 0;
+    const configResp = await fetch(
+      normalizeApiBase(config.apiBase) + `/label-config/${projectId}`,
+      { headers: { 'Authorization': 'Bearer ' + config.helperToken } }
+    );
+    if (configResp.ok) {
+      const configData = await configResp.json();
+      if (configData.code === 200 && configData.data && configData.data.categories) {
+        labelConfig = configData.data.categories;
+      }
+    }
+  } catch (e) {
+    console.warn(`[任务${taskKey}] [标注配置] 获取失败，使用自动检测模式:`, e.message);
+  }
 
+  // 并行上传（每批最多 CONCURRENT_UPLOAD 个文件）
+  for (let i = 0; i < newFiles.length; i += CONCURRENT_UPLOAD) {
     // 检查任务状态（支持暂停）
     try {
       const tasks = await listTasks(config);
@@ -544,37 +561,52 @@ async function processTask(config, task) {
       console.warn(`[任务${taskKey}] 状态检查失败:`, checkErr.message);
     }
 
-    // 检查文件大小
-    const stats = fs.statSync(fullPath);
-    if (stats.size > 5 * 1024 * 1024) {
-      console.warn(`[任务${taskKey}] 文件过大，跳过: ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)}MB)`);
-      continue;
-    }
+    // 获取当前批次的文件
+    const batch = newFiles.slice(i, i + CONCURRENT_UPLOAD);
 
-    // 上传文件
-    try {
-      await uploadFile(config, task, fullPath, fileName);
-      console.log(`[任务${taskKey}] ✅ ${fileName}`);
-      log(`✅ 上传成功: ${fileName}`, 'success', { taskId: task.id, fileName });
+    // 并行上传当前批次
+    const uploadPromises = batch.map(async (fileName) => {
+      const fullPath = path.join(folderPath, fileName);
 
-      // 上报上传进度到服务器（通过 WebSocket）
-      reportToServer('file-uploaded', {
-        taskId: task.id,
-        fileName: fileName,
-        timestamp: new Date().toISOString()
-      });
-    } catch (e) {
-      console.error(`[任务${taskKey}] ❌ ${fileName}: ${e.message}`);
-      log(`❌ 上传失败: ${fileName}`, 'error', { taskId: task.id, fileName, error: e.message });
+      // 检查文件大小
+      const stats = fs.statSync(fullPath);
+      if (stats.size > 5 * 1024 * 1024) {
+        console.warn(`[任务${taskKey}] 文件过大，跳过: ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)}MB)`);
+        return { fileName, success: false, error: '文件过大' };
+      }
 
-      // 上报上传失败
-      reportToServer('file-failed', {
-        taskId: task.id,
-        fileName: fileName,
-        error: e.message,
-        timestamp: new Date().toISOString()
-      });
-    }
+      // 上传文件（传入缓存的labelConfig）
+      try {
+        await uploadFile(config, task, fullPath, fileName, labelConfig);
+        console.log(`[任务${taskKey}] ✅ ${fileName}`);
+        log(`✅ 上传成功: ${fileName}`, 'success', { taskId: task.id, fileName });
+
+        // 上报上传进度到服务器（通过 WebSocket）
+        reportToServer('file-uploaded', {
+          taskId: task.id,
+          fileName: fileName,
+          timestamp: new Date().toISOString()
+        });
+
+        return { fileName, success: true };
+      } catch (e) {
+        console.error(`[任务${taskKey}] ❌ ${fileName}: ${e.message}`);
+        log(`❌ 上传失败: ${fileName}`, 'error', { taskId: task.id, fileName, error: e.message });
+
+        // 上报上传失败
+        reportToServer('file-failed', {
+          taskId: task.id,
+          fileName: fileName,
+          error: e.message,
+          timestamp: new Date().toISOString()
+        });
+
+        return { fileName, success: false, error: e.message };
+      }
+    });
+
+    // 等待当前批次全部完成
+    await Promise.all(uploadPromises);
   }
 }
 
