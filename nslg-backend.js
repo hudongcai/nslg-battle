@@ -10,6 +10,9 @@ const path = require('path');
 const { mapPaddleResult } = require('./ocr-parser');
 const { Server: SocketIOServer } = require('socket.io');
 
+// 引入统一OCR处理模块
+const ocrUnified = require('./ocr-unified');
+
 const app = express();
 const server = http.createServer(app);
 const PORT = 3000;
@@ -1150,7 +1153,7 @@ const DOUBAO_API_KEY = process.env.DOUBAO_API_KEY || 'ark-74b37e3f-3407-4070-b91
 const DOUBAO_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
 const PADDLE_URL = 'http://127.0.0.1:8003/ocr';
 const PADDLE_TEST_URL = 'http://127.0.0.1:8003/test';
-const PADDLE_STARS_URL = 'http://127.0.0.1:8003/test-stars';
+const PADDLE_STARS_URL = 'http://127.0.0.1:5000/test-stars';  // 使用统一OCR服务的深度学习模型
 const PADDLE_CACHE_IMG_URL = 'http://127.0.0.1:8003/cache-image';
 
 // ── OCR 全局串行锁（防止并发调用 PaddleOCR 撑爆内存）──
@@ -1192,7 +1195,7 @@ function withOcrLock(fn, imageName) {
   return next;
 }
 
-// ── 公共 PaddleOCR 调用（带串行锁 + 错误分类）──
+// ── 统一OCR调用（文字识别 + 深度学习红度识别）──
 // 返回 { record, paddleRaw, paddleProcessError }
 // record 非 null 表示成功；paddleProcessError 非 null 表示 Python 内部错误；
 // 两者均 null 表示服务真正不可达（多次重连均失败）
@@ -1209,32 +1212,69 @@ async function _callPaddleOcr(body, imageName) {
 
     let record = null, paddleRaw = null, paddleProcessError = null;
 
+    // 检查统一OCR服务是否可用
+    const ocrConfig = ocrUnified.getConfig();
+    const useUnifiedOcr = ocrConfig.unifiedOcrEnabled;
+
     for (let ci = 0; ci < CONNECT_MAX_RETRIES; ci++) {
       let connected = false;
       for (let hi = 0; hi < HTTP_MAX_RETRIES; hi++) {
         try {
-          const paddleResp = await fetch(PADDLE_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(240000)
-          });
-          connected = true;
-          if (paddleResp.ok) {
-            paddleRaw = await paddleResp.json();
-            if (paddleRaw.ok) { record = mapPaddleResult(paddleRaw); break; }
-            // Python 内部处理失败 → 不重试
-            paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
-            console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
-            if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
-            break;
-          }
-          console.warn(`[OCR] HTTP ${paddleResp.status} (HTTP重试 ${hi + 1}/${HTTP_MAX_RETRIES}) 文件=${imageName}`);
-          if (hi < HTTP_MAX_RETRIES - 1) {
-            await new Promise(r => setTimeout(r, HTTP_RETRY_BASE_MS * Math.pow(2, hi)));
+          if (useUnifiedOcr) {
+            // 使用统一OCR服务（文字 + 深度学习红度）
+            const unifiedResult = await ocrUnified.callUnifiedOcr(body.image, body.labelConfig);
+            connected = true;
+
+            if (unifiedResult.ok) {
+              record = mapPaddleResult(unifiedResult);
+              paddleRaw = unifiedResult;
+
+              console.log('[OCR统一] 识别完成:', {
+                file: imageName,
+                method: unifiedResult._starsMethod || 'deeplearning',
+                confidence: unifiedResult._starsConfidence
+                  ? (unifiedResult._starsConfidence * 100).toFixed(1) + '%'
+                  : 'N/A'
+              });
+
+              break;
+            } else {
+              // Python 内部处理失败 → 不重试
+              paddleProcessError = unifiedResult.error || 'Python OCR 处理失败';
+              console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
+              break;
+            }
+          } else {
+            // 降级：使用旧的PaddleOCR服务
+            const paddleResp = await fetch(PADDLE_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(240000)
+            });
+            connected = true;
+
+            if (paddleResp.ok) {
+              paddleRaw = await paddleResp.json();
+              if (paddleRaw.ok) {
+                record = mapPaddleResult(paddleRaw);
+                console.log('[OCR统一] 使用降级模式 (PaddleOCR API):', imageName);
+                break;
+              }
+              // Python 内部处理失败 → 不重试
+              paddleProcessError = paddleRaw.error || 'Python OCR 处理失败';
+              console.error(`[OCR] Python处理失败 文件=${imageName}:`, paddleProcessError);
+              if (paddleRaw.trace) console.error(`[OCR] Traceback:`, paddleRaw.trace.slice(0, 500));
+              break;
+            }
+            console.warn(`[OCR] HTTP ${paddleResp.status} (HTTP重试 ${hi + 1}/${HTTP_MAX_RETRIES}) 文件=${imageName}`);
+            if (hi < HTTP_MAX_RETRIES - 1) {
+              await new Promise(r => setTimeout(r, HTTP_RETRY_BASE_MS * Math.pow(2, hi)));
+            }
           }
         } catch (e) {
           // 连接失败（服务不在线/正在重启）→ 跳出 HTTP 重试，进入连接等待
+          console.warn(`[OCR] 连接失败: ${e.message}`);
           break;
         }
       }
@@ -1304,6 +1344,35 @@ app.post('/api/ocr-paddle', requireActiveUser, async (req, res) => {
     if (!resp.ok) return res.status(502).json({ ok: false, error: `OCR服务异常: ${resp.status}` });
     res.json(await resp.json());
   } catch (err) { res.status(503).json({ ok: false, error: `OCR服务不可用: ${err.message}` }); }
+});
+
+// 统一OCR接口（PaddleOCR + 深度学习）
+app.post('/api/ocr-unified', requireActiveUser, async (req, res) => {
+  try {
+    const { image, schemeName, options } = req.body;
+
+    if (!image) {
+      return res.status(400).json({
+        code: 400,
+        message: '缺少 image 参数'
+      });
+    }
+
+    // 调用统一OCR处理模块
+    const result = await ocrUnified.processOCR({
+      image,
+      schemeName,
+      options,
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[OCR统一接口] 错误:', err);
+    res.status(500).json({
+      code: 500,
+      message: `OCR处理失败: ${err.message}`
+    });
+  }
 });
 
 app.post('/api/ocr', requireActiveUser, async (req, res) => {
@@ -2145,12 +2214,14 @@ app.get('/api/gallery/imagenames', requireOcrUploadActor, async (req, res) => {
     let query, params = [req.authUserId];
     const projectId = req.query.projectId || '';
 
-    // 查询 battle_gallery（图库）+ ocr_pending_tasks（待处理）
-    // 避免重复上传：已在图库的 + 正在队列中的 都算"已上传"
+    // 查询 battle_gallery（图库）+ ocr_pending_tasks（活跃任务）
+    // 避免重复上传：已在图库的 + 正在队列中的（pending/processing）都算"已上传"
+    // 🔥 修复：只查询 pending/processing 状态，排除 done/failed（它们要么已在图库，要么已失败）
     if (projectId) {
       query = `
         SELECT DISTINCT image_name AS name FROM ocr_pending_tasks
         WHERE user_id = ? AND project_id = ? AND image_name != ''
+          AND status IN ('pending', 'processing')
         UNION
         SELECT DISTINCT original_name AS name FROM battle_gallery
         WHERE uploaded_by = ? AND project_id = ? AND original_name != '' AND status = 1
@@ -2160,6 +2231,7 @@ app.get('/api/gallery/imagenames', requireOcrUploadActor, async (req, res) => {
       query = `
         SELECT DISTINCT image_name AS name FROM ocr_pending_tasks
         WHERE user_id = ? AND image_name != ''
+          AND status IN ('pending', 'processing')
         UNION
         SELECT DISTINCT original_name AS name FROM battle_gallery
         WHERE uploaded_by = ? AND original_name != '' AND status = 1
@@ -2488,20 +2560,48 @@ app.post('/api/ocr-preview/test', requireSuperAdmin, async (req, res) => {
 
 app.post('/api/ocr-preview/test-stars', requireSuperAdmin, async (req, res) => {
   try {
+    console.log('[test-stars] req.body keys:', Object.keys(req.body));
+    console.log('[test-stars] req.body.imageBase64 类型:', typeof req.body.imageBase64);
+    console.log('[test-stars] req.body.imageBase64 前50字符:', req.body.imageBase64?.substring(0, 50));
+
     const { projectId, imageBase64, imageToken, categories, mode = 'both' } = req.body;
+    console.log('[test-stars] 解构后 imageBase64 类型:', typeof imageBase64);
+    console.log('[test-stars] 解构后 imageBase64 长度:', imageBase64?.length || 0);
+
     if (!imageBase64 && !imageToken) return res.json({ code: 400, message: '缺少 imageBase64 或 imageToken' });
     const cats = await _getCategories(projectId, categories);
 
     // 调试日志：打印发送给Python的配置
     console.log('[test-stars] projectId:', projectId);
     console.log('[test-stars] mode:', mode);
+    console.log('[test-stars] imageBase64长度:', imageBase64 ? imageBase64.length : 0);
+    console.log('[test-stars] imageToken:', imageToken);
     console.log('[test-stars] categories.stars:', cats.stars);
     console.log('[test-stars] 豆豆框数量:', cats.stars?.boxes?.length || 0);
     if (cats.stars?.boxes && cats.stars.boxes.length > 0) {
       console.log('[test-stars] L2豆豆框:', cats.stars.boxes.find(b => b.key === 'L2'));
     }
 
-    const pyResp = await fetch(PADDLE_STARS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imageToken ? '' : imageBase64, imageToken: imageToken || '', categories: cats, mode }), signal: AbortSignal.timeout(180000) });
+    // 使用与/ocr-preview/test相同的逻辑
+    const requestBody = {
+      image: imageToken ? '' : imageBase64,
+      imageToken: imageToken || '',
+      categories: cats,
+      mode
+    };
+    console.log('[test-stars] 发送给PADDLE_TEST_URL的参数:', {
+      imageLength: requestBody.image?.length || 0,
+      imageToken: requestBody.imageToken,
+      mode: requestBody.mode,
+      url: PADDLE_TEST_URL
+    });
+
+    const pyResp = await fetch(PADDLE_TEST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(180000)
+    });
     res.json({ code: 200, data: await pyResp.json() });
   } catch (err) { res.json({ code: 500, message: err.message }); }
 });
@@ -2803,6 +2903,9 @@ server.listen(PORT, async () => {
   await initWatchTaskStates();
   console.log(`🚀 服务运行在 http://localhost:${PORT}`);
   console.log(`🔌 WebSocket 服务运行在 ws://localhost:${PORT}/ws`);
+
+  // 初始化统一OCR模块（检查深度学习服务）
+  await ocrUnified.initialize();
 
   // 启动 OCR 队列处理器
   setTimeout(async () => {
