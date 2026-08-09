@@ -1539,6 +1539,23 @@ ${clone.innerHTML}
 
     parent.innerHTML = `
       <div class="ca-root">
+        <!-- 时间范围过滤器 -->
+        <div style="background:var(--bg2);padding:12px;margin-bottom:12px;border-radius:8px;border:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:12px;font-weight:bold;color:var(--text);">📅 时间范围：</span>
+            <input type="date" id="caDateStart" onchange="caApplyDateFilter()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            <span style="color:var(--text3);">至</span>
+            <input type="date" id="caDateEnd" onchange="caApplyDateFilter()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            <div style="display:flex;gap:6px;">
+              <button onclick="caSetDateRange(1)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近1天</button>
+              <button onclick="caSetDateRange(3)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近3天</button>
+              <button onclick="caSetDateRange(7)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近7天</button>
+              <button onclick="caClearDateFilter()" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">清除</button>
+            </div>
+            <span id="caDateInfo" style="font-size:11px;color:var(--text3);margin-left:auto;"></span>
+          </div>
+        </div>
+
         <div class="ca-tabs">
           <button class="ca-tab active" onclick="switchCounterTab('enemyNoTacs')" id="caTabEnemyNTBtn">敌方高频队伍统计（无战法）</button>
           <button class="ca-tab" onclick="switchCounterTab('recommendNoTacs')" id="caTabRecNTBtn">敌方高频胜率分析（无战法）</button>
@@ -1622,8 +1639,108 @@ ${clone.innerHTML}
 
       </div>`;
 
+    // 初始化时间过滤信息显示
+    setTimeout(() => {
+      const info = document.getElementById('caDateInfo');
+      if (info) {
+        const total = (window.allRecords || []).length;
+        info.textContent = `共 ${total} 条战报`;
+      }
+    }, 100);
+
     switchCounterTab('enemyNoTacs');
   };
+
+  // ==================== 时间过滤功能 ====================
+  window.caSetDateRange = function(days) {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+
+    const startInput = document.getElementById('caDateStart');
+    const endInput = document.getElementById('caDateEnd');
+    if (startInput) startInput.valueAsDate = start;
+    if (endInput) endInput.valueAsDate = end;
+
+    caApplyDateFilter();
+  };
+
+  window.caClearDateFilter = function() {
+    const startInput = document.getElementById('caDateStart');
+    const endInput = document.getElementById('caDateEnd');
+    if (startInput) startInput.value = '';
+    if (endInput) endInput.value = '';
+
+    if (typeof window.clearWinrateDateFilter === 'function') {
+      window.clearWinrateDateFilter();
+    }
+    caUpdateDateInfo();
+    caRefreshCurrentTab();
+  };
+
+  window.caApplyDateFilter = function() {
+    const startInput = document.getElementById('caDateStart');
+    const endInput = document.getElementById('caDateEnd');
+
+    // 同步到全局过滤器
+    if (typeof window.applyWinrateDateFilter === 'function') {
+      const wrStart = document.getElementById('wrDateStart');
+      const wrEnd = document.getElementById('wrDateEnd');
+      if (wrStart && startInput) wrStart.value = startInput.value;
+      if (wrEnd && endInput) wrEnd.value = endInput.value;
+      window.applyWinrateDateFilter();
+    }
+
+    caUpdateDateInfo();
+    caRefreshCurrentTab();
+  };
+
+  function caUpdateDateInfo() {
+    const info = document.getElementById('caDateInfo');
+    if (!info) return;
+
+    const filtered = records();
+    const total = (window.allRecords || []).length;
+
+    const startInput = document.getElementById('caDateStart');
+    const endInput = document.getElementById('caDateEnd');
+
+    if ((startInput && startInput.value) || (endInput && endInput.value)) {
+      info.textContent = `已筛选：${filtered.length} / ${total} 条战报`;
+      info.style.color = 'var(--accent)';
+    } else {
+      info.textContent = `共 ${total} 条战报`;
+      info.style.color = 'var(--text3)';
+    }
+  }
+
+  function caRefreshCurrentTab() {
+    // 获取当前激活的tab
+    const activeBtn = document.querySelector('.ca-tab.active');
+    if (!activeBtn) return;
+
+    const tab = activeBtn.id.replace('caTab', '').replace('Btn', '');
+    const tabMap = {
+      'EnemyNT': 'enemyNoTacs',
+      'RecNT': 'recommendNoTacs',
+      'Matrix': 'matrix',
+      'PlayerLB': 'playerLeaderboard',
+      'Rel': 'relationship',
+      'Enemy': 'enemy',
+      'Rec': 'recommend'
+    };
+
+    const fullTab = tabMap[tab] || 'enemyNoTacs';
+
+    // 重新渲染当前tab
+    if (fullTab === 'enemyNoTacs') renderEnemyHighFreqNoTacs();
+    else if (fullTab === 'recommendNoTacs') renderCounterRecommendationsNoTacs();
+    else if (fullTab === 'matrix') renderCounterMatrix();
+    else if (fullTab === 'playerLeaderboard') renderPlayerLeaderboard();
+    else if (fullTab === 'relationship') renderCounterAnalysis();
+    else if (fullTab === 'enemy') renderEnemyHighFreq();
+    else if (fullTab === 'recommend') renderCounterRecommendations();
+  }
 
   window.switchCounterTab = async function (tab) {
     const panels = {
