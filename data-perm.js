@@ -97,10 +97,16 @@ window.getVisibleProjects = async function (options = {}) {
   if (options.cacheOnly) {
     const cached = Array.from(merged.values());
     if (currentUser.role === 'super_admin') return cached;
+
+    // 获取用户的 projAccess 权限
+    let grantedIds = new Set();
+    try { grantedIds = await getGrantedProjectIds(currentUser.phone); } catch(e) {}
+
     return cached.filter(p =>
       p.visibility === 'public' || p.is_public == 1 ||
       p.creator === currentUser.phone || p.creator_phone === currentUser.phone ||
-      (p.memberPhones || []).includes(currentUser.phone)
+      (p.memberPhones || []).includes(currentUser.phone) ||
+      grantedIds.has(p.id) || grantedIds.has(String(p.id))
     );
   }
 

@@ -8,14 +8,22 @@ console.log('[project-system.js] v20260619001 加载');
 // visibility: 'public' | 'private'
 
 // ========== 获取当前用户可见项目（云端为真相之源，本地多余项目视为已删除）==========
-function filterVisibleProjectsFromCache(projects){
+async function filterVisibleProjectsFromCache(projects){
   if(!currentUser)return[];
   const all = Array.from(projects || []);
   if(currentUser.role==='super_admin') return all;
+
+  // 获取用户的 projAccess 权限
+  let grantedIds = new Set();
+  if(typeof getGrantedProjectIds === 'function'){
+    try{ grantedIds = await getGrantedProjectIds(currentUser.phone); }catch(e){}
+  }
+
   return all.filter(p=>
     p.visibility==='public' || p.is_public == 1 ||
     p.creator === currentUser.phone || p.creator_phone === currentUser.phone ||
-    (p.memberPhones||[]).includes(currentUser.phone)
+    (p.memberPhones||[]).includes(currentUser.phone) ||
+    grantedIds.has(p.id) || grantedIds.has(String(p.id))
   );
 }
 
@@ -28,7 +36,7 @@ async function getVisibleProjects(options = {}){
   for (const p of localProjects) { merged.set(p.id, p); }
 
   if(options.cacheOnly){
-    return filterVisibleProjectsFromCache(Array.from(merged.values()));
+    return await filterVisibleProjectsFromCache(Array.from(merged.values()));
   }
 
   // 再从云端获取，合并到本地
