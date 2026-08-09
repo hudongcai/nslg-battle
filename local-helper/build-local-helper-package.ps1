@@ -209,7 +209,7 @@ internal static class Program
         {
             MessageBox.Show(
                 "安装失败：\r\n" + ex.Message,
-                "真武本地助手",
+                "智灵三谋本地助手",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error
             );

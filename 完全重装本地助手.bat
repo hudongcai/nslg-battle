@@ -6,7 +6,7 @@ echo ========================================
 echo.
 
 echo [1/4] 停止现有助手进程...
-taskkill /F /IM powershell.exe /FI "WINDOWTITLE eq 真武本地助手*" >nul 2>&1
+taskkill /F /IM powershell.exe /FI "WINDOWTITLE eq 智灵三谋本地助手*" >nul 2>&1
 taskkill /F /IM node.exe /FI "COMMANDLINE eq *local-helper*" >nul 2>&1
 timeout /t 2 /nobreak >nul
 

@@ -673,7 +673,7 @@ function Show-LoadingPrompt([string]$text) {
     Close-LoadingPrompt
 
     $script:LoadingForm = New-Object System.Windows.Forms.Form
-    $script:LoadingForm.Text = '真武本地助手'
+    $script:LoadingForm.Text = '智灵三谋本地助手'
     $script:LoadingForm.Size = New-Object System.Drawing.Size(390, 130)
     $script:LoadingForm.StartPosition = 'CenterScreen'
     $script:LoadingForm.FormBorderStyle = 'FixedDialog'
@@ -784,7 +784,7 @@ function Invoke-DirectFolderBind([int]$taskId) {
     if (-not $task) {
         [System.Windows.Forms.MessageBox]::Show(
             '未找到当前项目的自动解析任务，请回到网页点击刷新后再试一次。',
-            '真武本地助手',
+            '智灵三谋本地助手',
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Warning
         ) | Out-Null
@@ -811,7 +811,7 @@ function Invoke-DirectFolderBind([int]$taskId) {
         Close-LoadingPrompt
         [System.Windows.Forms.MessageBox]::Show(
             $_.Exception.Message,
-            '真武本地助手',
+            '智灵三谋本地助手',
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -955,7 +955,7 @@ function Prompt-BindFolderFromLaunch {
 function Show-StartupReadyMessage {
     [System.Windows.Forms.MessageBox]::Show(
         '自动化任务文件监听助手已启动。',
-        '真武本地助手',
+        '智灵三谋本地助手',
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Information
     ) | Out-Null
@@ -1332,7 +1332,7 @@ function Initialize-NotifyIcon {
         } else {
             $script:NotifyIcon.Icon = [System.Drawing.SystemIcons]::Application
         }
-        $script:NotifyIcon.Text = '真武本地助手'
+        $script:NotifyIcon.Text = '智灵三谋本地助手'
         $script:NotifyIcon.Visible = $true
 
         $script:NotifyMenu = New-Object System.Windows.Forms.ContextMenuStrip
@@ -1385,7 +1385,7 @@ function Initialize-NotifyIcon {
 # 创建主窗口
 $form = New-Object System.Windows.Forms.Form
 $script:MainForm = $form
-$form.Text = '真武本地助手'
+$form.Text = '智灵三谋本地助手'
 $form.StartPosition = 'CenterScreen'
 $form.BackColor = [System.Drawing.Color]::White
 $form.ShowInTaskbar = $true
@@ -1401,7 +1401,7 @@ $form.Add_FormClosing({
         $_.Cancel = $true
         Hide-HelperWindow
         if ($script:NotifyIcon) {
-            $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
+            $script:NotifyIcon.BalloonTipTitle = '智灵三谋本地助手'
             $script:NotifyIcon.BalloonTipText = '已隐藏到后台，双击托盘图标可重新打开。'
             $script:NotifyIcon.ShowBalloonTip(1500)
         }
@@ -1427,7 +1427,7 @@ $form.MinimumSize = New-Object System.Drawing.Size(900, 750)
 $form.MaximizeBox = $true
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = '真武本地助手'
+$title.Text = '智灵三谋本地助手'
 $title.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
 $title.Location = New-Object System.Drawing.Point(40, 30)
 $title.AutoSize = $true
@@ -1587,7 +1587,7 @@ if ($script:LaunchAction -eq 'open') {
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
             $_.Exception.Message,
-            '真武本地助手',
+            '智灵三谋本地助手',
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -1605,7 +1605,7 @@ if ($script:LaunchAction -eq 'bind-folder') {
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
             $_.Exception.Message,
-            '真武本地助手',
+            '智灵三谋本地助手',
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
@@ -1654,7 +1654,7 @@ $connectButton.Add_Click({
         Start-Sleep -Milliseconds 500
         Hide-HelperWindow
         if ($script:NotifyIcon) {
-            $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
+            $script:NotifyIcon.BalloonTipTitle = '智灵三谋本地助手'
             $script:NotifyIcon.BalloonTipText = '连接成功！助手已在后台运行，双击托盘图标可重新打开。'
             $script:NotifyIcon.ShowBalloonTip(3000)
         }
@@ -1696,7 +1696,7 @@ if (-not [string]::IsNullOrWhiteSpace($script:LaunchLinkCode)) {
                 Start-Sleep -Milliseconds 500
                 Hide-HelperWindow
                 if ($script:NotifyIcon) {
-                    $script:NotifyIcon.BalloonTipTitle = '真武本地助手'
+                    $script:NotifyIcon.BalloonTipTitle = '智灵三谋本地助手'
                     $script:NotifyIcon.BalloonTipText = '连接成功！助手已在后台运行。'
                     $script:NotifyIcon.ShowBalloonTip(3000)
                 }

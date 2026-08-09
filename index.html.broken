@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>真武团的三谋队伍克制分析工具</title>
+<title>智灵三谋的三谋队伍克制分析工具</title>
 <style>
 :root{--bg:#0c0f1a;--bg2:#121729;--bg3:#1a2038;--bg4:#232a45;--accent:#f0b429;--accent2:#ffd166;--accent-dim:rgba(240,180,41,.12);--red:#ff6b6b;--green:#51cf66;--blue:#74c0fc;--orange:#ff922b;--cyan:#66d9e8;--purple:#d4a5ff;--text:#e8eaed;--text2:#8b95a8;--text3:#505b6e;--border:#252d44;--card:#151a2e;--radius:10px;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -617,7 +617,7 @@ document.addEventListener('click', function(e) {
 </head>
 <body>
 <div class="header">
-  <div class="header-main"><h1>⚔️ 真武团的三谋队伍克制分析 <span class="sub">V1.2 · 最近更新 2026.7.5</span></h1></div>
+  <div class="header-main"><h1>⚔️ 智灵三谋的三谋队伍克制分析 <span class="sub">V1.2 · 最近更新 2026.7.5</span></h1></div>
   <div class="header-actions">
     <div class="ocr-status" id="ocrStatus"><span class="ocr-dot" id="ocrDot"></span><span id="ocrText">OCR 待检测</span></div>
     <div id="headerStats" style="display:flex;gap:14px;">
@@ -2003,7 +2003,7 @@ function onYanwuChange(){const myNames=[document.getElementById('ywM1').value,do
 <div id="loginPage" class="login-page" style="display:none">
   <div class="login-card">
     <div class="login-brand">
-      <h1>🔒 真武团战报分析</h1>
+      <h1>🔒 智灵三谋战报分析</h1>
       <p>三国谋定天下 · 专业数据分析平台</p>
     </div>
 
