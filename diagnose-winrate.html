@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>克制分析诊断工具</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: #e0e0e0; }
+.section { background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 8px; }
+.ok { color: #4caf50; }
+.error { color: #f44336; }
+.warning { color: #ff9800; }
+pre { background: #1a1a1a; padding: 10px; border-radius: 4px; overflow-x: auto; }
+button { padding: 8px 16px; margin: 5px; background: #2196f3; color: white; border: none; border-radius: 4px; cursor: pointer; }
+button:hover { background: #1976d2; }
+</style>
+</head>
+<body>
+<h1>🔍 克制分析诊断工具</h1>
+
+<div class="section">
+  <h2>1. 页面加载状态</h2>
+  <div id="loadStatus">检测中...</div>
+</div>
+
+<div class="section">
+  <h2>2. 关键JS文件</h2>
+  <div id="jsFiles">检测中...</div>
+</div>
+
+<div class="section">
+  <h2>3. 关键函数检查</h2>
+  <div id="functions">检测中...</div>
+</div>
+
+<div class="section">
+  <h2>4. 数据状态</h2>
+  <div id="dataStatus">检测中...</div>
+</div>
+
+<div class="section">
+  <h2>5. 用户权限</h2>
+  <div id="permStatus">检测中...</div>
+</div>
+
+<div class="section">
+  <h2>6. 快速操作</h2>
+  <button onclick="clearCache()">清除浏览器缓存</button>
+  <button onclick="window.location.href='/?nocache=' + Date.now()">强制刷新页面</button>
+  <button onclick="testWinrate()">测试克制分析渲染</button>
+</div>
+
+<script>
+function check() {
+  // 1. 页面加载状态
+  document.getElementById('loadStatus').innerHTML =
+    '<span class="ok">✓</span> 诊断页面已加载<br>' +
+    '<span class="ok">✓</span> 当前时间: ' + new Date().toLocaleString();
+
+  // 2. 检查JS文件
+  const scripts = Array.from(document.scripts).map(s => s.src);
+  document.getElementById('jsFiles').innerHTML =
+    '<strong>建议在主页面查看，此诊断页面不包含业务JS</strong>';
+
+  // 3. 检查关键函数
+  const funcs = [
+    'createCounterAnalysisUI',
+    'switchTab',
+    'loadAllRecords',
+    'dataInit'
+  ];
+  let funcHtml = '';
+  funcs.forEach(fn => {
+    const exists = typeof window[fn] === 'function';
+    funcHtml += exists ?
+      `<span class="ok">✓ ${fn}</span><br>` :
+      `<span class="error">✗ ${fn} 未定义</span><br>`;
+  });
+  document.getElementById('functions').innerHTML = funcHtml ||
+    '<span class="warning">⚠ 需要在主页面运行此诊断</span>';
+
+  // 4. 数据状态
+  const hasData = window.allRecords && window.allRecords.length > 0;
+  document.getElementById('dataStatus').innerHTML = hasData ?
+    `<span class="ok">✓ allRecords 已加载 (${window.allRecords.length} 条)</span>` :
+    '<span class="error">✗ allRecords 为空或未定义</span><br>' +
+    '<strong>建议：</strong>请确保已登录并选择了项目';
+
+  // 5. 用户权限
+  const user = window.currentUser;
+  document.getElementById('permStatus').innerHTML = user ?
+    `<span class="ok">✓ 已登录: ${user.username || user.name}</span><br>` +
+    `角色: ${user.role || user.roleId}<br>` +
+    `项目ID: ${window.currentProjectId || '未选择'}` :
+    '<span class="error">✗ 未登录</span>';
+}
+
+function clearCache() {
+  if (confirm('将清除所有缓存并刷新页面，确定吗？')) {
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      });
+    }
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.href = '/?_=' + Date.now();
+  }
+}
+
+function testWinrate() {
+  alert('请在主页面打开浏览器控制台（F12），然后点击"克制分析"标签，查看控制台是否有错误信息。');
+  window.open('/', '_blank');
+}
+
+// 页面加载完成后执行检查
+window.onload = check;
+</script>
+
+<div class="section">
+  <h2>📋 常见问题解决方案</h2>
+  <ol>
+    <li><strong>页面显示空白：</strong>清除浏览器缓存（Ctrl+Shift+Delete）并强制刷新（Ctrl+F5）</li>
+    <li><strong>提示权限不足：</strong>检查用户角色是否有访问克制分析的权限</li>
+    <li><strong>没有数据：</strong>确保已选择项目且项目中有战报数据</li>
+    <li><strong>JS报错：</strong>打开浏览器控制台（F12）查看具体错误信息</li>
+    <li><strong>部署未更新：</strong>GitHub Pages缓存时间为10分钟，等待后再试</li>
+  </ol>
+</div>
+
+<div class="section">
+  <h2>🔗 快速链接</h2>
+  <a href="/" style="color: #2196f3;">返回主页</a> |
+  <a href="https://github.com/hudongcai/nslg-battle" target="_blank" style="color: #2196f3;">GitHub仓库</a>
+</div>
+
+</body>
+</html>
