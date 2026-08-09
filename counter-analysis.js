@@ -49,7 +49,13 @@
     return 'draw';
   }
 
-  function records() { return window.allRecords || []; }
+  function records() {
+    // 使用时间过滤后的数据（如果过滤功能可用）
+    if (typeof window.getFilteredRecordsForWinrate === 'function') {
+      return window.getFilteredRecordsForWinrate();
+    }
+    return window.allRecords || [];
+  }
 
   function heroColor(name) {
     const h = (window.ALL_HEROES || []).find(x => x.name === name);

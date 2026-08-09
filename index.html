@@ -986,6 +986,22 @@ document.addEventListener('click', function(e) {
 
   <!-- Tab 2: 克制分析 -->
   <div id="tab-winrate" class="tab-content">
+    <!-- 时间范围过滤器 -->
+    <div class="card no-print" style="padding:12px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:12px;font-weight:bold;color:var(--text);">📅 时间范围：</span>
+        <input type="date" id="wrDateStart" onchange="applyWinrateDateFilter()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        <span style="color:var(--text3);">至</span>
+        <input type="date" id="wrDateEnd" onchange="applyWinrateDateFilter()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        <div style="display:flex;gap:6px;">
+          <button onclick="setWinrateDateRange(1)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近1天</button>
+          <button onclick="setWinrateDateRange(3)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近3天</button>
+          <button onclick="setWinrateDateRange(7)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近7天</button>
+          <button onclick="clearWinrateDateFilter()" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">清除</button>
+        </div>
+        <span id="wrDateInfo" style="font-size:11px;color:var(--text3);margin-left:auto;"></span>
+      </div>
+    </div>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;" class="no-print">
       <button class="btn btn-primary" onclick="exportCounterAnalysisPDF()" style="font-size:13px;padding:8px 20px;">📄 导出PDF</button>
       <span style="font-size:11px;color:var(--text3);">将当前克制分析全部内容导出为PDF文件（A4横版）</span>
@@ -1441,13 +1457,100 @@ async function viewFullImageByRecord(id){
 }
 
 // ========== TAB 2: WIN RATE ==========
-function computeWinRateData(){const recs=allRecords.map(r=>({...r,lGenKey:getTeamKey(getGenerals(r,'left')),lTacKey:getTacticsKey(getTactics(r,'left')),rGenKey:getTeamKey(getGenerals(r,'right')),rTacKey:getTacticsKey(getTactics(r,'right'))}));const leftGroups=[],rightGroups=[];const leftGroupOf=new Array(recs.length).fill(-1),rightGroupOf=new Array(recs.length).fill(-1);for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<leftGroups.length;g++){if(isSameTeamType(getGenerals(r,'left'),getTactics(r,'left'),getGenerals(recs[leftGroups[g][0]],'left'),getTactics(recs[leftGroups[g][0]],'left'))){matched=g;break;}}if(matched>=0){leftGroups[matched].push(i);leftGroupOf[i]=matched;}else{leftGroups.push([i]);leftGroupOf[i]=leftGroups.length-1;}}for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<rightGroups.length;g++){if(isSameTeamType(getGenerals(r,'right'),getTactics(r,'right'),getGenerals(recs[rightGroups[g][0]],'right'),getTactics(recs[rightGroups[g][0]],'right'))){matched=g;break;}}if(matched>=0){rightGroups[matched].push(i);rightGroupOf[i]=matched;}else{rightGroups.push([i]);rightGroupOf[i]=rightGroups.length-1;}}const pairMap={};for(let i=0;i<recs.length;i++){const lg=leftGroupOf[i],rg=rightGroupOf[i],pk=lg+'-'+rg;if(!pairMap[pk]){const repL=recs[leftGroups[lg][0]],repR=recs[rightGroups[rg][0]];pairMap[pk]={leftTeam:getTeamKey(getGenerals(repL,'left')),leftTactics:getTactics(repL,'left'),leftFormation:repL.leftFormation||'',leftGenerals:getGenerals(repL,'left'),rightTeam:getTeamKey(getGenerals(repR,'right')),rightTactics:getTactics(repR,'right'),rightFormation:repR.rightFormation||'',rightGenerals:getGenerals(repR,'right'),matches:[],leftLosses:[],rightLosses:[],recordIds:[]};}const entry=pairMap[pk];entry.matches.push(recs[i]);entry.recordIds.push(recs[i].id);if(recs[i].leftLoss!=null&&recs[i].leftTotal!=null&&recs[i].leftTotal>0)entry.leftLosses.push(recs[i].leftLoss);if(recs[i].rightLoss!=null&&recs[i].rightTotal!=null&&recs[i].rightTotal>0)entry.rightLosses.push(recs[i].rightLoss);}const rawData=Object.values(pairMap).map(entry=>{const wins=entry.matches.filter(r=>r.result==='胜').length,losses=entry.matches.filter(r=>r.result==='败').length;const total=entry.matches.length,winRate=total>0?wins/total*100:0;const avgLLoss=entry.leftLosses.length>0?entry.leftLosses.reduce((a,b)=>a+b,0)/entry.leftLosses.length:0;const avgRLoss=entry.rightLosses.length>0?entry.rightLosses.reduce((a,b)=>a+b,0)/entry.rightLosses.length:0;let lossRateVal=0;if(avgRLoss>0)lossRateVal=(avgLLoss/avgRLoss)*100;else if(avgLLoss>0)lossRateVal=999;const llr=entry.matches.filter(r=>r.leftLossRate!=null).map(r=>r.leftLossRate);const rlr=entry.matches.filter(r=>r.rightLossRate!=null).map(r=>r.rightLossRate);const lStars=entry.matches.map(r=>{const s1=r.leftGeneral1Stars!=null?Number(r.leftGeneral1Stars):0;const s2=r.leftGeneral2Stars!=null?Number(r.leftGeneral2Stars):0;const s3=r.leftGeneral3Stars!=null?Number(r.leftGeneral3Stars):0;return(s1+s2+s3)/3;}).filter(v=>v>0);const rStars=entry.matches.map(r=>{const s1=r.rightGeneral1Stars!=null?Number(r.rightGeneral1Stars):0;const s2=r.rightGeneral2Stars!=null?Number(r.rightGeneral2Stars):0;const s3=r.rightGeneral3Stars!=null?Number(r.rightGeneral3Stars):0;return(s1+s2+s3)/3;}).filter(v=>v>0);const avgLStars=lStars.length>0?lStars.reduce((a,b)=>a+b,0)/lStars.length:null;const avgRStars=rStars.length>0?rStars.reduce((a,b)=>a+b,0)/rStars.length:null;return{...entry,wins,losses,total,winRate,avgLeftLossPct:llr.length>0?(llr.reduce((a,b)=>a+b,0)/llr.length).toFixed(1):'0',avgRightLossPct:rlr.length>0?(rlr.reduce((a,b)=>a+b,0)/rlr.length).toFixed(1):'0',lossRateVal:lossRateVal.toFixed(0),avgLLoss,avgRLoss,leftStars:avgLStars,rightStars:avgRStars};});const result=new Map();rawData.forEach(d=>{const k=d.leftTeam+'||'+d.rightTeam;if(!result.has(k))result.set(k,d);});return Array.from(result.values()).map(d=>{if(d.winRate>=50)return d;return{leftTeam:d.rightTeam,rightTeam:d.leftTeam,leftGenerals:d.rightGenerals,rightGenerals:d.leftGenerals,leftTactics:d.rightTactics,rightTactics:d.leftTactics,leftFormation:d.rightFormation,rightFormation:d.leftFormation,leftStars:d.rightStars,rightStars:d.leftStars,winRate:100-d.winRate,wins:d.losses,losses:d.wins,total:d.total,avgLeftLossPct:d.avgRightLossPct,avgRightLossPct:d.avgLeftLossPct,avgLLoss:d.avgRLoss,avgRLoss:d.avgLLoss,lossRateVal:d.avgRLoss>0&&d.avgLLoss>0?((d.avgRLoss/d.avgLLoss)*100).toFixed(0):d.lossRateVal,matches:d.matches.map(r=>({...r,result:r.result==='胜'?'败':r.result==='败'?'胜':r.result})),recordIds:d.recordIds};});}
+// ========== 克制分析时间过滤功能 ==========
+let winrateDateStart = null;
+let winrateDateEnd = null;
+
+function parseRecordDate(record) {
+  if (!record.time) return null;
+  const timeStr = record.time.split(' ')[0];
+  const parts = timeStr.split(/[-\/]/);
+  if (parts.length === 3) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  return null;
+}
+
+function getFilteredRecordsForWinrate() {
+  if (!winrateDateStart && !winrateDateEnd) return allRecords;
+
+  return allRecords.filter(record => {
+    const recordDate = parseRecordDate(record);
+    if (!recordDate) return true;
+
+    if (winrateDateStart && recordDate < winrateDateStart) return false;
+    if (winrateDateEnd) {
+      const endDate = new Date(winrateDateEnd);
+      endDate.setHours(23, 59, 59, 999);
+      if (recordDate > endDate) return false;
+    }
+    return true;
+  });
+}
+
+function setWinrateDateRange(days) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+
+  document.getElementById('wrDateStart').valueAsDate = start;
+  document.getElementById('wrDateEnd').valueAsDate = end;
+
+  applyWinrateDateFilter();
+}
+
+function clearWinrateDateFilter() {
+  document.getElementById('wrDateStart').value = '';
+  document.getElementById('wrDateEnd').value = '';
+  winrateDateStart = null;
+  winrateDateEnd = null;
+
+  updateWinrateDateInfo();
+  refreshAllWinrateViews();
+}
+
+function applyWinrateDateFilter() {
+  const startInput = document.getElementById('wrDateStart');
+  const endInput = document.getElementById('wrDateEnd');
+
+  winrateDateStart = startInput.value ? startInput.valueAsDate : null;
+  winrateDateEnd = endInput.value ? endInput.valueAsDate : null;
+
+  updateWinrateDateInfo();
+  refreshAllWinrateViews();
+}
+
+function updateWinrateDateInfo() {
+  const info = document.getElementById('wrDateInfo');
+  if (!info) return;
+
+  const filtered = getFilteredRecordsForWinrate();
+  const total = allRecords.length;
+
+  if (winrateDateStart || winrateDateEnd) {
+    info.textContent = `已筛选：${filtered.length} / ${total} 条战报`;
+    info.style.color = 'var(--accent)';
+  } else {
+    info.textContent = `共 ${total} 条战报`;
+    info.style.color = 'var(--text3)';
+  }
+}
+
+function refreshAllWinrateViews() {
+  if (typeof renderEnemyFreq === 'function') renderEnemyFreq();
+  if (typeof renderWinRateTable === 'function') renderWinRateTable();
+  const data = computeWinRateData();
+  if (typeof renderRestrictCards === 'function') renderRestrictCards(data);
+}
+
+function computeWinRateData(){const recs=getFilteredRecordsForWinrate().map(r=>({...r,lGenKey:getTeamKey(getGenerals(r,'left')),lTacKey:getTacticsKey(getTactics(r,'left')),rGenKey:getTeamKey(getGenerals(r,'right')),rTacKey:getTacticsKey(getTactics(r,'right'))}));const leftGroups=[],rightGroups=[];const leftGroupOf=new Array(recs.length).fill(-1),rightGroupOf=new Array(recs.length).fill(-1);for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<leftGroups.length;g++){if(isSameTeamType(getGenerals(r,'left'),getTactics(r,'left'),getGenerals(recs[leftGroups[g][0]],'left'),getTactics(recs[leftGroups[g][0]],'left'))){matched=g;break;}}if(matched>=0){leftGroups[matched].push(i);leftGroupOf[i]=matched;}else{leftGroups.push([i]);leftGroupOf[i]=leftGroups.length-1;}}for(let i=0;i<recs.length;i++){const r=recs[i];let matched=-1;for(let g=0;g<rightGroups.length;g++){if(isSameTeamType(getGenerals(r,'right'),getTactics(r,'right'),getGenerals(recs[rightGroups[g][0]],'right'),getTactics(recs[rightGroups[g][0]],'right'))){matched=g;break;}}if(matched>=0){rightGroups[matched].push(i);rightGroupOf[i]=matched;}else{rightGroups.push([i]);rightGroupOf[i]=rightGroups.length-1;}}const pairMap={};for(let i=0;i<recs.length;i++){const lg=leftGroupOf[i],rg=rightGroupOf[i],pk=lg+'-'+rg;if(!pairMap[pk]){const repL=recs[leftGroups[lg][0]],repR=recs[rightGroups[rg][0]];pairMap[pk]={leftTeam:getTeamKey(getGenerals(repL,'left')),leftTactics:getTactics(repL,'left'),leftFormation:repL.leftFormation||'',leftGenerals:getGenerals(repL,'left'),rightTeam:getTeamKey(getGenerals(repR,'right')),rightTactics:getTactics(repR,'right'),rightFormation:repR.rightFormation||'',rightGenerals:getGenerals(repR,'right'),matches:[],leftLosses:[],rightLosses:[],recordIds:[]};}const entry=pairMap[pk];entry.matches.push(recs[i]);entry.recordIds.push(recs[i].id);if(recs[i].leftLoss!=null&&recs[i].leftTotal!=null&&recs[i].leftTotal>0)entry.leftLosses.push(recs[i].leftLoss);if(recs[i].rightLoss!=null&&recs[i].rightTotal!=null&&recs[i].rightTotal>0)entry.rightLosses.push(recs[i].rightLoss);}const rawData=Object.values(pairMap).map(entry=>{const wins=entry.matches.filter(r=>r.result==='胜').length,losses=entry.matches.filter(r=>r.result==='败').length;const total=entry.matches.length,winRate=total>0?wins/total*100:0;const avgLLoss=entry.leftLosses.length>0?entry.leftLosses.reduce((a,b)=>a+b,0)/entry.leftLosses.length:0;const avgRLoss=entry.rightLosses.length>0?entry.rightLosses.reduce((a,b)=>a+b,0)/entry.rightLosses.length:0;let lossRateVal=0;if(avgRLoss>0)lossRateVal=(avgLLoss/avgRLoss)*100;else if(avgLLoss>0)lossRateVal=999;const llr=entry.matches.filter(r=>r.leftLossRate!=null).map(r=>r.leftLossRate);const rlr=entry.matches.filter(r=>r.rightLossRate!=null).map(r=>r.rightLossRate);const lStars=entry.matches.map(r=>{const s1=r.leftGeneral1Stars!=null?Number(r.leftGeneral1Stars):0;const s2=r.leftGeneral2Stars!=null?Number(r.leftGeneral2Stars):0;const s3=r.leftGeneral3Stars!=null?Number(r.leftGeneral3Stars):0;return(s1+s2+s3)/3;}).filter(v=>v>0);const rStars=entry.matches.map(r=>{const s1=r.rightGeneral1Stars!=null?Number(r.rightGeneral1Stars):0;const s2=r.rightGeneral2Stars!=null?Number(r.rightGeneral2Stars):0;const s3=r.rightGeneral3Stars!=null?Number(r.rightGeneral3Stars):0;return(s1+s2+s3)/3;}).filter(v=>v>0);const avgLStars=lStars.length>0?lStars.reduce((a,b)=>a+b,0)/lStars.length:null;const avgRStars=rStars.length>0?rStars.reduce((a,b)=>a+b,0)/rStars.length:null;return{...entry,wins,losses,total,winRate,avgLeftLossPct:llr.length>0?(llr.reduce((a,b)=>a+b,0)/llr.length).toFixed(1):'0',avgRightLossPct:rlr.length>0?(rlr.reduce((a,b)=>a+b,0)/rlr.length).toFixed(1):'0',lossRateVal:lossRateVal.toFixed(0),avgLLoss,avgRLoss,leftStars:avgLStars,rightStars:avgRStars};});const result=new Map();rawData.forEach(d=>{const k=d.leftTeam+'||'+d.rightTeam;if(!result.has(k))result.set(k,d);});return Array.from(result.values()).map(d=>{if(d.winRate>=50)return d;return{leftTeam:d.rightTeam,rightTeam:d.leftTeam,leftGenerals:d.rightGenerals,rightGenerals:d.leftGenerals,leftTactics:d.rightTactics,rightTactics:d.leftTactics,leftFormation:d.rightFormation,rightFormation:d.leftFormation,leftStars:d.rightStars,rightStars:d.leftStars,winRate:100-d.winRate,wins:d.losses,losses:d.wins,total:d.total,avgLeftLossPct:d.avgRightLossPct,avgRightLossPct:d.avgLeftLossPct,avgLLoss:d.avgRLoss,avgRLoss:d.avgLLoss,lossRateVal:d.avgRLoss>0&&d.avgLLoss>0?((d.avgRLoss/d.avgLLoss)*100).toFixed(0):d.lossRateVal,matches:d.matches.map(r=>({...r,result:r.result==='胜'?'败':r.result==='败'?'胜':r.result})),recordIds:d.recordIds};});}
 // ========== TAB 2: ENEMY FREQ ==========
 function renderEnemyFreq(){
   const search=(document.getElementById('efSearch').value||'').toLowerCase();
-  // 统计右侧（敌方）队伍
+  // 统计右侧（敌方）队伍 - 使用过滤后的数据
+  const filteredRecords = getFilteredRecordsForWinrate();
   const map=new Map(); // teamKey -> {generals, tactics, count, wins, losses, draws, recordIds}
-  allRecords.forEach(r=>{
+  filteredRecords.forEach(r=>{
     const key=getTeamKey(getGenerals(r,'right'));
     if(!key||key==='未知')return;
     if(search&&!key.toLowerCase().includes(search))return;
@@ -1464,10 +1567,10 @@ function renderEnemyFreq(){
       d.generals=getGenerals(r,'right');d.tactics=getTactics(r,'right');d.formation=r.rightFormation||'';
     }
   });
-  const totalRecords=allRecords.length||1;
+  const totalRecords=filteredRecords.length||1;
   let list=[...map.values()].sort((a,b)=>b.count-a.count);
   const filteredCount=list.reduce((s,d)=>s+d.count,0);
-  const totalLabel=search?`共 ${filteredCount} 场（筛选）/ ${allRecords.length} 场（全部）· ${list.length} 种队伍`:`共 ${allRecords.length} 场战报 · ${list.length} 种队伍`;
+  const totalLabel=search?`共 ${filteredCount} 场（筛选）/ ${filteredRecords.length} 场（全部）· ${list.length} 种队伍`:`共 ${filteredRecords.length} 场战报 · ${list.length} 种队伍`;
   document.getElementById('efTotal').textContent=totalLabel;
   if(list.length===0){
     document.getElementById('efTableBody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3);">暂无数据</td></tr>';
