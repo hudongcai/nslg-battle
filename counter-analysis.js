@@ -1540,19 +1540,17 @@ ${clone.innerHTML}
     parent.innerHTML = `
       <div class="ca-root">
         <!-- 时间范围过滤器 -->
-        <div style="background:var(--bg2);padding:12px;margin-bottom:12px;border-radius:8px;border:1px solid var(--border);">
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-            <span style="font-size:12px;font-weight:bold;color:var(--text);">📅 时间范围：</span>
-            <input type="date" id="caDateStart" onchange="caApplyDateFilter()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-            <span style="color:var(--text3);">至</span>
-            <input type="date" id="caDateEnd" onchange="caApplyDateFilter()" style="padding:6px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-            <div style="display:flex;gap:6px;">
-              <button onclick="caSetDateRange(1)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近1天</button>
-              <button onclick="caSetDateRange(3)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近3天</button>
-              <button onclick="caSetDateRange(7)" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">最近7天</button>
-              <button onclick="caClearDateFilter()" style="padding:4px 12px;font-size:11px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">清除</button>
-            </div>
-            <span id="caDateInfo" style="font-size:11px;color:var(--text3);margin-left:auto;"></span>
+        <div style="background:var(--bg2);padding:8px 12px;margin-bottom:8px;border-radius:6px;border:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:11px;font-weight:bold;color:var(--text);flex-shrink:0;">📅 时间：</span>
+            <input type="date" id="caDateStart" onchange="caApplyDateFilter()" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);max-width:140px;">
+            <span style="color:var(--text3);font-size:11px;">至</span>
+            <input type="date" id="caDateEnd" onchange="caApplyDateFilter()" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);max-width:140px;">
+            <button onclick="caSetDateRange(1)" style="padding:3px 10px;font-size:10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;white-space:nowrap;">1天</button>
+            <button onclick="caSetDateRange(3)" style="padding:3px 10px;font-size:10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;white-space:nowrap;">3天</button>
+            <button onclick="caSetDateRange(7)" style="padding:3px 10px;font-size:10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;white-space:nowrap;">7天</button>
+            <button onclick="caClearDateFilter()" style="padding:3px 10px;font-size:10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;white-space:nowrap;">清除</button>
+            <span id="caDateInfo" style="font-size:10px;color:var(--text3);margin-left:auto;white-space:nowrap;"></span>
           </div>
         </div>
 
