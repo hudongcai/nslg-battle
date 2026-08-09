@@ -1834,7 +1834,7 @@ async function processOcrQueue() {
   isProcessingQueue = true;
   queueProcessorHeartbeat = Date.now();
 
-  const CONCURRENT_LIMIT = 2;  // 并发处理任务数
+  const CONCURRENT_LIMIT = 1;  // 并发处理任务数（PaddleOCR内存敏感，必须串行避免OOM）
   let activeTaskCount = 0;     // 当前正在处理的任务数
 
   console.log(`[OCR-Queue] 队列处理器开始持续轮询（并发数：${CONCURRENT_LIMIT}）...`);
