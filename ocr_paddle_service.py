@@ -47,10 +47,19 @@ print('初始化 PaddleOCR (PP-OCRv5) ...')
 _ocr = PaddleOCR(lang='ch', use_angle_cls=True, use_gpu=False, show_log=False)
 print('PaddleOCR ready')
 
+# 🔥 模型预热：用小图推理一次，确保模型完全加载到内存
+print('模型预热中...')
+try:
+    _warmup_img = np.zeros((100, 100, 3), dtype=np.uint8)
+    _ocr.ocr(_warmup_img)
+    print('✅ 模型预热完成')
+except Exception as e:
+    print(f'⚠️  模型预热失败: {e}', file=sys.stderr, flush=True)
+
 # ── 长时间运行稳定性 ─────────────────────────────────────────────────
 _request_count = 0
-_GC_INTERVAL = 5           # 每 N 次请求执行一次 gc.collect()
-_MEM_RESTART_PCT = 95      # 系统内存使用率超过此值时主动重启（释放内存）
+_GC_INTERVAL = 1           # 每 N 次请求执行一次 gc.collect()（改为每次都GC）
+_MEM_RESTART_PCT = 95      # 系统内存使用率超过此值时主动重启（调高到95%，避免过于频繁重启）
 _LOG_MAX_MB = 10           # 日志文件上限 MB
 _LOG_BACKUPS = 3           # 保留备份数
 
@@ -218,16 +227,21 @@ def _raw_ocr(img_array: np.ndarray) -> list:
             'h': max(1, int(max(ys) - min(ys))),
             'conf': round(float(conf), 3),
         })
+    # 🔥 释放OCR结果对象，避免累积
+    del result
     return blocks
 
 def run_ocr_full(img_array: np.ndarray) -> list:
     """全图预处理后OCR，坐标转回原始图像空间"""
     processed = preprocess_image(img_array)
     raw = _raw_ocr(processed)
-    return [{**b,
+    result = [{**b,
              'x': b['x'] // SCALE, 'y': b['y'] // SCALE,
              'w': max(1, b['w'] // SCALE), 'h': max(1, b['h'] // SCALE)}
             for b in raw]
+    # 🔥 释放预处理后的大图
+    del processed
+    return result
 
 def ocr_region(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> list:
     """裁剪区域 + 预处理 + OCR，坐标转回原始图像空间"""
@@ -243,10 +257,13 @@ def ocr_region(img_array: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> lis
     raw = _raw_ocr(processed)
     _tc = _t.time()
     print(f'  [ocr_region] 区域{crop.shape[:2]} 预处理{(_tb-_ta)*1000:.0f}ms OCR推理{(_tc-_tb)*1000:.0f}ms')
-    return [{**b,
+    result = [{**b,
              'x': b['x'] // SCALE + x1, 'y': b['y'] // SCALE + y1,
              'w': max(1, b['w'] // SCALE), 'h': max(1, b['h'] // SCALE)}
             for b in raw]
+    # 🔥 释放裁剪和预处理后的图像
+    del crop, processed
+    return result
 
 
 # ── 豆豆模板匹配 ─────────────────────────────────────────────────────────
@@ -1452,10 +1469,14 @@ def paddle_ocr(req: OcrRequest):
             del img_bytes
         if b64 is not None:
             del b64
-        try:
-            gc.collect()
-        except Exception:
-            pass
+        # 🔥 强制GC：每张图处理完立即释放内存
+        import gc
+        gc.collect()
+        gc.collect()  # 二次GC确保循环引用被清理
+        # 输出内存状态用于监控
+        mem_pct = _sys_mem_pct()
+        if mem_pct >= 85:
+            print(f'[MEM-WARN] 处理完成后内存={mem_pct}%，接近阈值', file=sys.stderr, flush=True)
 
 
 # ── 图片预上传缓存接口 ─────────────────────────────────────────────
