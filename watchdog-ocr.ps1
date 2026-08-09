@@ -60,7 +60,7 @@ Write-WatchLog "  script: $ocrScript"
 Write-WatchLog "  max restarts: $MaxRestarts  rapid fail limit: $RapidFailLimit"
 Write-WatchLog "========================================"
 
-while ($restartCount -lt $MaxRestarts) {
+while ($true) {
     if ($restartCount -gt 0) {
         if ($rapidFailCount -ge 3) {
             $waitSec = [Math]::Min(60, 10 * [Math]::Pow(2, $rapidFailCount - 3))
@@ -78,6 +78,13 @@ while ($restartCount -lt $MaxRestarts) {
     }
 
     $restartCount++
+
+    # 每100次重启后重置计数器，避免数字过大，方便日志阅读
+    if ($restartCount -gt $MaxRestarts) {
+        Write-WatchLog "INFO: restart count reached $MaxRestarts, resetting counter to 1 (watchdog continues)"
+        $restartCount = 1
+    }
+
     Write-WatchLog "[start #$restartCount] launching PaddleOCR service..."
     $lastStartTime = Get-Date
 
@@ -132,6 +139,3 @@ while ($restartCount -lt $MaxRestarts) {
         continue
     }
 }
-
-Write-WatchLog "INFO: max restarts ($MaxRestarts) reached, watchdog done"
-exit 3
