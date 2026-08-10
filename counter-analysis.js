@@ -1669,9 +1669,18 @@ ${clone.innerHTML}
     if (startInput) startInput.value = '';
     if (endInput) endInput.value = '';
 
-    if (typeof window.clearWinrateDateFilter === 'function') {
-      window.clearWinrateDateFilter();
+    // 直接清除全局过滤变量
+    if (typeof window.winrateDateStart !== 'undefined') {
+      window.winrateDateStart = null;
+      window.winrateDateEnd = null;
     }
+
+    // 同步到index.html的过滤器（如果存在）
+    const wrStart = document.getElementById('wrDateStart');
+    const wrEnd = document.getElementById('wrDateEnd');
+    if (wrStart) wrStart.value = '';
+    if (wrEnd) wrEnd.value = '';
+
     caUpdateDateInfo();
     caRefreshCurrentTab();
   };
@@ -1680,14 +1689,17 @@ ${clone.innerHTML}
     const startInput = document.getElementById('caDateStart');
     const endInput = document.getElementById('caDateEnd');
 
-    // 同步到全局过滤器
-    if (typeof window.applyWinrateDateFilter === 'function') {
-      const wrStart = document.getElementById('wrDateStart');
-      const wrEnd = document.getElementById('wrDateEnd');
-      if (wrStart && startInput) wrStart.value = startInput.value;
-      if (wrEnd && endInput) wrEnd.value = endInput.value;
-      window.applyWinrateDateFilter();
+    // 直接更新全局过滤变量
+    if (typeof window.winrateDateStart !== 'undefined') {
+      window.winrateDateStart = startInput && startInput.value ? startInput.valueAsDate : null;
+      window.winrateDateEnd = endInput && endInput.value ? endInput.valueAsDate : null;
     }
+
+    // 同步到index.html的过滤器（如果存在）
+    const wrStart = document.getElementById('wrDateStart');
+    const wrEnd = document.getElementById('wrDateEnd');
+    if (wrStart && startInput) wrStart.value = startInput.value;
+    if (wrEnd && endInput) wrEnd.value = endInput.value;
 
     caUpdateDateInfo();
     caRefreshCurrentTab();
