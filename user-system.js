@@ -781,7 +781,7 @@ async function onLoginSuccess(){
       if(typeof renderDataTable === 'function') renderDataTable();
       if(typeof renderGallery === 'function') renderGallery();
     }
-    if(typeof renderProjectManage === 'function') await renderProjectManage({ cacheOnly: true });
+    if(typeof renderProjectManage === 'function') await renderProjectManage({ cacheOnly: false });
   })(); }, 1500);
 }
 
