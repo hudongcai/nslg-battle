@@ -111,6 +111,8 @@ async function dbAdd(rec) {
     rec.user_phone = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.phone : '';
     rec.time = rec.time || new Date().toLocaleString('zh-CN');
     rec.battleDate = rec.battleDate || new Date().toISOString().split('T')[0];
+    // 🔥 优化：本地新增记录时保留图片（用户刚上传的），但标记为待清理
+    // 云端同步后，图片会被移除，改为按需加载
     rec.hasImage = !!(rec.imageBase64);
     const req = store.add(rec);
     req.onsuccess = () => {

@@ -671,10 +671,14 @@ async function viewProject(projectId){
       }
     })();
   }
-  // owner 异步后台加载图片（不阻塞页面渲染）
+  // 🔥 优化：禁用自动批量图片同步，改为按需加载（点击"查看原图"时才加载）
+  // 原因：批量同步会将所有战报图片下载到 IndexedDB，导致缓存爆炸（1000条战报 ≈ 0.5-2GB）
+  // 解决方案：showRecordImage() 已实现云端按需加载，用户体验无损，缓存占用降低 100-1000 倍
+  /*
   if(window.currentProjectIsOwner && window.cloudSync && typeof window.cloudSync.syncProjectImages === 'function'){
     setTimeout(() => window.cloudSync.syncProjectImages(projectId), 500);
   }
+  */
 }
 
 // ========== 退出项目（返回项目列表） ==========

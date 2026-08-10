@@ -644,11 +644,15 @@ async function syncProjectRecords(projectId) {
     }
 
     // 从 MySQL 批量写入（单个 IndexedDB 事务，大幅提速）
+    // 🔥 优化：强制删除所有图片数据，只保留元数据（武将、战法、损失率等）
     const prepared = cloudRecords.map(rec => {
       rec.cloudId = rec.id;
       rec._synced = true;
       rec._syncTime = Date.now();
+      // 移除图片数据，避免 IndexedDB 爆炸（1000条战报 ≈ 0.5-2GB）
       delete rec.imageBase64;
+      delete rec.image_data;
+      rec.hasImage = true; // 标记有图，点击时从云端按需加载
       return rec;
     });
     let saved = 0;
