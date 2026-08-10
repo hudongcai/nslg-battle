@@ -559,7 +559,11 @@ async function switchTab(tabId, btn) {
 
   console.log('[switchTab] 切换到:', tabId);
 
-  // 🔥 方案A优化：切换到数据tab时，如果有项目ID，先从云端同步最新数据
+  // 🔥 修复：注释掉重复同步逻辑，避免数据重复加载
+  // viewProject 函数已经负责云端同步，这里不需要再次触发
+  // 问题：switchTab 触发的 syncProjectRecords 会导致 loadAllRecords 被多次调用
+  // 结果：allRecords 数组中同一条云端记录存在多个副本，显示数量翻倍
+  /*
   if (tabId === 'data' && window.currentProjectId && window.cloudSync && typeof window.cloudSync.syncProjectRecords === 'function') {
     // 异步后台同步，不阻塞UI切换
     (async () => {
@@ -575,6 +579,7 @@ async function switchTab(tabId, btn) {
       }
     })();
   }
+  */
   try { localStorage.setItem('lastTab', tabId); } catch(e) {}
 
   // 先隐藏所有 tab-content（强制用 !important 等价于设置 inline style）
