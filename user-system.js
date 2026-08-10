@@ -1299,7 +1299,7 @@ async function checkLoginState(){
           const _token = typeof getToken === 'function' ? getToken() : '';
           const _base = typeof CLOUD_API_BASE !== 'undefined' ? CLOUD_API_BASE : 'https://api.zhenwu.fun/api';
           const profileCtrl = new AbortController();
-          const profileTimer = setTimeout(() => profileCtrl.abort(), 800);
+          const profileTimer = setTimeout(() => profileCtrl.abort(), 3000); // 增加到 3 秒
           const profileResp = await fetch(`${_base}/auth/profile`, {
             headers: _token ? { 'Authorization': 'Bearer ' + _token } : {},
             signal: profileCtrl.signal
@@ -1311,8 +1311,12 @@ async function checkLoginState(){
             console.warn('[Session] 云端验证不通过，清理本地会话:', session.phone, profileData.message);
           }
         }catch(netErr){
-          // 网络不可用，跳过验证允许离线
-          console.warn('[Session] 云端验证失败，使用离线模式:', netErr.message);
+          // 网络不可用或超时，跳过验证允许离线
+          if(netErr.name === 'AbortError'){
+            console.warn('[Session] 云端验证超时(3s)，使用离线模式');
+          } else {
+            console.warn('[Session] 云端验证失败，使用离线模式:', netErr.message);
+          }
         }
         if(!cloudOk){
           try{ await userDBDelete(session.phone); }catch(e){}
