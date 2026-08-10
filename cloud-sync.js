@@ -340,9 +340,10 @@ async function cloudRemoveProjectMember(projectId, phone) {
 // 获取战报列表（从云端）
 // 后端路由是 /battles，不是 /records
 async function cloudGetRecords(projectId) {
-  var url = '/battles';
+  // 🔥 优化：添加 excludeImages 参数，告诉后端不要返回图片数据
+  var url = '/battles?excludeImages=1';
   if (projectId) {
-    url = '/battles?projectId=' + encodeURIComponent(projectId);
+    url = '/battles?projectId=' + encodeURIComponent(projectId) + '&excludeImages=1';
   }
   var resp = await cloudRequest(url);
   var list = [];
@@ -395,7 +396,9 @@ async function cloudGetRecords(projectId) {
       rightGeneral2Stars: r.right_general_2_stars ?? r.rightGeneral2Stars ?? 0,
       rightGeneral3Stars: r.right_general_3_stars ?? r.rightGeneral3Stars ?? 0,
       description: r.description || '',
-      imageBase64: r.imageBase64 || r.image_base64 || '',
+      // 🔥 优化：不从云端获取图片数据，避免内存飙升和网络传输浪费
+      // imageBase64: r.imageBase64 || r.image_base64 || '',
+      hasImage: !!(r.imageBase64 || r.image_base64), // 仅标记是否有图
       createdBy: (r.createdBy !== undefined) ? r.createdBy : ((r.created_by !== undefined) ? r.created_by : null),
       createdAt: r.createdAt || r.created_at || null,
       updatedAt: r.updatedAt || r.updated_at || null,
