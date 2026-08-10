@@ -1029,7 +1029,8 @@ function normalizeBattleBody(body) {
 
 app.get('/api/battles', async (req, res) => {
   try {
-    const { projectId } = req.query;
+    const { projectId, excludeImages } = req.query;
+    // 🔥 优化：不再从 battle_records 查询图片字段（图片已独立存储在 battle_gallery 表）
     let query = 'SELECT * FROM battle_records', params = [];
     if (projectId) { query += ' WHERE project_id = ?'; params = [projectId]; }
     query += ' ORDER BY created_at DESC';
